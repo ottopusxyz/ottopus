@@ -67,21 +67,45 @@ function pick(next: Choice): void {
   listeners.forEach((l) => l())
 }
 
+export type ThemeToggleTone = 'default' | 'reversed'
+
+/**
+ * The reversed tone is for the navy brand bar, where the default's white pill
+ * would read as a hole punched in the header. Cream on navy at 70% still clears
+ * AA at 12px, and the active pill keeps navy-on-coral — white fails on coral.
+ */
+const TONES: Record<ThemeToggleTone, { frame: string; idle: string }> = {
+  default: {
+    frame: 'border-[var(--ot-border)] bg-[var(--ot-card)]',
+    idle: 'text-[var(--ot-text-2)] hover:text-[var(--ot-text)]',
+  },
+  reversed: {
+    frame: 'border-[rgba(255,240,220,0.35)] bg-transparent',
+    idle: 'text-[var(--ot-cream)]/75 hover:text-[var(--ot-cream)]',
+  },
+}
+
 /**
  * Native radios rather than role="radio" on buttons. A hand-rolled radiogroup
  * has to implement roving focus and arrow keys to match what the role promises;
  * real inputs give that, plus form semantics, for free. The inputs are visually
  * hidden, and the label is the control.
  */
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({
+  tone = 'default',
+  className,
+}: {
+  tone?: ThemeToggleTone
+  className?: string
+}) {
   const choice = useSyncExternalStore(subscribe, readChoice, serverChoice)
   const name = useId()
 
   return (
     <fieldset
       className={cn(
-        'inline-flex gap-1 rounded-[var(--ot-radius-pill)] border border-[var(--ot-border)]',
-        'bg-[var(--ot-card)] p-1',
+        'inline-flex gap-1 rounded-[var(--ot-radius-pill)] border p-1',
+        TONES[tone].frame,
         className,
       )}
     >
@@ -96,7 +120,7 @@ export function ThemeToggle({ className }: { className?: string }) {
             'has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--ot-plan)]',
             choice === c
               ? 'bg-[var(--ot-coral)] text-[var(--ot-on-state)]'
-              : 'text-[var(--ot-text-2)] hover:text-[var(--ot-text)]',
+              : TONES[tone].idle,
           )}
         >
           <input

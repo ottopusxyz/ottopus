@@ -60,6 +60,35 @@ const LINK_SIZES: Record<Size, string> = {
 const DISABLED =
   'disabled:cursor-not-allowed disabled:border-[var(--ot-border)] disabled:bg-[var(--ot-surface-2)] disabled:text-[var(--ot-text-4)] disabled:hover:bg-[var(--ot-surface-2)] disabled:hover:brightness-100'
 
+/**
+ * The button's own classes, for the cases where the element has to be an anchor
+ * rather than a button — a call to action that navigates. A <button> nested in
+ * an <a> is invalid, and an <a> with role="button" loses the browser's own link
+ * behaviour, so the honest fix is to let a link borrow the styling.
+ */
+export function buttonClasses({
+  variant = 'secondary',
+  size = 'md',
+  className,
+}: {
+  variant?: Variant
+  size?: Size
+  className?: string
+} = {}): string {
+  const isLink = variant === 'link'
+  return cn(
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap',
+    isLink ? 'rounded-none' : 'rounded-[var(--ot-radius-pill)]',
+    'font-ui font-medium leading-none cursor-pointer',
+    'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
+    VARIANTS[variant],
+    isLink ? LINK_SIZES[size] : SIZES[size],
+    !isLink && DISABLED,
+    isLink && 'disabled:cursor-not-allowed disabled:text-[var(--ot-text-4)]',
+    className,
+  )
+}
+
 export function Button({
   variant = 'secondary',
   size = 'md',
@@ -67,22 +96,5 @@ export function Button({
   type = 'button',
   ...props
 }: ButtonProps) {
-  const isLink = variant === 'link'
-  return (
-    <button
-      type={type}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 whitespace-nowrap',
-        isLink ? 'rounded-none' : 'rounded-[var(--ot-radius-pill)]',
-        'font-ui font-medium leading-none cursor-pointer',
-        'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
-        VARIANTS[variant],
-        isLink ? LINK_SIZES[size] : SIZES[size],
-        !isLink && DISABLED,
-        isLink && 'disabled:cursor-not-allowed disabled:text-[var(--ot-text-4)]',
-        className,
-      )}
-      {...props}
-    />
-  )
+  return <button type={type} className={buttonClasses({ variant, size, className })} {...props} />
 }

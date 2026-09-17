@@ -1,4 +1,4 @@
-export { Button, type ButtonProps } from './button'
+export { Button, buttonClasses, type ButtonProps } from './button'
 export { Card, CardBody, CardHeader, CardTitle, type CardProps } from './card'
 export { Badge, TONE_CLASSES, type BadgeProps, type Tone } from './badge'
 export { Chip } from './chip'
