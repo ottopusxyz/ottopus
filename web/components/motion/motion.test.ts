@@ -9,6 +9,8 @@ const read = (name: string) =>
 
 const WATER = read('water.css')
 const MOTION = read('motion.css')
+/** The loader family's keyframes are ambient too, and bound by the same gate. */
+const LOADERS = read('loaders.css')
 
 interface Rule {
   selectors: string[]
@@ -60,7 +62,7 @@ function rules(css: string, reducedMotion = false): Rule[] {
   return out
 }
 
-const ALL = [...rules(WATER), ...rules(MOTION)]
+const ALL = [...rules(WATER), ...rules(MOTION), ...rules(LOADERS)]
 
 /** Declares a keyframe animation, as opposed to merely tuning one. */
 const startsAnimation = (body: string) =>

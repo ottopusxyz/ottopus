@@ -1,0 +1,127 @@
+/* Ottopus — the loader family, L1 to L6.
+
+   Keyframes transcribed from the design system's Loader family section. They
+   keep the design's names so a future sync compares like with like — water.css
+   previously called the shimmer "ot-tide", which is the name the design gives
+   to the sweeping bar instead. That is now corrected there.
+
+   One rule decides which loader a screen uses: how much of the screen the wait
+   blocks. Inline waits get geometry only. Panel and page waits get Otto,
+   because there the wait is the screen. Never two Otto loaders at once. */
+
+/* L1 · Tentacle ring. Eight dots, one per arm. Never six, never twelve. */
+.ot-ring {
+  animation: ot-ring 2.4s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ot-ring-dot {
+  animation: ot-ring-dot 1.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-ring {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ot-ring-dot {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(0.72);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* L2 · Tide bar. The sweep, not the shimmer — see the note above. */
+.ot-tide {
+  animation: ot-tide 1.4s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-tide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* L4 · Full page. Otto rides higher and turns as he goes — a longer, looser
+   loop than the drift, because he is the only thing on the screen. */
+.ot-float {
+  animation: ot-float 6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(1.2deg);
+  }
+}
+
+/* L6 · Ink hold. The one dark loader. */
+.ot-ink-pulse {
+  animation: ot-ink-pulse 2.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ot-ink-ripple {
+  animation: ot-ink-ripple 2.8s ease-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-ink-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.9;
+  }
+}
+@keyframes ot-ink-ripple {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+/* "Every loader keeps its layout and copy; only movement stops. Rings hold at
+   .55 opacity, shimmer becomes flat, bubbles are removed, Otto sits in his base
+   pose. Determinate bars still update — that's information, not decoration."
+
+   The determinate bar is deliberately absent from this block: its width is the
+   answer to "how far along is this", and freezing it would withhold that. */
+@media (prefers-reduced-motion: reduce) {
+  .ot-ring,
+  .ot-ring-dot,
+  .ot-tide,
+  .ot-float,
+  .ot-ink-pulse,
+  .ot-ink-ripple {
+    animation: none !important;
+    transform: none !important;
+  }
+  .ot-ring-dot {
+    opacity: 0.55;
+  }
+  .ot-ink-ripple {
+    opacity: 0;
+  }
+  /* An indeterminate sweep with nowhere to go should read as a filled track
+     rather than a stalled sliver sitting at the left edge. */
+  .ot-tide {
+    width: 100% !important;
+    background: var(--ot-water-3) !important;
+  }
+}

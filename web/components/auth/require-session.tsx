@@ -3,7 +3,7 @@
 import { usePrivy } from '@privy-io/react-auth'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, type ReactNode } from 'react'
-import { OttoLoader } from '@/components/motion'
+import { FullPageLoader } from '@/components/motion'
 import { usePrivyAvailable } from './privy-provider'
 
 /**
@@ -38,10 +38,18 @@ function Guarded({ children }: { children: ReactNode }) {
   }, [blocked, router, pathname])
 
   if (!ready || blocked) {
+    // L4, the cold-boot loader. This is the genuine article rather than a
+    // navigation: the layout holds across shell routes, so once Privy has
+    // answered it never renders again for the life of the session.
     return (
-      <div className="flex min-h-dvh items-center justify-center p-10">
-        <OttoLoader label={blocked ? 'Taking you to sign in…' : 'Finding your session…'} />
-      </div>
+      <FullPageLoader
+        title={blocked ? 'Taking you to sign in' : 'Getting your ocean in order'}
+        messages={
+          blocked
+            ? ['One moment.']
+            : ['Finding your session', 'Waking Otto up', 'Checking who is listening']
+        }
+      />
     )
   }
 

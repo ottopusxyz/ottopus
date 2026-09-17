@@ -54,9 +54,9 @@
 .ot-shimmer {
   background: linear-gradient(90deg, var(--ot-water-1) 0%, var(--ot-water-3) 50%, var(--ot-water-1) 100%);
   background-size: 220% 100%;
-  animation: ot-tide 2.4s linear infinite;
+  animation: ot-shimmer 2.4s linear infinite;
 }
-@keyframes ot-tide {
+@keyframes ot-shimmer {
   0%   { background-position: -160% 0; }
   100% { background-position: 260% 0; }
 }

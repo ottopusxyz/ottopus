@@ -7,6 +7,7 @@ export {
   type BubbleFieldProps,
   type BubblePattern,
 } from './bubble-field'
+export * from './loaders'
 export { DEPTH_LEVELS, DEPTH_TOKENS, Depth, type DepthLevel, type DepthProps } from './depth'
 export {
   BadgeLoader,

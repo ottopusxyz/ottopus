@@ -3,39 +3,42 @@
 import { usePrivy } from '@privy-io/react-auth'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, type ReactNode } from 'react'
 import { Lockup } from '@/components/brand'
-import { BubbleField } from '@/components/motion'
+import { BubbleField, FullPageLoader } from '@/components/motion'
 import { usePrivyAvailable } from './privy-provider'
 import { SignInPanel } from './sign-in-panel'
 
 /**
- * Sends an already-signed-in visitor where they were going. Rendered only where
- * Privy mounted, so the hook it calls always has its context.
+ * /signin, for someone who is already signed in.
  *
- * Nothing of its own on screen — the redirect is the whole component.
+ * Coming back from Google the session is good and the only thing left is the
+ * redirect. Showing the form for that beat invites someone to start signing in
+ * again on a page that is about to disappear, so the page becomes the loader
+ * instead. Rendered only where Privy mounted, so the hook always has context.
  */
-function RedirectWhenSignedIn() {
+function Live() {
   const { ready, authenticated } = usePrivy()
   const router = useRouter()
   const next = useSearchParams().get('next') ?? '/portfolio'
+  const returning = ready && authenticated
 
   useEffect(() => {
-    if (ready && authenticated) router.replace(next)
-  }, [ready, authenticated, router, next])
+    if (returning) router.replace(next)
+  }, [returning, router, next])
 
-  return null
+  if (returning) {
+    return <FullPageLoader title="Signed in" messages={['Taking you to your portfolio']} />
+  }
+  return <Canvas />
 }
 
 /**
- * /signin as a page. The same panel as the dialog, so the two cannot drift.
- *
- * Water is allowed here: the design lists auth alongside marketing as page
- * canvas, and this page carries no amount, address or approval.
+ * The page itself. Water is allowed here: the design lists auth alongside
+ * marketing as page canvas, and nothing on it carries an amount, an address or
+ * an approval.
  */
-function Screen() {
-  const available = usePrivyAvailable()
-
+function Canvas({ children }: { children?: ReactNode }) {
   return (
     <div className="ot-canvas relative flex min-h-dvh flex-col overflow-hidden">
       <BubbleField pattern="canvas" />
@@ -47,7 +50,7 @@ function Screen() {
       </header>
 
       <main className="relative flex flex-1 items-center justify-center px-5 py-10">
-        {available ? <RedirectWhenSignedIn /> : null}
+        {children}
         <div
           className={
             'w-full max-w-[420px] rounded-[var(--ot-radius-lg)] border ' +
@@ -60,6 +63,12 @@ function Screen() {
       </main>
     </div>
   )
+}
+
+function Screen() {
+  // Splitting here rather than lifting state out of Live: a redirect component
+  // that unmounts and remounts as the page swaps would fire its effect twice.
+  return usePrivyAvailable() ? <Live /> : <Canvas />
 }
 
 export function SignInScreen() {

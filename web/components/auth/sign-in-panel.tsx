@@ -3,7 +3,7 @@
 import { useLoginWithEmail, useLoginWithOAuth, usePrivy } from '@privy-io/react-auth'
 import { useState, type ReactNode, type FormEvent } from 'react'
 import { Gaze, OttoBadge } from '@/components/brand'
-import { Button, Callout, Input } from '@/components/ui'
+import { Button, Callout, CodeInput, Input } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { usePrivyAvailable } from './privy-provider'
 
@@ -212,7 +212,7 @@ function LiveSignIn(props: SignInPanelProps) {
             required
             invalid={Boolean(failure)}
           />
-          <Button type="submit" variant="primary" shape="block" disabled={sending || !email}>
+          <Button type="submit" variant="primary" size="lg" fullWidth disabled={sending || !email}>
             {sending ? 'Sending a code…' : 'Send me a code'}
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setStep('choose')}>
@@ -222,21 +222,21 @@ function LiveSignIn(props: SignInPanelProps) {
       ) : null}
 
       {step === 'code' ? (
-        <form onSubmit={onVerify} className="flex flex-col gap-2">
-          <Input
-            mono
+        <form onSubmit={onVerify} className="flex flex-col gap-3">
+          <CodeInput
             name="code"
             value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="6-digit code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            aria-label="One-time code"
+            onChange={setCode}
             autoFocus
-            required
             invalid={Boolean(failure)}
           />
-          <Button type="submit" variant="primary" shape="block" disabled={submitting || !code}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            fullWidth
+            disabled={submitting || code.length < 6}
+          >
             {submitting ? 'Checking…' : 'Continue'}
           </Button>
           <Button
