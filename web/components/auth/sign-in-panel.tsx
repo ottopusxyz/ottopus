@@ -1,8 +1,8 @@
 'use client'
 
 import { useLoginWithEmail, useLoginWithOAuth, usePrivy } from '@privy-io/react-auth'
-import { useState, type FormEvent } from 'react'
-import { Otto } from '@/components/brand'
+import { useState, type ReactNode, type FormEvent } from 'react'
+import { OttoBadge } from '@/components/brand'
 import { Button, Callout, Input } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { usePrivyAvailable } from './privy-provider'
@@ -35,12 +35,15 @@ function GoogleMark() {
   )
 }
 
-/** Privy's own errors are developer-facing. These are the ones a person reads. */
-function readable(error: Error | null, fallback: string): string {
+/** Privy's errors are developer-facing. These are the ones a person reads. */
+function readable(error: Error | null | undefined, fallback: string): string {
   const raw = error?.message ?? ''
   if (/invalid|incorrect/i.test(raw)) return 'That code did not match. Check it and try again.'
   if (/expired/i.test(raw)) return 'That code has expired. Send a new one.'
   if (/too many|rate/i.test(raw)) return 'Too many attempts. Wait a moment, then send a new code.'
+  if (/not enabled|disabled|disallowed|not allowed|not configured|unsupported/i.test(raw)) {
+    return 'That sign-in method is not enabled for this app yet.'
+  }
   return fallback
 }
 
@@ -50,6 +53,8 @@ export interface SignInPanelProps {
   headingId?: string
   title?: string
   className?: string
+  /** Slot for the badge, so a page can hand in a livelier one. */
+  mascot?: ReactNode
 }
 
 /**
@@ -57,28 +62,41 @@ export interface SignInPanelProps {
  * same component so the two cannot drift into saying different things about
  * what signing in means.
  *
- * Email and Google are ours, on Privy's headless hooks, because they are the
- * part a person reads. The wallet step opens Privy's own modal: it is one tap
- * on a surface people already know, and their EIP-6963 detection and connector
- * handling are the parts genuinely worth borrowing.
+ * Laid out as D1 in the app design: badge, title, one line, then the ways in as
+ * a stacked list. Email and Google are ours, on Privy's headless hooks, because
+ * they are the part a person reads. "Connect a wallet" opens Privy's own modal,
+ * where the wallet list is theirs and we style only the frame around it.
  */
 export function SignInPanel(props: SignInPanelProps) {
-  // The hooks below require Privy's context, and calling them without it throws.
+  // The hooks below need Privy's context, and calling them without it throws.
   // Splitting on availability here is what keeps that impossible.
   return usePrivyAvailable() ? <LiveSignIn {...props} /> : <UnconfiguredSignIn {...props} />
 }
 
-function UnconfiguredSignIn({
+function Header({
   headingAs: Heading = 'h2',
   headingId,
   title = 'Sign in to Ottopus',
-  className,
-}: SignInPanelProps) {
+  mascot,
+  subtitle,
+}: SignInPanelProps & { subtitle?: string }) {
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
-      <Heading id={headingId} className="font-display text-[22px] font-bold">
+    <div className="flex flex-col items-center gap-[5px] text-center">
+      {mascot ?? <OttoBadge tier="icon" size={44} />}
+      <Heading id={headingId} className="font-display text-[19px] font-bold">
         {title}
       </Heading>
+      {subtitle ? (
+        <span className="text-[13px] leading-[1.45] text-[var(--ot-text-2)]">{subtitle}</span>
+      ) : null}
+    </div>
+  )
+}
+
+function UnconfiguredSignIn(props: SignInPanelProps) {
+  return (
+    <div className={cn('flex flex-col gap-4', props.className)}>
+      <Header {...props} />
       <Callout severity="caution" title="Sign-in is not available">
         Privy is not configured for this deployment, so there is nothing to sign in to yet.
       </Callout>
@@ -86,34 +104,42 @@ function UnconfiguredSignIn({
   )
 }
 
-function LiveSignIn({
-  headingAs: Heading = 'h2',
-  headingId,
-  title = 'Sign in to Ottopus',
-  className,
-}: SignInPanelProps) {
+/** The list of ways in, the email address, or the code. One at a time. */
+type Step = 'choose' | 'email' | 'code'
+
+function LiveSignIn(props: SignInPanelProps) {
+  const { className } = props
   const { login } = usePrivy()
   const { sendCode, loginWithCode, state: emailState } = useLoginWithEmail()
   const { initOAuth, state: oauthState } = useLoginWithOAuth()
 
+  const [step, setStep] = useState<Step>('choose')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
+  const [oauthFailure, setOauthFailure] = useState<Error | null>(null)
 
   const sending = emailState.status === 'sending-code'
   const submitting = emailState.status === 'submitting-code'
-  const awaitingCode = emailState.status === 'awaiting-code-input' || submitting
   const oauthBusy = oauthState.status === 'loading'
   const busy = sending || submitting || oauthBusy
 
-  const emailError =
+  const oauthError = oauthState.status === 'error' ? oauthState.error : oauthFailure
+  const failure =
     emailState.status === 'error'
       ? readable(emailState.error, 'That did not work. Try again.')
-      : null
-  const oauthError = oauthState.status === 'error' ? 'Google sign-in did not complete.' : null
+      : oauthError
+        ? readable(oauthError, 'Google sign-in did not start. It may not be enabled for this app.')
+        : null
 
   const onSendCode = async (e: FormEvent) => {
     e.preventDefault()
-    await sendCode({ email }).catch(() => {})
+    try {
+      await sendCode({ email })
+      setStep('code')
+    } catch {
+      // The hook's own state carries the message. Staying on this step keeps
+      // the address on screen so it can be corrected rather than retyped.
+    }
   }
 
   const onVerify = async (e: FormEvent) => {
@@ -121,28 +147,78 @@ function LiveSignIn({
     await loginWithCode({ code }).catch(() => {})
   }
 
+  const onGoogle = async () => {
+    setOauthFailure(null)
+    try {
+      await initOAuth({ provider: 'google' })
+    } catch (err) {
+      // Swallowing this is how a dead button stays dead and silent. Google
+      // switched off in the Privy dashboard lands here.
+      setOauthFailure(err as Error)
+    }
+  }
+
   return (
-    <div className={cn('flex flex-col items-center gap-5 text-center', className)}>
-      <Otto pose="plan-ready" size={96} animated />
+    <div className={cn('flex flex-col gap-4', className)}>
+      <Header
+        {...props}
+        subtitle={
+          step === 'code'
+            ? `We sent a code to ${email}.`
+            : 'Any method you link once can sign you in later.'
+        }
+      />
 
-      <div className="flex flex-col gap-2">
-        <Heading
-          id={headingId}
-          className="font-display text-[22px] font-bold tracking-[-0.02em]"
-        >
-          {title}
-        </Heading>
-        <p className="max-w-[34ch] text-[14px] leading-[1.5] text-[var(--ot-text-2)]">
-          Link your wallets once, then tell any agent what you want. You still sign everything
-          yourself.
-        </p>
-      </div>
+      {step === 'choose' ? (
+        <div className="flex flex-col gap-2">
+          <Button variant="secondary" shape="block" disabled={busy} onClick={onGoogle}>
+            <GoogleMark />
+            {oauthBusy ? 'Taking you to Google…' : 'Continue with Google'}
+          </Button>
+          <Button variant="secondary" shape="block" disabled={busy} onClick={() => setStep('email')}>
+            Continue with email
+          </Button>
+          <div className="flex items-center gap-[10px] py-[2px]" aria-hidden>
+            <span className="h-px flex-1 bg-[var(--ot-border)]" />
+            <span className="text-[12px] text-[var(--ot-text-3)]">or</span>
+            <span className="h-px flex-1 bg-[var(--ot-border)]" />
+          </div>
+          <Button
+            variant="secondary"
+            shape="block"
+            disabled={busy}
+            onClick={() => login({ loginMethods: ['wallet'] })}
+          >
+            Connect a wallet
+          </Button>
+        </div>
+      ) : null}
 
-      {awaitingCode ? (
-        <form onSubmit={onVerify} className="flex w-full flex-col gap-3">
-          <p className="text-[13px] text-[var(--ot-text-2)]">
-            We sent a code to <span className="font-medium text-[var(--ot-text)]">{email}</span>.
-          </p>
+      {step === 'email' ? (
+        <form onSubmit={onSendCode} className="flex flex-col gap-2">
+          <Input
+            type="email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            aria-label="Email address"
+            autoFocus
+            required
+            invalid={Boolean(failure)}
+          />
+          <Button type="submit" variant="primary" shape="block" disabled={sending || !email}>
+            {sending ? 'Sending a code…' : 'Send me a code'}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setStep('choose')}>
+            Back
+          </Button>
+        </form>
+      ) : null}
+
+      {step === 'code' ? (
+        <form onSubmit={onVerify} className="flex flex-col gap-2">
           <Input
             mono
             name="code"
@@ -154,86 +230,32 @@ function LiveSignIn({
             aria-label="One-time code"
             autoFocus
             required
-            invalid={Boolean(emailError)}
+            invalid={Boolean(failure)}
           />
-          <Button type="submit" variant="primary" size="md" disabled={submitting || !code}>
+          <Button type="submit" variant="primary" shape="block" disabled={submitting || !code}>
             {submitting ? 'Checking…' : 'Continue'}
           </Button>
           <Button
             type="button"
-            variant="link"
+            variant="ghost"
             size="sm"
             onClick={() => {
               setCode('')
-              setEmail('')
-              window.location.reload()
+              setStep('email')
             }}
           >
             Use a different email
           </Button>
         </form>
-      ) : (
-        <form onSubmit={onSendCode} className="flex w-full flex-col gap-3">
-          <Input
-            type="email"
-            name="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            aria-label="Email address"
-            required
-            invalid={Boolean(emailError)}
-          />
-          <Button type="submit" variant="primary" size="md" disabled={busy || !email}>
-            {sending ? 'Sending a code…' : 'Continue with email'}
-          </Button>
-        </form>
-      )}
+      ) : null}
 
-      {emailError ? (
-        <p role="alert" className="text-[13px] text-[var(--ot-block-text)]">
-          {emailError}
+      {failure ? (
+        <p role="alert" className="text-center text-[13px] text-[var(--ot-block-text)]">
+          {failure}
         </p>
       ) : null}
 
-      {awaitingCode ? null : (
-        <>
-          <div className="flex w-full items-center gap-3" aria-hidden>
-            <span className="h-px flex-1 bg-[var(--ot-border)]" />
-            <span className="text-[12px] text-[var(--ot-text-3)]">or</span>
-            <span className="h-px flex-1 bg-[var(--ot-border)]" />
-          </div>
-
-          <div className="flex w-full flex-col gap-2">
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={busy}
-              onClick={() => initOAuth({ provider: 'google' }).catch(() => {})}
-            >
-              <GoogleMark />
-              {oauthBusy ? 'Taking you to Google…' : 'Continue with Google'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={busy}
-              onClick={() => login({ loginMethods: ['wallet'] })}
-            >
-              Continue with a wallet
-            </Button>
-          </div>
-
-          {oauthError ? (
-            <p role="alert" className="text-[13px] text-[var(--ot-block-text)]">
-              {oauthError}
-            </p>
-          ) : null}
-        </>
-      )}
-
-      <p className="text-[12px] text-[var(--ot-text-3)]">
+      <p className="text-center text-[11.5px] leading-[1.5] text-[var(--ot-text-3)]">
         Ottopus never holds a key and never asks for a seed phrase.
       </p>
     </div>

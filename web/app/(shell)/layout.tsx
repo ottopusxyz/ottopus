@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { RequireSession, SessionAccountRow } from '@/components/auth'
 import { AppShell } from '@/components/shell'
 
 /**
@@ -8,5 +9,9 @@ import { AppShell } from '@/components/shell'
  * side effect of where someone happened to create a folder.
  */
 export default function ShellLayout({ children }: { children: ReactNode }) {
-  return <AppShell>{children}</AppShell>
+  return (
+    <RequireSession>
+      <AppShell account={<SessionAccountRow />}>{children}</AppShell>
+    </RequireSession>
+  )
 }
