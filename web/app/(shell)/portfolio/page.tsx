@@ -1,13 +1,19 @@
-import { SkeletonRow } from '@/components/motion'
-import { Figure, PageHeader, TabBar } from '@/components/shell'
-import { Button, Chip } from '@/components/ui'
+import { Otto } from '@/components/brand'
+import { BubbleField } from '@/components/motion'
+import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
+import { Button, Chip, EmptyState } from '@/components/ui'
 
 export const metadata = { title: 'Portfolio · Ottopus' }
 
 /**
- * The frame, with the numbers still to come from #8 and #9. The skeletons are
- * not decoration: they hold the row height the real data will take, so landing
- * here before the connector exists shows the shape rather than a blank panel.
+ * The frame, with the numbers still to come from #8 and #9.
+ *
+ * The token section shows the empty state rather than skeletons: nothing is
+ * loading, because nothing is linked. A skeleton here would promise data that
+ * is never going to arrive.
+ *
+ * This is one of the three places water is allowed, and the only one where the
+ * gradient, the bubbles and an animated Otto appear together.
  */
 export default function Portfolio() {
   return (
@@ -32,11 +38,23 @@ export default function Portfolio() {
         ]}
         aside={<Chip>All networks</Chip>}
       />
-      <div className="flex flex-col gap-4 px-5 py-5 sm:px-[26px]">
-        <SkeletonRow label="Loading balances" />
-        <SkeletonRow label={null} />
-        <SkeletonRow label={null} />
+
+      <div className="ot-canvas relative flex flex-1 items-center justify-center overflow-hidden px-5 py-7">
+        <BubbleField pattern="calm" />
+        <EmptyState
+          className="relative"
+          title="No wallets yet"
+          description="Link a wallet and I’ll start keeping an eye on it. Up to eight."
+          illustration={<Otto pose="base" size={120} animated />}
+          action={
+            <Button variant="primary" size="sm">
+              Link wallet
+            </Button>
+          }
+        />
       </div>
+
+      <FirstIntentNudge />
     </>
   )
 }
