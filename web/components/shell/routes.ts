@@ -29,6 +29,9 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   '/signin':
     'Sign-in. A signed-out visitor has no nav, and this is where shell routes send them.',
   '/styleguide': 'The design system, for us. App chrome around it would be confusing.',
+  '/oauth':
+    'OAuth consent. A redirect target an agent sent someone to, not a page they browsed to — ' +
+    'app chrome would invite wandering off mid-decision, and this is a grant screen.',
 }
 
 export function isShellRoute(pathname: string): boolean {

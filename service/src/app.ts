@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { config } from './config.js'
 import { apiApp } from './routes/api.js'
-import { mcpApp } from './routes/mcp.js'
+import { mcpApp, wellKnownApp } from './routes/mcp.js'
 
 /**
  * One process, two surfaces, one core underneath.
@@ -22,6 +22,14 @@ rootApp.get('/health', (c) =>
     commit: config.gitCommit,
   }),
 )
+
+/**
+ * Protected-resource metadata is anchored to the origin, not to the MCP mount:
+ * at localhost:8787/mcp the document belongs at the service root, under
+ * /.well-known/oauth-protected-resource/mcp. On the subdomain the two are the
+ * same place and this is simply a second route to the same handler.
+ */
+rootApp.route('/', wellKnownApp)
 
 rootApp.route('/mcp', mcpApp)
 rootApp.route('/api', apiApp)

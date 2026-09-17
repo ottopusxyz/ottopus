@@ -221,6 +221,41 @@ export function getPortfolio(credentials: Credentials): Promise<Portfolio> {
  * the row on a first ever sign-in. Idempotent, so calling it again on every
  * cold boot is the intended use rather than a waste.
  */
+/**
+ * A grant an agent is asking for, as the consent page shows it.
+ *
+ * The wording of each permission comes from the service rather than living
+ * here: the words describing a scope and the scope itself have to change
+ * together, and a second copy in this package is how they stop agreeing.
+ */
+export interface ConsentGrant {
+  request: { id: string; expiresAt: string }
+  client: { name: string; uri: string | null; redirectHost: string }
+  resource: string
+  granted: { scope: string; title: string; detail: string }[]
+  neverGranted: { title: string; detail: string }
+}
+
+export function readConsent(credentials: Credentials, id: string): Promise<ConsentGrant> {
+  return call<ConsentGrant>(`/oauth/consent/${encodeURIComponent(id)}`, credentials)
+}
+
+/**
+ * Answer it. Both answers return somewhere to go — a denial has to reach the
+ * agent's callback too, or the agent waits on a flow that already ended.
+ */
+export function decideConsent(
+  credentials: Credentials,
+  id: string,
+  approved: boolean,
+): Promise<{ redirectTo: string }> {
+  return call<{ redirectTo: string }>(`/oauth/consent/${encodeURIComponent(id)}`, credentials, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved }),
+  })
+}
+
 export function establishSession(credentials: Credentials): Promise<{ user: SessionUser }> {
   return call('/session', credentials, { method: 'POST' })
 }

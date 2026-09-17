@@ -4,6 +4,7 @@ import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { ZerionPortfolioConnector, cached } from '../connectors/portfolio/index.js'
 import { getDb } from '../db/client.js'
+import { consentRoutes } from './consent.js'
 import { portfolioRoutes } from './portfolio.js'
 import { walletRoutes } from './wallets.js'
 
@@ -85,6 +86,14 @@ if (ready) {
   apiApp.get('/me', session, (c) => c.json({ user: c.get('user') }))
 
   apiApp.route('/wallets', walletRoutes(db, session))
+
+  /**
+   * The browser-facing half of the OAuth grant flow. The agent-facing half
+   * lives on the MCP surface with the issuer; this half is here because it
+   * needs the Privy session and the browser CORS allow-list, like every other
+   * route on this surface.
+   */
+  apiApp.route('/oauth/consent', consentRoutes(db, session))
 
   /**
    * Balances are a separate readiness question from sign-in.
