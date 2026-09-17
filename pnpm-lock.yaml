@@ -22,6 +22,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@electric-sql/pglite':
         specifier: ^0.5.8
