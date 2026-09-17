@@ -42,7 +42,7 @@ export function Button({
       type={type}
       className={cn(
         'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--ot-radius-pill)]',
-        'font-[var(--ot-font-ui)] font-medium leading-none cursor-pointer',
+        'font-ui font-medium leading-none cursor-pointer',
         'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANTS[variant],

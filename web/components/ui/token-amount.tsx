@@ -34,7 +34,7 @@ export function TokenAmount({
   return (
     <span
       className={cn(
-        'font-[var(--ot-font-mono)] text-[14px] font-medium tabular-nums tracking-[-0.02em]',
+        'font-mono text-[14px] font-medium tabular-nums tracking-[-0.02em]',
         DIRECTION_CLASS[direction],
         className,
       )}

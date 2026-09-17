@@ -27,37 +27,22 @@
   --ot-font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
-/* Expose the tokens to Tailwind utilities. Only what components actually use —
-   an exhaustive mapping would just be a second copy of the token file. */
+/* Fonts do need a @theme mapping, unlike the colours below.
+   Tailwind cannot infer the data type of font-[var(--x)] — font-* is ambiguous
+   between family and weight — so it silently emits nothing. Mapping them here
+   gives real font-display / font-ui / font-mono utilities. */
 @theme inline {
-  --color-page: var(--ot-page);
-  --color-card: var(--ot-card);
-  --color-surface: var(--ot-surface);
-  --color-surface-2: var(--ot-surface-2);
-  --color-surface-3: var(--ot-surface-3);
-  --color-border-ot: var(--ot-border);
-  --color-border-strong: var(--ot-border-strong);
-  --color-text: var(--ot-text);
-  --color-text-2: var(--ot-text-2);
-  --color-text-3: var(--ot-text-3);
-  --color-text-4: var(--ot-text-4);
-  --color-coral: var(--ot-coral);
-  --color-navy: var(--ot-navy);
-  --color-cream: var(--ot-cream);
-  --color-on-state: var(--ot-on-state);
-
   --font-display: var(--ot-font-display);
   --font-ui: var(--ot-font-ui);
   --font-mono: var(--ot-font-mono);
-
-  --radius-sm: var(--ot-radius-sm);
-  --radius-md: var(--ot-radius-md);
-  --radius-lg: var(--ot-radius-lg);
-  --radius-pill: var(--ot-radius-pill);
-
-  --ease-out-ot: var(--ot-ease-out);
-  --ease-bounce: var(--ot-ease-bounce);
 }
+
+/* No @theme colour mapping on purpose.
+   Components reference var(--ot-*) directly — the token name is the contract,
+   and it is the same string in CSS, in the design project and in a review
+   comment. A parallel Tailwind vocabulary (bg-coral alongside
+   bg-[var(--ot-coral)]) would be a second name for every colour, free to drift
+   from the first. Add utilities here only when something actually needs them. */
 
 * {
   box-sizing: border-box;

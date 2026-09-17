@@ -22,7 +22,7 @@ export default function Styleguide() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
       <header>
-        <h1 className="font-[var(--ot-font-display)] text-[28px] font-bold tracking-[-0.03em]">
+        <h1 className="font-display text-[28px] font-bold tracking-[-0.03em]">
           Components
         </h1>
         <p className="mt-1 text-[14px] text-[var(--ot-text-2)]">

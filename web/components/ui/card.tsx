@@ -27,7 +27,7 @@ export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingEle
   return (
     <h3
       className={cn(
-        'font-[var(--ot-font-display)] text-[17px] font-semibold tracking-[-0.02em] text-[var(--ot-text)]',
+        'font-display text-[17px] font-semibold tracking-[-0.02em] text-[var(--ot-text)]',
         className,
       )}
       {...props}

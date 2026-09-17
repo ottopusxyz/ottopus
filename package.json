@@ -2,11 +2,27 @@
   "name": "ottopus",
   "private": true,
   "packageManager": "pnpm@10.29.3",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "pnpm --parallel --filter ./web --filter ./service dev",
-    "build": "pnpm --filter ./web --filter ./service build",
-    "lint": "pnpm --filter ./web lint",
-    "test": "pnpm --recursive test"
+    "dev": "pnpm --parallel --filter web --filter @ottopus/service dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:service": "pnpm --filter @ottopus/service dev",
+    "build": "pnpm --filter web --filter @ottopus/service build",
+    "build:web": "pnpm --filter web build",
+    "build:service": "pnpm --filter @ottopus/service build",
+    "start:web": "pnpm --filter web start",
+    "start:service": "pnpm --filter @ottopus/service start",
+    "test": "pnpm --recursive test",
+    "test:web": "pnpm --filter web test",
+    "test:service": "pnpm --filter @ottopus/service test",
+    "typecheck": "pnpm --recursive typecheck",
+    "typecheck:web": "pnpm --filter web typecheck",
+    "typecheck:service": "pnpm --filter @ottopus/service typecheck",
+    "lint": "pnpm --filter web lint",
+    "db:generate": "pnpm --filter @ottopus/service db:generate",
+    "db:migrate": "pnpm --filter @ottopus/service db:migrate",
+    "clean": "rm -rf web/.next web/tsconfig.tsbuildinfo service/dist node_modules/.cache"
   }
 }

@@ -45,7 +45,7 @@ export function AddressChip({ address, full = false, copyable = true, className 
       className={cn(
         'inline-flex items-center gap-1.5 rounded-[var(--ot-radius-sm)]',
         'border border-[var(--ot-border)] bg-[var(--ot-card)] px-2.5 py-1',
-        'font-[var(--ot-font-mono)] text-[13px] text-[var(--ot-text)]',
+        'font-mono text-[13px] text-[var(--ot-text)]',
         full ? 'break-all' : 'whitespace-nowrap',
         className,
       )}
