@@ -16,7 +16,9 @@ import {
   TideBar,
 } from '@/components/motion'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { ProofMark } from '@/components/wallets'
 import { DialogDemo } from './dialog-demo'
+import { WalletsDemo } from './wallets-demo'
 import { LoaderDemo } from './loader-demo'
 import { cn } from '@/lib/cn'
 import {
@@ -56,6 +58,40 @@ const SURFACES = ['page', 'surface', 'card', 'surface-2', 'surface-3']
 const TEXT = ['text', 'text-2', 'text-3', 'text-4']
 const LINES = ['border', 'border-strong']
 const DEPTH = ['card', 'water-1', 'water-2', 'water-3']
+
+/** Fictional arms, so the wallet surfaces can be seen without signing in. */
+const SAMPLE_ARMS = [
+  {
+    id: 'a',
+    namespace: 'eip155',
+    address: '0x7a3f0000000000000000000000000000000d9c2e',
+    label: 'Main',
+    walletType: 'metamask',
+    isWatchOnly: false,
+    provedAt: '2026-09-04T10:00:00.000Z',
+    createdAt: '2026-09-04T10:00:00.000Z',
+  },
+  {
+    id: 'b',
+    namespace: 'eip155',
+    address: '0x91bd00000000000000000000000000000004af00',
+    label: null,
+    walletType: 'rabby',
+    isWatchOnly: false,
+    provedAt: '2026-09-05T10:00:00.000Z',
+    createdAt: '2026-09-05T10:00:00.000Z',
+  },
+  {
+    id: 'c',
+    namespace: 'eip155',
+    address: '0x4ee1000000000000000000000000000000b70c00',
+    label: 'Cold',
+    walletType: 'safe',
+    isWatchOnly: true,
+    provedAt: null,
+    createdAt: '2026-09-06T10:00:00.000Z',
+  },
+]
 
 /** Each state owns four tokens: a tint, a border, a text colour and a solid. */
 const STATES = [
@@ -402,6 +438,30 @@ export default function Styleguide() {
           <p className="text-[13px] text-[var(--ot-text-3)]">
             Truncated for recognition, full where a value is being checked. Dust renders as a
             bound, never as zero.
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Arms">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-5">
+            <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
+              <ProofMark isWatchOnly={false} /> Proved — can sign
+            </span>
+            <span className="inline-flex items-center gap-2 text-[14px] font-semibold">
+              <ProofMark isWatchOnly /> Watch-only — cannot sign
+            </span>
+          </div>
+          <p className="text-[13px] leading-[1.5] text-[var(--ot-text-3)]">
+            Whether an arm proved itself decides if a plan can be routed through it, so it sits
+            beside the name rather than as a chip the eye reaches second. The watch-only mark is an
+            eye, not a crossed-out tick — nothing failed, and a failure mark would read as a
+            warning.
+          </p>
+          <WalletsDemo arms={SAMPLE_ARMS} />
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            P2 cards above, P6 rows below. Same facts, different density — the portfolio card
+            leaves room for a balance, the settings row does not.
           </p>
         </div>
       </Section>

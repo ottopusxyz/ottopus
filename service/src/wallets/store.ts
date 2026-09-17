@@ -4,7 +4,7 @@ import type { PrivyWallet } from '../auth/privy.js'
 import { EVM_ADDRESS_RE } from '../core/caip.js'
 import type * as schema from '../db/schema.js'
 import { linkedWallets } from '../db/schema.js'
-import { MAX_ARMS, reconcile } from './reconcile.js'
+import { MAX_ARMS, reconcile, type WalletToLink } from './reconcile.js'
 
 export type WalletDb = PgDatabase<PgQueryResultHKT, typeof schema>
 
@@ -70,6 +70,54 @@ export async function listWallets(db: WalletDb, userId: string): Promise<Arm[]> 
   return (await activeRows(db, userId)).map(toArm)
 }
 
+
+/**
+ * Insert the arms a reconciliation decided to add.
+ *
+ * Extracted so the conflict behaviour can be exercised on its own — the read
+ * that precedes it in `syncWallets` normally makes a conflict unreachable,
+ * which is exactly why the clause below would otherwise never be tested until
+ * it fired in production.
+ */
+export async function linkArms(
+  db: WalletDb,
+  userId: string,
+  links: readonly WalletToLink[],
+): Promise<void> {
+  if (links.length === 0) return
+
+  await db
+    .insert(linkedWallets)
+    .values(
+      links.map((w) => ({
+        userId,
+        namespace: w.namespace,
+        address: w.address,
+        walletType: w.walletType,
+        provedAt: w.provedAt,
+        ownershipProof: w.ownershipProof,
+      })),
+    )
+    /**
+     * The read in `syncWallets` and this insert are one transaction but not one
+     * atomic decision: under READ COMMITTED, two tabs booting together both see
+     * no arms, both decide to link, and the second hits the partial unique
+     * index. That is the index doing its job — but as an unhandled constraint
+     * error it surfaces as a 500 on a sync that was about to be a no-op.
+     *
+     * Doing nothing is the correct outcome: the other transaction already wrote
+     * the row we wanted, for the same user and address.
+     */
+    .onConflictDoNothing({
+      target: [linkedWallets.userId, linkedWallets.namespace, linkedWallets.address],
+      // Names the *partial* index, which the target columns alone do not
+      // identify — Postgres needs the predicate to match the arbiter, and
+      // without it this raises "no unique or exclusion constraint matching
+      // the ON CONFLICT specification" on the first real conflict.
+      where: isNull(linkedWallets.unlinkedAt),
+    })
+}
+
 export interface SyncResult {
   wallets: Arm[]
   /** Addresses that did not fit under the cap, so the app can say which. */
@@ -105,18 +153,7 @@ export async function syncWallets(
         .where(and(eq(linkedWallets.id, id), eq(linkedWallets.userId, userId)))
     }
 
-    if (plan.link.length > 0) {
-      await tx.insert(linkedWallets).values(
-        plan.link.map((w) => ({
-          userId,
-          namespace: w.namespace,
-          address: w.address,
-          walletType: w.walletType,
-          provedAt: w.provedAt,
-          ownershipProof: w.ownershipProof,
-        })),
-      )
-    }
+    if (plan.link.length > 0) await linkArms(tx as WalletDb, userId, plan.link)
 
     const wallets = (await activeRows(tx as WalletDb, userId)).map(toArm)
     return { wallets, overflow: plan.overflow }

@@ -1,37 +1,68 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { SkeletonShelf } from '@/components/motion/loaders'
 import { Button, Callout, EmptyState } from '@/components/ui'
+import { LinkWalletDialog } from './link-wallet-dialog'
 import { MAX_ARMS } from './naming'
 import { useWallets } from './use-wallets'
-import { LinkWalletDialog } from './link-wallet-dialog'
 import { WalletList } from './wallet-list'
 
 /**
- * Linked wallets, end to end: the list, the dialog, and the failure modes
- * worth naming.
+ * Settings' wallet card, per P6.
  *
- * Used on Settings, and by the Portfolio empty state. Both need the same
- * behaviour, and a second copy of the sync effect would mean two components
- * racing to reconcile the same account.
+ * Portfolio drives the same pieces from its own `useWallets` rather than
+ * mounting this — one hook per page, or two components reconcile the same
+ * account against the same token.
  *
  * Split in two because Privy's hooks throw outside their provider, and the
- * provider does not mount without a valid app id. The rest of the app stays
- * up in that case on purpose — a typo in one environment variable should not
- * blank the settings page — so this has to check before it calls a hook, and a
- * hook cannot be called conditionally. Same shape as RequireSession.
+ * provider does not mount without a valid app id. The rest of the app stays up
+ * in that case on purpose — a typo in one environment variable should not blank
+ * the settings page — so this has to check before it calls a hook, and a hook
+ * cannot be called conditionally. Same shape as RequireSession.
  */
 export function WalletsPanel() {
   return usePrivyAvailable() ? (
     <ConnectedPanel />
   ) : (
-    <Callout severity="caution" title="Sign-in isn’t configured">
-      Wallets need Privy, and this deployment has no valid app id. Nothing is wrong with your
-      account.
-    </Callout>
+    <Card>
+      <div className="px-[22px] py-4">
+        <Callout severity="caution" title="Sign-in isn’t configured">
+          Wallets need Privy, and this deployment has no valid app id. Nothing is wrong with your
+          account.
+        </Callout>
+      </div>
+    </Card>
+  )
+}
+
+/** The P6 frame: one bordered card with a header that counts. */
+function Card({
+  children,
+  count,
+  action,
+}: {
+  children: ReactNode
+  count?: number | undefined
+  action?: ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-[18px] border border-[var(--ot-border)] bg-[var(--ot-card)]">
+      <div className="flex items-center justify-between gap-4 border-b border-[var(--ot-border)] px-[22px] py-4">
+        <h2 className="text-[15px] font-semibold">
+          Linked wallets{' '}
+          {count !== undefined ? (
+            <span className="font-normal text-[var(--ot-text-3)]">
+              {count} of {MAX_ARMS}
+            </span>
+          ) : null}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -39,59 +70,68 @@ function ConnectedPanel() {
   const { state, linkWallet, linking, linkError, addWatchOnly, unlink } = useWallets()
   const [open, setOpen] = useState(false)
 
-  if (state.status === 'loading') {
-    return <SkeletonShelf rows={2} />
-  }
-
-  if (state.status === 'failed') {
-    return (
-      <Callout
-        severity="caution"
-        title={
-          state.reason === 'no-identity-token'
-            ? 'Wallets can’t sync yet'
-            : 'Can’t reach Ottopus right now'
-        }
-      >
-        {state.reason === 'no-identity-token'
-          ? 'Identity tokens are switched off for this app, so Ottopus can’t confirm which wallets are yours. Enable them in the Privy dashboard under User management → Authentication → Advanced.'
-          : 'Your wallets are safe — this is our side. Try again in a moment.'}
-      </Callout>
-    )
-  }
-
-  const { wallets, overflow } = state
+  const wallets = state.status === 'ready' ? state.wallets : []
+  const full = wallets.length >= MAX_ARMS
 
   return (
-    <>
-      {overflow.length > 0 ? (
-        <Callout severity="caution" title={`${overflow.length} wallet${overflow.length > 1 ? 's' : ''} didn’t fit`}>
-          Otto has {MAX_ARMS} arms and they’re all in use, so the most recently linked wallets
-          aren’t here. Unlink one to make room.
-        </Callout>
+    <Card
+      count={state.status === 'ready' ? wallets.length : undefined}
+      action={
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setOpen(true)}
+          disabled={state.status !== 'ready' || full}
+        >
+          Link wallet
+        </Button>
+      }
+    >
+      {state.status === 'loading' ? (
+        <SkeletonShelf rows={2} />
+      ) : state.status === 'failed' ? (
+        <div className="px-[22px] py-4">
+          <Callout
+            severity="caution"
+            title={
+              state.reason === 'no-identity-token'
+                ? 'Wallets can’t sync yet'
+                : 'Can’t reach Ottopus right now'
+            }
+          >
+            {state.reason === 'no-identity-token'
+              ? 'Identity tokens are switched off for this app, so Ottopus can’t confirm which wallets are yours. Enable them in the Privy dashboard under User management → Authentication → Advanced.'
+              : 'Your wallets are safe — this is our side. Try again in a moment.'}
+          </Callout>
+        </div>
+      ) : wallets.length === 0 ? (
+        <div className="px-[22px] py-7">
+          <EmptyState
+            title="No wallets yet"
+            description="Link a wallet and I’ll start keeping an eye on it. Up to eight."
+            illustration={<Otto pose="base" size={96} animated />}
+            action={
+              <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
+                Link wallet
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <WalletList wallets={wallets} onUnlink={unlink} />
+      )}
+
+      {state.status === 'ready' && state.overflow.length > 0 ? (
+        <p className="border-t border-[var(--ot-border)] bg-[var(--ot-warn-bg)] px-[22px] py-3.5 text-[12.5px] leading-[1.5] text-[var(--ot-warn-text)]">
+          {state.overflow.length} wallet{state.overflow.length > 1 ? 's' : ''} didn’t fit — all
+          {' '}
+          {MAX_ARMS} arms are in use. Unlink one to make room.
+        </p>
       ) : null}
 
-      {wallets.length === 0 ? (
-        <EmptyState
-          title="No wallets yet"
-          description="Link a wallet and I’ll start keeping an eye on it. Up to eight."
-          illustration={<Otto pose="base" size={120} animated />}
-          action={
-            <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
-              Link wallet
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <WalletList wallets={wallets} onUnlink={unlink} />
-          <div className="px-5 py-4 sm:px-[26px]">
-            <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-              Link another
-            </Button>
-          </div>
-        </>
-      )}
+      <p className="border-t border-[var(--ot-border)] bg-[var(--ot-surface-2)] px-[22px] py-3.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
+        Unlinking never moves funds — it only stops Otto from planning with that wallet.
+      </p>
 
       <LinkWalletDialog
         open={open}
@@ -103,6 +143,6 @@ function ConnectedPanel() {
         used={wallets.length}
         max={MAX_ARMS}
       />
-    </>
+    </Card>
   )
 }

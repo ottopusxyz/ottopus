@@ -1,58 +1,27 @@
-import Link from 'next/link'
-import { Otto } from '@/components/brand'
-import { BubbleField } from '@/components/motion'
-import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
-import { buttonClasses, Chip, EmptyState } from '@/components/ui'
-import { LinkWalletButton } from '@/components/wallets'
+import { Suspense } from 'react'
+import { SkeletonShelf } from '@/components/motion/loaders'
+import { PortfolioView } from './portfolio-view'
 
 export const metadata = { title: 'Portfolio · Ottopus' }
 
 /**
  * The frame, with the numbers still to come from #8 and #9.
  *
- * The token section shows the empty state rather than skeletons: nothing is
- * loading, because nothing is linked. A skeleton here would promise data that
- * is never going to arrive.
+ * A shell around a client view: the arm list is behind a Privy session held in
+ * the browser, so there is nothing for a server render to read. This file
+ * exists to keep the metadata export, which a client component cannot have.
+ *
+ * The Suspense boundary is what the tab query parameter needs — reading the
+ * query string opts a route out of static prerendering, and the boundary keeps
+ * that contained rather than letting it take the whole route dynamic.
  *
  * This is one of the three places water is allowed, and the only one where the
  * gradient, the bubbles and an animated Otto appear together.
  */
 export default function Portfolio() {
   return (
-    <>
-      <PageHeader
-        title="Portfolio"
-        eyebrow="Total balance"
-        headline={<Figure whole="$0" fraction="00" />}
-        detail="No wallets linked yet."
-        action={
-          <Link href="/settings" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
-            Manage
-          </Link>
-        }
-      />
-      <TabBar
-        label="Portfolio views"
-        tabs={[
-          { value: 'tokens', label: 'Tokens' },
-          { value: 'wallets', label: 'Wallets' },
-          { value: 'approvals', label: 'Approvals', disabled: true },
-        ]}
-        aside={<Chip>All networks</Chip>}
-      />
-
-      <div className="ot-canvas relative flex flex-1 items-center justify-center overflow-hidden px-5 py-7">
-        <BubbleField pattern="calm" />
-        <EmptyState
-          className="relative"
-          title="No wallets yet"
-          description="Link a wallet and I’ll start keeping an eye on it. Up to eight."
-          illustration={<Otto pose="base" size={120} animated />}
-          action={<LinkWalletButton />}
-        />
-      </div>
-
-      <FirstIntentNudge />
-    </>
+    <Suspense fallback={<SkeletonShelf rows={3} />}>
+      <PortfolioView />
+    </Suspense>
   )
 }

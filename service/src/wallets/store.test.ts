@@ -6,7 +6,14 @@ import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
 import { userIdForDid } from '../auth/session.js'
 import { MAX_ARMS } from './reconcile.js'
-import { WalletError, addWatchOnlyWallet, listWallets, syncWallets, unlinkWallet } from './store.js'
+import {
+  WalletError,
+  addWatchOnlyWallet,
+  linkArms,
+  listWallets,
+  syncWallets,
+  unlinkWallet,
+} from './store.js'
 
 /**
  * Against real Postgres. The parts worth testing here are the ones the
@@ -190,5 +197,55 @@ describe('unlinking', () => {
     expect(await listWallets(db, userId)).toEqual([])
     const after = await syncWallets(db, userId, [attested(1)])
     expect(after.wallets).toHaveLength(1)
+  })
+})
+
+/**
+ * The insert on its own, which is the only way to reach its conflict clause —
+ * the read inside `syncWallets` normally makes a conflict unreachable, so this
+ * path would otherwise stay untested until it fired in production.
+ */
+describe('linking the same arm twice', () => {
+  const link = {
+    address: address(7),
+    namespace: 'eip155',
+    walletType: 'rabby_wallet',
+    provedAt: new Date(),
+    ownershipProof: { via: 'privy_identity_token' as const },
+  }
+
+  /**
+   * The failure this guards: the arbiter is a *partial* unique index, and an
+   * ON CONFLICT that names the columns without the predicate raises "no unique
+   * or exclusion constraint matching the ON CONFLICT specification" rather
+   * than doing nothing.
+   */
+  it('does nothing instead of raising', async () => {
+    await linkArms(db, userId, [link])
+    await expect(linkArms(db, userId, [link])).resolves.toBeUndefined()
+    expect(await listWallets(db, userId)).toHaveLength(1)
+  })
+
+  it('leaves the arm that is already there untouched', async () => {
+    await linkArms(db, userId, [link])
+    const [before] = await listWallets(db, userId)
+    await linkArms(db, userId, [{ ...link, walletType: 'metamask' }])
+    expect(await listWallets(db, userId)).toEqual([before])
+  })
+
+  /** A tombstone must not block re-linking — the index excludes unlinked rows. */
+  it('still links an address whose previous row is unlinked', async () => {
+    await linkArms(db, userId, [link])
+    const [arm] = await listWallets(db, userId)
+    await unlinkWallet(db, userId, arm!.id)
+    await linkArms(db, userId, [link])
+    expect(await listWallets(db, userId)).toHaveLength(1)
+  })
+
+  it('does not collide across users', async () => {
+    await linkArms(db, userId, [link])
+    await linkArms(db, otherId, [link])
+    expect(await listWallets(db, userId)).toHaveLength(1)
+    expect(await listWallets(db, otherId)).toHaveLength(1)
   })
 })

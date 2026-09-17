@@ -1,6 +1,15 @@
-export { useWallets, type UseWallets, type WalletsState } from './use-wallets'
-export { LinkWalletButton, type LinkWalletButtonProps } from './link-wallet-button'
+export { ArmCard, type ArmCardProps } from './arm-card'
 export { LinkWalletDialog, type LinkWalletDialogProps } from './link-wallet-dialog'
-export { ADDRESS_RE, LINK_ERRORS, MAX_ARMS, WALLET_NAMES, armName } from './naming'
+export {
+  ADDRESS_RE,
+  LINK_ERRORS,
+  MAX_ARMS,
+  WALLET_NAMES,
+  armName,
+  walletClientName,
+} from './naming'
+export { ProofMark, type ProofMarkProps } from './proof-mark'
+export { TokenTable } from './token-table'
+export { useWallets, type UseWallets, type WalletsState } from './use-wallets'
 export { WalletList, type WalletListProps } from './wallet-list'
 export { WalletsPanel } from './wallets-panel'

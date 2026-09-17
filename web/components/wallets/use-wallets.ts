@@ -140,6 +140,10 @@ export function useWallets(): UseWallets {
       // Privy first, and only then us. The reverse order leaves a window where
       // our row is gone but Privy still attests the wallet, and the next sync
       // would link it straight back — an unlink that silently undoes itself.
+      //
+      // Failing between the two is safe in this order: Privy no longer attests
+      // the wallet, so the next sync unlinks our row on its own. The reverse
+      // order has no such recovery.
       if (!arm.isWatchOnly) await unlinkAtPrivy({ address: arm.address })
       await unlinkOnServer(creds, arm.id)
       setNonce((n) => n + 1)
