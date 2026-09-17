@@ -1,3 +1,6 @@
+import { Lockup, Otto, OttoBadge, POSE_NAMES } from '@/components/brand'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { cn } from '@/lib/cn'
 import {
   AddressChip,
   Badge,
@@ -30,12 +33,49 @@ const TYPE = [
   { face: 'JetBrains Mono', role: 'Addresses, hashes, amounts', sample: '0xd8da…6045', cls: 'font-mono' },
 ]
 
-const STATE_MEANINGS = [
-  { tone: 'plan' as const, label: 'Blue', meaning: 'Planning' },
-  { tone: 'warn' as const, label: 'Amber', meaning: 'Caution' },
-  { tone: 'ok' as const, label: 'Green', meaning: 'Confirmed' },
-  { tone: 'block' as const, label: 'Red', meaning: 'Blocked' },
+const BRAND = ['coral', 'coral-hover', 'coral-soft', 'coral-text', 'cream', 'navy']
+const SURFACES = ['page', 'surface', 'card', 'surface-2', 'surface-3']
+const TEXT = ['text', 'text-2', 'text-3', 'text-4']
+const LINES = ['border', 'border-strong']
+const DEPTH = ['card', 'water-1', 'water-2', 'water-3']
+
+/** Each state owns four tokens: a tint, a border, a text colour and a solid. */
+const STATES = [
+  { name: 'plan', means: 'Planning' },
+  { name: 'warn', means: 'Caution' },
+  { name: 'ok', means: 'Confirmed' },
+  { name: 'block', means: 'Blocked' },
 ]
+
+function Swatch({ token, wide = false }: { token: string; wide?: boolean }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div
+        className={cn(
+          'h-11 rounded-[var(--ot-radius-sm)] border border-[var(--ot-border)]',
+          wide ? 'w-32' : 'w-20',
+        )}
+        style={{ background: `var(--ot-${token})` }}
+      />
+      <code className="font-mono text-[10px] text-[var(--ot-text-3)]">--ot-{token}</code>
+    </div>
+  )
+}
+
+function SwatchRow({ label, tokens }: { label: string; tokens: string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+        {label}
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {tokens.map((t) => (
+          <Swatch key={t} token={t} />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const RULES = [
   'Blue is planning, amber caution, green confirmed, red blocked. Everywhere. Always.',
@@ -62,12 +102,41 @@ export default function Styleguide() {
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Design system</h1>
-        <p className="mt-1 text-[15px] text-[var(--ot-text-2)]">
-          Tokens, primitives and the rules they encode. Follows your system theme.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Design system</h1>
+          <p className="mt-1 text-[15px] text-[var(--ot-text-2)]">
+            Tokens, primitives and the rules they encode.
+          </p>
+        </div>
+        <ThemeToggle />
       </header>
+
+      <Section title="Identity">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-center gap-8">
+            <Lockup layout="horizontal" size={44} />
+            <Lockup layout="stacked" size={56} />
+            <Lockup layout="wordmark" size={36} />
+          </div>
+          <div className="flex flex-wrap items-center gap-8 rounded-[var(--ot-radius-md)] bg-[var(--ot-navy)] p-5">
+            <Lockup layout="horizontal" size={44} tone="reversed" />
+            <Lockup layout="horizontal" size={44} tone="coral" />
+          </div>
+          <div className="flex items-end gap-5">
+            {[64, 32, 24, 16].map((s) => (
+              <div key={s} className="flex flex-col items-center gap-1">
+                <OttoBadge size={s} tier={s < 24 ? 'icon' : 'outlined'} />
+                <span className="text-[11px] text-[var(--ot-text-3)]">{s}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            The lockup is the badge beside real text, never a flattened image. Below 24px the
+            badge drops its ring and highlights — they turn to mud at that size.
+          </p>
+        </div>
+      </Section>
 
       <Section title="Three faces">
         <div className="flex flex-col gap-4">
@@ -83,14 +152,56 @@ export default function Styleguide() {
         </div>
       </Section>
 
-      <Section title="State colours mean one thing">
-        <div className="flex flex-col gap-2">
-          {STATE_MEANINGS.map((s) => (
-            <div key={s.tone} className="flex items-center gap-3">
-              <Badge tone={s.tone}>{s.label}</Badge>
-              <span className="text-[14px] text-[var(--ot-text-2)]">{s.meaning}</span>
+      <Section title="Colour">
+        <div className="flex flex-col gap-5">
+          <SwatchRow label="Brand" tokens={BRAND} />
+          <SwatchRow label="Surfaces" tokens={SURFACES} />
+          <SwatchRow label="Text" tokens={TEXT} />
+          <SwatchRow label="Lines" tokens={LINES} />
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              State
+            </span>
+            <div className="flex flex-col gap-3">
+              {STATES.map((st) => (
+                <div key={st.name} className="flex flex-wrap items-end gap-2">
+                  {[`${st.name}-bg`, `${st.name}-border`, `${st.name}-text`, st.name].map((t) => (
+                    <Swatch key={t} token={t} />
+                  ))}
+                  <span className="pb-4 text-[13px] text-[var(--ot-text-2)]">{st.means}</span>
+                </div>
+              ))}
             </div>
-          ))}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Badge tone="neutral">Neutral</Badge>
+              <Badge tone="plan">Simulated</Badge>
+              <Badge tone="ok">Tasted</Badge>
+              <Badge tone="warn">Heads up</Badge>
+              <Badge tone="block">Blocked</Badge>
+              <Badge tone="coral">Coral</Badge>
+            </div>
+            <p className="text-[13px] text-[var(--ot-text-3)]">
+              Blue is planning, amber caution, green confirmed, red blocked. Everywhere, always.
+              Badges pair a tint with darker text of the same hue; text on any solid fill goes
+              through --ot-on-state, because white fails AA on all four.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              Depth
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {DEPTH.map((t) => (
+                <Swatch key={t} token={t} wide />
+              ))}
+            </div>
+            <p className="text-[13px] text-[var(--ot-text-3)]">
+              Four steps, each about 2% darker. Depth carries hierarchy where a border would add
+              noise — the review layers, nested detail, the technical drawer.
+            </p>
+          </div>
         </div>
       </Section>
 
@@ -103,18 +214,103 @@ export default function Styleguide() {
       </Section>
 
       <Section title="Buttons">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="primary">Link a wallet</Button>
-          <Button variant="secondary">See an example</Button>
-          <Button variant="ghost">Cancel</Button>
-          <Button variant="link">Text action</Button>
-          <Button variant="destructive">Revoke access</Button>
-          <Button variant="primary" size="sm">
-            Small
-          </Button>
-          <Button variant="primary" disabled>
-            Disabled
-          </Button>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="primary">Approve and sign</Button>
+            <Button variant="secondary">Ask Otto to re-plan</Button>
+            <Button variant="ghost">Cancel</Button>
+            <Button variant="link">Text action</Button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              Destructive
+            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="destructive">Revoke grant</Button>
+              <Button variant="destructive">Unlink this wallet</Button>
+              <Button variant="danger-outline">Reject</Button>
+            </div>
+            <p className="text-[13px] text-[var(--ot-text-3)]">
+              Solid is for the committed act, where destruction is the point of the button.
+              Outline is for rejecting beside an approve — red on red would compete with the
+              primary action for the eye.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              Sizes
+            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="primary" size="sm">
+                Small
+              </Button>
+              <Button variant="primary" size="md">
+                Medium
+              </Button>
+              <Button variant="primary" size="lg">
+                Large
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              Disabled
+            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="primary" disabled>
+                Approve and sign
+              </Button>
+              <Button variant="secondary" disabled>
+                Re-plan
+              </Button>
+              <Button variant="destructive" disabled>
+                Revoke
+              </Button>
+            </div>
+            <p className="text-[13px] text-[var(--ot-text-3)]">
+              Disabled goes neutral rather than faded. A washed coral still reads as the primary
+              action; a plain surface reads as unavailable.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 rounded-[var(--ot-radius-md)] bg-[var(--ot-navy)] p-4">
+            <Button variant="primary">Review and sign</Button>
+            <Button variant="secondary">Re-plan</Button>
+            <span className="text-[12px] text-[var(--ot-cream)] opacity-70">
+              on navy, unchanged
+            </span>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Otto">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-4">
+            {POSE_NAMES.map((p) => (
+              <div key={p} className="flex flex-col items-center gap-1">
+                <Otto pose={p} size={84} />
+                <span className="text-[11px] text-[var(--ot-text-3)]">{p}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-end gap-6">
+            <div className="flex flex-col items-center gap-1">
+              <Otto pose="base" size={84} animated label="Otto, drifting" />
+              <span className="text-[11px] text-[var(--ot-text-3)]">animated</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <Otto pose="base" size={200} flat />
+              <span className="text-[11px] text-[var(--ot-text-3)]">solid · 200px and up only</span>
+            </div>
+          </div>
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            The body colour is a token, so Otto moves with the palette in dark mode. Arms sway out
+            of phase and stop under reduced motion — and under data-stillness. The solid treatment
+            is for 200px and up: never an avatar, a favicon or a lockup.
+          </p>
         </div>
       </Section>
 
@@ -123,6 +319,7 @@ export default function Styleguide() {
           <Callout
             severity="caution"
             title="This arm wants unlimited token access."
+            icon={<Otto pose="heads-up" size={44} />}
             actions={
               <>
                 <Button variant="primary" size="sm">
@@ -137,7 +334,11 @@ export default function Styleguide() {
             The approval is for <CalloutValue>2²⁵⁶−1 USDC</CalloutValue>. You are spending 1,250.
             Otto can cap it to exactly that.
           </Callout>
-          <Callout severity="block" title="Ink. This contract was deployed 40 minutes ago.">
+          <Callout
+            severity="block"
+            icon={<Otto pose="ink" size={44} />}
+            title="Ink. This contract was deployed 40 minutes ago."
+          >
             Nothing was signed.
           </Callout>
           <Callout severity="info" title="Simulated on a fork 8 seconds ago." />
@@ -166,6 +367,7 @@ export default function Styleguide() {
 
       <Section title="Empty states">
         <EmptyState
+          illustration={<Otto pose="base" size={150} animated />}
           title="No plans yet"
           description="Tell your agent what you want done. Otto will work out which arm should do it."
           action={<Button variant="primary">Link a wallet</Button>}
@@ -233,7 +435,7 @@ export default function Styleguide() {
       </Section>
 
       <p className="text-[13px] text-[var(--ot-text-3)]">
-        Otto, the lockups and the badge tiers land with #48.
+        Lockups, wordmarks and the badge tiers are still to come.
       </p>
     </main>
   )

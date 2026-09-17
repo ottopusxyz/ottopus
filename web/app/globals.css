@@ -20,6 +20,15 @@
   }
 }
 
+/* Otto's underside shade. Not in the generated tokens — the mascot needs a
+   colour a step darker than the body, and it has to move with the body in dark
+   mode or the shading inverts. */
+:root { --ot-coral-shade: #E06A47; }
+[data-theme="dark"] { --ot-coral-shade: #E0714F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ot-coral-shade: #E0714F; }
+}
+
 /* next/font supplies the actual families; the token names stay the contract. */
 :root {
   --ot-font-display: var(--font-quicksand), ui-rounded, system-ui, sans-serif;
@@ -62,4 +71,18 @@ body {
   outline: 2px solid var(--ot-plan);
   outline-offset: 2px;
   border-radius: var(--ot-radius-sm);
+}
+
+/* Visually hidden but still focusable and announced — the theme control's real
+   radio inputs sit behind their labels. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

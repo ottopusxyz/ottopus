@@ -123,3 +123,30 @@
   .ot-bubble--md { opacity: .6; }
   .ot-bubble--sm { opacity: .85; }
 }
+
+/* --- Otto's own motion. Arms sway out of phase; eyes blink and glance.
+   Reads as breathing, not as progress — he is never a loading bar. --- */
+.otto-arm {
+  transform-box: view-box;
+  transform-origin: 100px 130px;
+  animation: otto-sway 3.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50%      { transform: rotate(3deg); }
+}
+
+.otto-look {
+  animation: otto-look 6.5s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-look {
+  0%, 30%   { transform: translate(0, 0); }
+  40%, 60%  { transform: translate(3px, -1px); }
+  70%, 100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otto-arm, .otto-look { animation: none !important; }
+}

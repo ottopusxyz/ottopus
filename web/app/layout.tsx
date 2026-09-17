@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Figtree, JetBrains_Mono, Quicksand } from 'next/font/google'
+import { themeScript } from '@/components/theme-toggle'
 import './globals.css'
 
 const quicksand = Quicksand({
@@ -35,7 +36,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       className={`${quicksand.variable} ${figtree.variable} ${jetbrainsMono.variable}`}
+      // The inline script below sets data-theme before React hydrates, so the
+      // client <html> deliberately differs from the server's. That is the point
+      // — the alternative is a flash of the wrong theme. Suppression applies to
+      // this element's attributes only, one level deep, so a real mismatch
+      // anywhere inside still reports.
+      suppressHydrationWarning
     >
+      <head>
+        {/* Before first paint: a stored dark choice must not flash light. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>{children}</body>
     </html>
   )
