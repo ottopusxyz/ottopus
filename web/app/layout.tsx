@@ -27,10 +27,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${quicksand.variable} ${figtree.variable} ${jetbrainsMono.variable}`}>
-        {children}
-      </body>
+    // The font variables go on <html>, not <body>. tokens.css declares
+    // --ot-font-* on :root as var(--font-quicksand), and a var() with no
+    // fallback that references an undefined variable makes the whole property
+    // invalid at computed-value time — which then inherits. On <body> the
+    // fonts silently fell through to the browser default stack.
+    <html
+      lang="en"
+      className={`${quicksand.variable} ${figtree.variable} ${jetbrainsMono.variable}`}
+    >
+      <body>{children}</body>
     </html>
   )
 }

@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'destructive'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'link'
 type Size = 'sm' | 'md'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -23,11 +23,20 @@ const VARIANTS: Record<Variant, string> = {
     'border border-transparent bg-transparent text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
   destructive:
     'border border-[var(--ot-block-surface)] bg-[var(--ot-block-surface)] text-[var(--ot-on-state)] hover:brightness-95',
+  // "Text action" in the design system: underlined, hairline-coloured rule, no
+  // pill. Distinct from ghost, which is a quiet button rather than a link.
+  link: 'border-none bg-transparent text-[var(--ot-text)] underline underline-offset-[3px] decoration-[var(--ot-border-strong)] hover:decoration-[var(--ot-text)]',
 }
 
 const SIZES: Record<Size, string> = {
   sm: 'px-3 py-[7px] text-[13px]',
   md: 'px-6 py-[13px] text-[15px]',
+}
+
+/** The link variant sits tight to its text rather than carrying pill padding. */
+const LINK_SIZES: Record<Size, string> = {
+  sm: 'px-1 py-[7px] text-[13px]',
+  md: 'px-1 py-[7px] text-[14px]',
 }
 
 export function Button({
@@ -45,8 +54,9 @@ export function Button({
         'font-ui font-medium leading-none cursor-pointer',
         'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
+        variant === 'link' ? 'rounded-none' : '',
         VARIANTS[variant],
-        SIZES[size],
+        variant === 'link' ? LINK_SIZES[size] : SIZES[size],
         className,
       )}
       {...props}
