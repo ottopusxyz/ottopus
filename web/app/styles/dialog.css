@@ -1,0 +1,120 @@
+/* Ottopus — the dialog shell.
+
+   One shape on desktop, another below 640px, and the design is explicit that
+   the second is not a smaller version of the first: "Every dialog takes this
+   shape below 640px: full-width sheet, grab handle, primary action last and
+   thumb-reachable."
+
+   Transitions live here rather than in Tailwind because they need
+   @starting-style and transition-behavior: allow-discrete. A <dialog> is
+   display:none until it opens, and without those two an entry animates from
+   nothing and an exit does not animate at all — the dialog would simply
+   vanish, which reads as a crash rather than a dismissal. */
+
+.ot-dialog {
+  margin: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: none;
+  max-height: none;
+  color: var(--ot-text);
+  opacity: 0;
+  transition:
+    opacity var(--ot-dur-base) var(--ot-ease-out),
+    transform var(--ot-dur-base) var(--ot-ease-out),
+    display var(--ot-dur-base) allow-discrete,
+    overlay var(--ot-dur-base) allow-discrete;
+}
+
+.ot-dialog[open] {
+  opacity: 1;
+}
+
+.ot-dialog::backdrop {
+  background: rgba(22, 33, 62, 0);
+  backdrop-filter: blur(0px);
+  transition:
+    background var(--ot-dur-base) var(--ot-ease-out),
+    backdrop-filter var(--ot-dur-base) var(--ot-ease-out),
+    display var(--ot-dur-base) allow-discrete,
+    overlay var(--ot-dur-base) allow-discrete;
+}
+
+.ot-dialog[open]::backdrop {
+  background: rgba(22, 33, 62, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+@starting-style {
+  .ot-dialog[open] {
+    opacity: 0;
+  }
+  .ot-dialog[open]::backdrop {
+    background: rgba(22, 33, 62, 0);
+    backdrop-filter: blur(0px);
+  }
+}
+
+/* --- Bottom sheet, below 640px. The design's breakpoint, not a guess. --- */
+@media (max-width: 639.98px) {
+  .ot-dialog {
+    /* Pinned to the bottom: a sheet rises from the edge nearest the thumb. */
+    margin: auto auto 0;
+    width: 100%;
+    max-width: 100%;
+    transform: translateY(100%);
+  }
+
+  .ot-dialog[open] {
+    /* --ot-sheet-drag is set while a finger is on the handle. */
+    transform: translateY(var(--ot-sheet-drag, 0px));
+  }
+
+  @starting-style {
+    .ot-dialog[open] {
+      transform: translateY(100%);
+    }
+  }
+
+  /* While dragging, the sheet must track the finger rather than ease toward
+     it — an eased drag feels like lag. The snap back is eased again. */
+  .ot-dialog[data-dragging='true'] {
+    transition: none;
+  }
+
+  .ot-dialog-panel {
+    border-radius: 18px 18px 0 0;
+    /* Clear of the home indicator on a phone. */
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+}
+
+/* --- Overlay, 640px and up. A pop rather than a slide. --- */
+@media (min-width: 640px) {
+  .ot-dialog {
+    transform: scale(0.96) translateY(6px);
+  }
+
+  .ot-dialog[open] {
+    transform: scale(1) translateY(0);
+  }
+
+  @starting-style {
+    .ot-dialog[open] {
+      transform: scale(0.96) translateY(6px);
+    }
+  }
+}
+
+/* Motion here is a one-shot, and the design's ceiling for one is 900ms — but
+   a dialog that animates at all is a dialog that arrives late. Under reduced
+   motion it is simply there, which is also the safest thing for a surface that
+   sometimes asks whether to destroy something. */
+@media (prefers-reduced-motion: reduce) {
+  .ot-dialog,
+  .ot-dialog::backdrop {
+    transition: none !important;
+    transform: none !important;
+  }
+}

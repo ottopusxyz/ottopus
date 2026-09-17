@@ -2,6 +2,7 @@
 @import "./styles/tokens.css";
 @import "./styles/water.css";
 @import "./styles/motion.css";
+@import "./styles/dialog.css";
 
 /* Divergences from the design project live here, never in the ported files, so
    re-syncing tokens.css cannot silently drop them.

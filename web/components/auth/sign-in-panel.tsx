@@ -2,7 +2,7 @@
 
 import { useLoginWithEmail, useLoginWithOAuth, usePrivy } from '@privy-io/react-auth'
 import { useState, type ReactNode, type FormEvent } from 'react'
-import { OttoBadge } from '@/components/brand'
+import { Gaze, OttoBadge } from '@/components/brand'
 import { Button, Callout, Input } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { usePrivyAvailable } from './privy-provider'
@@ -82,7 +82,11 @@ function Header({
 }: SignInPanelProps & { subtitle?: string }) {
   return (
     <div className="flex flex-col items-center gap-[5px] text-center">
-      {mascot ?? <OttoBadge tier="icon" size={44} />}
+      {mascot ?? (
+        <Gaze>
+          <OttoBadge tier="icon" size={44} />
+        </Gaze>
+      )}
       <Heading id={headingId} className="font-display text-[19px] font-bold">
         {title}
       </Heading>

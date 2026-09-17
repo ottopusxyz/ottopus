@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef } from 'react'
+import { Dialog } from '@/components/ui'
 import { SignInPanel } from './sign-in-panel'
 
 export interface SignInDialogProps {
@@ -9,53 +9,17 @@ export interface SignInDialogProps {
 }
 
 /**
- * The sign-in dialog.
+ * Sign-in, in the shared shell.
  *
- * A native `<dialog>` opened with `showModal()`, which is where the focus trap,
- * Escape, the inert background and the backdrop come from — the browser's, not
- * ours. #33 replaces this with the shared shell that all nine dialogs use, and
- * it should be a small change: everything specific to signing in lives in
- * SignInPanel, and this file is the shell it sits in.
- *
- * Body scroll is the one thing `showModal()` does not handle.
+ * The panel draws its own centred header — badge, title, one line — so the
+ * shell's title is hidden and only names the dialog for assistive technology.
+ * Everything else about how a dialog behaves is the shell's, and this file is
+ * now only the wiring between the two.
  */
 export function SignInDialog({ open, onClose }: SignInDialogProps) {
-  const ref = useRef<HTMLDialogElement>(null)
-  const headingId = useId()
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (open && !el.open) el.showModal()
-    if (!open && el.open) el.close()
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previous
-    }
-  }, [open])
-
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby={headingId}
-      onClose={onClose}
-      // Clicking the backdrop lands on the dialog itself, never on its contents.
-      onClick={(e) => {
-        if (e.target === ref.current) onClose()
-      }}
-      className={
-        'w-[min(420px,calc(100vw-2rem))] rounded-[var(--ot-radius-lg)] border ' +
-        'border-[var(--ot-border)] bg-[var(--ot-card)] p-6 text-[var(--ot-text)] ' +
-        'shadow-[var(--ot-shadow-card)] backdrop:bg-[rgba(22,33,62,0.45)] ' +
-        'backdrop:backdrop-blur-[2px]'
-      }
-    >
-      <SignInPanel headingId={headingId} headingAs="h2" />
-    </dialog>
+    <Dialog open={open} onClose={onClose} title="Sign in to Ottopus" hideTitle>
+      <SignInPanel headingAs="h2" />
+    </Dialog>
   )
 }

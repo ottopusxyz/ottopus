@@ -27,6 +27,10 @@ export interface OttoBadgeProps {
  *
  * This is what a lockup, an avatar and a favicon use. Never the full mascot:
  * eight arms at 32px is a smudge.
+ *
+ * The pupils are grouped and marked data-part="pupils" so Gaze can move them
+ * without knowing anything else about the badge — the same marker the full
+ * mascot uses, which is what lets one wrapper drive either.
  */
 export function OttoBadge({
   tier = 'outlined',
@@ -68,8 +72,10 @@ export function OttoBadge({
           <circle cx="50" cy="50" r="43" fill="none" stroke={monoColor} strokeWidth={6} />
           <circle cx="35" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
           <circle cx="65" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
-          <circle cx="37" cy="43" r="4" fill={monoColor} />
-          <circle cx="67" cy="43" r="4" fill={monoColor} />
+          <g data-part="pupils">
+            <circle cx="37" cy="43" r="4" fill={monoColor} />
+            <circle cx="67" cy="43" r="4" fill={monoColor} />
+          </g>
         </g>
       ) : tier === 'icon' ? (
         <g>
@@ -87,8 +93,10 @@ export function OttoBadge({
           </g>
           <circle cx="34" cy="41" r="11" fill="#fff" />
           <circle cx="66" cy="41" r="11" fill="#fff" />
-          <circle cx="36" cy="42" r="6" fill={INK} />
-          <circle cx="68" cy="42" r="6" fill={INK} />
+          <g data-part="pupils">
+            <circle cx="36" cy="42" r="6" fill={INK} />
+            <circle cx="68" cy="42" r="6" fill={INK} />
+          </g>
         </g>
       ) : (
         <g>
@@ -112,10 +120,12 @@ export function OttoBadge({
           <circle cx="50" cy="50" r="43" fill="none" stroke={INK} strokeWidth={6} />
           <circle cx="35" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
           <circle cx="65" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
-          <circle cx="37" cy="43" r="6" fill={INK} />
-          <circle cx="67" cy="43" r="6" fill={INK} />
-          <circle cx="34" cy="39" r="2.2" fill="#fff" />
-          <circle cx="64" cy="39" r="2.2" fill="#fff" />
+          <g data-part="pupils">
+            <circle cx="37" cy="43" r="6" fill={INK} />
+            <circle cx="67" cy="43" r="6" fill={INK} />
+            <circle cx="34" cy="39" r="2.2" fill="#fff" />
+            <circle cx="64" cy="39" r="2.2" fill="#fff" />
+          </g>
         </g>
       )}
     </svg>
