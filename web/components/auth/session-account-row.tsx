@@ -5,6 +5,7 @@ import { AccountRow } from '@/components/shell/account-row'
 import { Button } from '@/components/ui'
 import { truncateAddress } from '@/lib/format'
 import { usePrivyAvailable } from './privy-provider'
+import { useSession } from './session-provider'
 
 /**
  * How a person is named in the sidebar, in the order they would recognise
@@ -31,12 +32,21 @@ export function SessionAccountRow() {
 
 function LiveAccountRow() {
   const { ready, authenticated, user, logout } = usePrivy()
+  const session = useSession()
 
   if (!ready || !authenticated) return <AccountRow />
 
+  // Prefer what the service stored: it is the attested name, and it is the one
+  // every other surface will show. Privy's client object is the fallback for
+  // the moment before the session is established.
+  const identity =
+    session.status === 'ready'
+      ? (session.user.name ?? session.user.email ?? identityOf(user))
+      : identityOf(user)
+
   return (
     <div className="flex flex-col gap-2">
-      <AccountRow identity={identityOf(user)} />
+      <AccountRow identity={identity} />
       <Button variant="ghost" size="sm" onClick={() => logout()} className="justify-start">
         Sign out
       </Button>

@@ -54,6 +54,16 @@ export interface PrivyClaims {
   expiresAt: number
 }
 
+/**
+ * What an identity token is allowed to tell us: who you are called, not what
+ * you own.
+ */
+export interface PrivyIdentity {
+  did: string
+  email?: string
+  name?: string
+}
+
 export interface PrivyVerifierConfig {
   appId: string
   /** SPKI PEM or a JWK, as the dashboard gives it. */
@@ -68,15 +78,61 @@ const ALGORITHM = 'ES256'
 
 export type PrivyVerifier = (token: string) => Promise<PrivyClaims>
 
+export interface PrivyAuth {
+  /** The credential. Proves who is calling, and nothing else. */
+  verifyAccess: PrivyVerifier
+  /**
+   * The profile. Signed by the same key, so the name and email in it are
+   * attested by Privy rather than typed by the caller.
+   *
+   * Wallet addresses in `linked_accounts` are deliberately ignored. A wallet
+   * reaches this system one way — through the server-issued ownership challenge
+   * in #7 — and a claim in a token is not that.
+   */
+  readIdentity: (token: string) => Promise<PrivyIdentity>
+}
+
+interface LinkedAccount {
+  type?: string
+  address?: string
+  email?: string
+  name?: string
+  first_name?: string
+  last_name?: string
+  username?: string
+}
+
+/**
+ * A person's name, however the provider chose to spell it. Privy calls the
+ * claim "a lightweight version of linkedAccounts" without pinning the shape, so
+ * this reads the plausible spellings rather than betting on one.
+ */
+function nameOf(account: LinkedAccount): string | undefined {
+  if (account.name) return account.name
+  const full = [account.first_name, account.last_name].filter(Boolean).join(' ').trim()
+  return full || account.username || undefined
+}
+
+/** Privy has encoded this as a JSON string and as an array, depending on age. */
+function linkedAccounts(raw: unknown): LinkedAccount[] {
+  if (Array.isArray(raw)) return raw as LinkedAccount[]
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as LinkedAccount[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 /**
  * The key is parsed once and reused. Import is the expensive part, and it
  * cannot fail differently per request — if the key is malformed, every call
  * should say the same thing.
  */
-export function createPrivyVerifier({
-  appId,
-  verificationKey,
-}: PrivyVerifierConfig): PrivyVerifier {
+export function createPrivyAuth({ appId, verificationKey }: PrivyVerifierConfig): PrivyAuth {
   // jose's own key type — a CryptoKey here, but importJWK widens it. Named
   // from the library rather than from the DOM lib, which this package does not
   // pull in.
@@ -97,15 +153,14 @@ export function createPrivyVerifier({
   let keyPromise: Promise<Key> | undefined
   const key = () => (keyPromise ??= load())
 
-  return async function verify(token: string): Promise<PrivyClaims> {
-    let payload: jose.JWTPayload
+  const claims = async (token: string): Promise<jose.JWTPayload> => {
     try {
       const result = await jose.jwtVerify(token, await key(), {
         algorithms: [ALGORITHM],
         issuer: 'privy.io',
         audience: appId,
       })
-      payload = result.payload
+      return result.payload
     } catch (err) {
       // One message for every failure. jose's error name says which check
       // failed — expired, bad signature, wrong audience — and putting that in
@@ -114,16 +169,40 @@ export function createPrivyVerifier({
       // knowing the difference is actually useful.
       throw new PrivyAuthError('Token rejected', { cause: err })
     }
+  }
 
+  const didOf = (payload: jose.JWTPayload): string => {
     const did = payload.sub
     if (typeof did !== 'string' || !did.startsWith('did:privy:')) {
       throw new PrivyAuthError('Token rejected', { cause: 'subject is not a Privy DID' })
     }
-    if (typeof payload.exp !== 'number') {
-      throw new PrivyAuthError('Token rejected', { cause: 'no expiry' })
-    }
+    return did
+  }
 
-    return { did, expiresAt: payload.exp }
+  return {
+    async verifyAccess(token: string): Promise<PrivyClaims> {
+      const payload = await claims(token)
+      const did = didOf(payload)
+      if (typeof payload.exp !== 'number') {
+        throw new PrivyAuthError('Token rejected', { cause: 'no expiry' })
+      }
+      return { did, expiresAt: payload.exp }
+    },
+
+    async readIdentity(token: string): Promise<PrivyIdentity> {
+      const payload = await claims(token)
+      const did = didOf(payload)
+      const accounts = linkedAccounts(payload.linked_accounts)
+
+      // Only the accounts that carry a person's name or address for mail. A
+      // wallet entry is skipped even though it is sitting right there.
+      const people = accounts.filter((a) => a.type !== 'wallet')
+      const named = people.map(nameOf).find(Boolean)
+      const mailed = people.find((a) => a.email)?.email
+      const emailAccount = accounts.find((a) => a.type === 'email' && a.address)?.address
+
+      return { did, name: named, email: mailed ?? emailAccount }
+    },
   }
 }
 

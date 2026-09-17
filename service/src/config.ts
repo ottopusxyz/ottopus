@@ -48,6 +48,13 @@ export interface Config {
    */
   privyAppId: string | undefined
   privyVerificationKey: string | undefined
+  /**
+   * Browser origins allowed to call /api. The web app is always cross-origin —
+   * ottopus.xyz calling api.ottopus.xyz in production, :3000 calling :8787
+   * locally — so this is not optional, and an allow-list rather than `*`
+   * because a bearer token is worth having a list for.
+   */
+  webOrigins: string[]
 }
 
 class ConfigError extends Error {}
@@ -69,6 +76,26 @@ function readInt(name: string, fallback: number): number {
     throw new ConfigError(`${name} must be a positive integer — got "${raw}"`)
   }
   return n
+}
+
+/**
+ * Where the web app runs. Deployments override this; the defaults cover local
+ * development and the production site so a correct deploy needs no extra env.
+ */
+const DEFAULT_WEB_ORIGINS = [
+  'http://localhost:3000',
+  'https://ottopus.xyz',
+  'https://www.ottopus.xyz',
+]
+
+/** Comma-separated origins. Trailing slashes are stripped — an Origin header never has one. */
+function readList(name: string, fallback: string[]): string[] {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return fallback
+  return raw
+    .split(',')
+    .map((value) => value.trim().replace(/\/$/, ''))
+    .filter(Boolean)
 }
 
 /** Empty and unset mean the same thing: not configured. */
@@ -97,6 +124,7 @@ export function loadConfig(): Config {
     databaseUrl: readOptional('DATABASE_URL'),
     privyAppId: readOptional('PRIVY_APP_ID'),
     privyVerificationKey: readOptional('PRIVY_JWT_VERIFICATION_KEY'),
+    webOrigins: readList('WEB_ORIGINS', DEFAULT_WEB_ORIGINS),
   }
 }
 

@@ -10,6 +10,19 @@ import { users } from '../db/schema.js'
  */
 export type UserDb = PgDatabase<PgQueryResultHKT, typeof schema>
 
+/** What Privy told us about the person, if the sign-in method carried it. */
+export interface UserProfile {
+  email?: string | undefined
+  name?: string | undefined
+}
+
+export interface SessionUser {
+  id: string
+  privyDid: string
+  email: string | null
+  name: string | null
+}
+
 /**
  * Turns a verified Privy DID into an Ottopus user id.
  *
@@ -22,27 +35,45 @@ export type UserDb = PgDatabase<PgQueryResultHKT, typeof schema>
  * The update is a no-op write on `privy_did`, which is what makes the statement
  * return the existing row rather than nothing on conflict.
  */
-export async function userIdForDid(db: UserDb, did: string): Promise<string> {
+export async function upsertUser(
+  db: UserDb,
+  did: string,
+  profile: UserProfile = {},
+): Promise<SessionUser> {
+  const columns = {
+    id: users.id,
+    privyDid: users.privyDid,
+    email: users.email,
+    name: users.name,
+  }
+
   const [row] = await db
     .insert(users)
-    .values({ privyDid: did })
+    .values({ privyDid: did, email: profile.email ?? null, name: profile.name ?? null })
     .onConflictDoUpdate({
       target: users.privyDid,
-      set: { privyDid: sql`excluded.privy_did` },
+      set: {
+        privyDid: sql`excluded.privy_did`,
+        // coalesce, not overwrite: signing back in with a wallet carries no
+        // name, and that must not erase the one Google gave us last time.
+        email: sql`coalesce(excluded.email, ${users.email})`,
+        name: sql`coalesce(excluded.name, ${users.name})`,
+      },
     })
-    .returning({ id: users.id })
+    .returning(columns)
 
-  if (row) return row.id
+  if (row) return row
 
   // Belt and braces: RETURNING has given us a row on every path above, but a
   // silent empty result would otherwise become "undefined" flowing into a
   // user id, which is the kind of thing that ends up in a plan.
-  const [existing] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.privyDid, did))
-    .limit(1)
+  const [existing] = await db.select(columns).from(users).where(eq(users.privyDid, did)).limit(1)
 
   if (!existing) throw new Error(`Could not resolve a user for ${did}`)
-  return existing.id
+  return existing
+}
+
+/** The id alone, for callers that only need the foreign key. */
+export async function userIdForDid(db: UserDb, did: string): Promise<string> {
+  return (await upsertUser(db, did)).id
 }

@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '../db/schema.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
-import { userIdForDid } from './session.js'
+import { upsertUser, userIdForDid } from './session.js'
 
 /**
  * Against real Postgres, because the thing being tested is a Postgres
@@ -58,6 +58,39 @@ describe('a Privy DID resolves to one user', () => {
     )
     expect(new Set(ids).size).toBe(1)
     expect(await count(did)).toBe(1)
+  })
+
+  it('stores the name and email a social login carries', async () => {
+    const did = 'did:privy:ada'
+    const user = await upsertUser(db, did, { name: 'Ada Lovelace', email: 'ada@example.com' })
+    expect(user).toMatchObject({ privyDid: did, name: 'Ada Lovelace', email: 'ada@example.com' })
+  })
+
+  it('leaves the name null for a wallet, which has none to give', async () => {
+    const user = await upsertUser(db, 'did:privy:wallet-only')
+    expect(user.name).toBeNull()
+    expect(user.email).toBeNull()
+  })
+
+  /**
+   * The reason the upsert coalesces instead of overwriting: signing back in
+   * with a wallet carries no name, and must not erase the one Google gave.
+   */
+  it('does not erase a known name when a later sign-in carries none', async () => {
+    const did = 'did:privy:grace'
+    await upsertUser(db, did, { name: 'Grace Hopper', email: 'grace@example.com' })
+    const again = await upsertUser(db, did)
+    expect(again.name).toBe('Grace Hopper')
+    expect(again.email).toBe('grace@example.com')
+  })
+
+  it('fills a name in later when one finally arrives', async () => {
+    const did = 'did:privy:later'
+    const first = await upsertUser(db, did)
+    expect(first.name).toBeNull()
+    const second = await upsertUser(db, did, { name: 'Katherine Johnson' })
+    expect(second.name).toBe('Katherine Johnson')
+    expect(second.id).toBe(first.id)
   })
 
   it('keeps separate people separate', async () => {

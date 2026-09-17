@@ -1,6 +1,6 @@
 import * as jose from 'jose'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { PrivyAuthError, bearerToken, createPrivyVerifier } from './privy.js'
+import { PrivyAuthError, bearerToken, createPrivyAuth } from './privy.js'
 
 /**
  * Real ES256 keys, generated per run. Verification is the boundary between
@@ -40,7 +40,8 @@ async function token(overrides: TokenOverrides = {}): Promise<string> {
     .sign(signWith.privateKey)
 }
 
-const verifier = () => createPrivyVerifier({ appId: APP_ID, verificationKey: spki })
+const auth = () => createPrivyAuth({ appId: APP_ID, verificationKey: spki })
+const verifier = () => auth().verifyAccess
 
 describe('access token verification', () => {
   it('accepts a well-formed token and returns the DID', async () => {
@@ -112,6 +113,76 @@ describe('access token verification', () => {
     for (const reason of reasons) {
       expect(reason).not.toMatch(/expired|signature|audience/i)
     }
+  })
+})
+
+describe('identity tokens carry a name, never a wallet', () => {
+  const identity = async (accounts: unknown) =>
+    new jose.SignJWT({ linked_accounts: accounts })
+      .setProtectedHeader({ alg: 'ES256' })
+      .setSubject(DID)
+      .setAudience(APP_ID)
+      .setIssuer('privy.io')
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(key.privateKey)
+
+  const GOOGLE = { type: 'google_oauth', email: 'ada@example.com', name: 'Ada Lovelace' }
+  const WALLET = { type: 'wallet', address: '0xdeadbeef', chain_type: 'ethereum' }
+
+  it('reads the name and email a social login carries', async () => {
+    const read = await auth().readIdentity(await identity([GOOGLE, WALLET]))
+    expect(read).toMatchObject({ did: DID, name: 'Ada Lovelace', email: 'ada@example.com' })
+  })
+
+  /**
+   * The whole reason this is a separate method. A wallet address sitting in a
+   * signed token is still not a proven wallet — that is #7's ownership
+   * challenge, and reading one here would route around it.
+   */
+  it('never returns a wallet address, even though one is right there', async () => {
+    const read = await auth().readIdentity(await identity([WALLET]))
+    expect(JSON.stringify(read)).not.toContain('0xdeadbeef')
+    expect(read.name).toBeUndefined()
+    expect(read.email).toBeUndefined()
+  })
+
+  it('reads a bare email login', async () => {
+    const read = await auth().readIdentity(await identity([{ type: 'email', address: 'a@b.co' }]))
+    expect(read.email).toBe('a@b.co')
+    expect(read.name).toBeUndefined()
+  })
+
+  /** Older Privy SDKs encode the claim as a JSON string. */
+  it('handles linked_accounts as a JSON string', async () => {
+    const read = await auth().readIdentity(await identity(JSON.stringify([GOOGLE])))
+    expect(read.name).toBe('Ada Lovelace')
+  })
+
+  /** Privy does not pin the claim's shape, so the reader takes what it finds. */
+  it('reads a name split across first and last', async () => {
+    const read = await auth().readIdentity(
+      await identity([{ type: 'google_oauth', first_name: 'Grace', last_name: 'Hopper' }]),
+    )
+    expect(read.name).toBe('Grace Hopper')
+  })
+
+  it('falls back to a username when there is no name at all', async () => {
+    const read = await auth().readIdentity(
+      await identity([{ type: 'github_oauth', username: 'gracehopper' }]),
+    )
+    expect(read.name).toBe('gracehopper')
+  })
+
+  it('rejects an identity token signed by someone else', async () => {
+    const forged = await new jose.SignJWT({ linked_accounts: [GOOGLE] })
+      .setProtectedHeader({ alg: 'ES256' })
+      .setSubject(DID)
+      .setAudience(APP_ID)
+      .setIssuer('privy.io')
+      .setExpirationTime('1h')
+      .sign(otherKey.privateKey)
+    await expect(auth().readIdentity(forged)).rejects.toBeInstanceOf(PrivyAuthError)
   })
 })
 

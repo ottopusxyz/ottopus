@@ -2,6 +2,7 @@
 
 import { PrivyProvider as Privy } from '@privy-io/react-auth'
 import { Component, createContext, useContext, type ReactNode } from 'react'
+import { SessionProvider } from './session-provider'
 
 const APP_ID = (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim()
 
@@ -97,7 +98,9 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
           },
         }}
       >
-        <PrivyAvailable.Provider value>{children}</PrivyAvailable.Provider>
+        <PrivyAvailable.Provider value>
+          <SessionProvider>{children}</SessionProvider>
+        </PrivyAvailable.Provider>
       </Privy>
     </PrivyBoundary>
   )

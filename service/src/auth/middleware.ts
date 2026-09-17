@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
-import { PrivyAuthError, bearerToken, type PrivyVerifier } from './privy.js'
-import { userIdForDid, type UserDb } from './session.js'
+import { PrivyAuthError, bearerToken, type PrivyAuth } from './privy.js'
+import { upsertUser, type UserDb } from './session.js'
 
 /**
  * Module augmentation rather than a Hono generic on every app and sub-app.
@@ -14,13 +14,22 @@ declare module 'hono' {
     userId: string
     /** The Privy DID behind it, for logs and for support questions. */
     privyDid: string
+    /** The stored user — what we know, not what the caller claims. */
+    user: { id: string; privyDid: string; email: string | null; name: string | null }
   }
 }
 
 export interface SessionOptions {
-  verify: PrivyVerifier
+  auth: PrivyAuth
   db: UserDb
 }
+
+/**
+ * Privy's identity token, when the caller sends one. Optional by design: the
+ * access token alone is enough to know who you are, and the identity token
+ * only adds what you are called.
+ */
+const IDENTITY_HEADER = 'X-Privy-Identity-Token'
 
 /**
  * Requires a signed-in user, and resolves them to an Ottopus user id.
@@ -33,7 +42,7 @@ export interface SessionOptions {
  * never why — "expired" and "not a real token" are the same 401, because the
  * difference is only useful to someone probing.
  */
-export function requireSession({ verify, db }: SessionOptions): MiddlewareHandler {
+export function requireSession({ auth, db }: SessionOptions): MiddlewareHandler {
   return async (c, next) => {
     const token = bearerToken(c.req.header('Authorization'))
     if (!token) {
@@ -42,7 +51,7 @@ export function requireSession({ verify, db }: SessionOptions): MiddlewareHandle
 
     let did: string
     try {
-      ;({ did } = await verify(token))
+      ;({ did } = await auth.verifyAccess(token))
     } catch (err) {
       if (err instanceof PrivyAuthError) {
         return c.json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' })
@@ -50,8 +59,23 @@ export function requireSession({ verify, db }: SessionOptions): MiddlewareHandle
       throw err
     }
 
-    c.set('userId', await userIdForDid(db, did))
+    // A bad identity token is not a failed sign-in — the access token already
+    // proved who this is. It only means we learn no name this time.
+    let profile = {}
+    const identity = c.req.header(IDENTITY_HEADER)
+    if (identity) {
+      try {
+        const read = await auth.readIdentity(identity)
+        if (read.did === did) profile = { email: read.email, name: read.name }
+      } catch {
+        // Ignored on purpose. See above.
+      }
+    }
+
+    const user = await upsertUser(db, did, profile)
+    c.set('userId', user.id)
     c.set('privyDid', did)
+    c.set('user', user)
     await next()
   }
 }
