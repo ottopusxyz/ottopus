@@ -14,6 +14,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The service's own error code, when it sent one — `already_linked`, etc. */
+    readonly code?: string | undefined,
   ) {
     super(message)
   }
@@ -44,9 +46,76 @@ async function call<T>(path: string, credentials: Credentials, init: RequestInit
     // The service answers 503 when it is not configured and 401 when the token
     // is no good. Keeping the status lets a caller tell those apart, which
     // matters because only one of them is the person's problem.
-    throw new ApiError(response.status, `${init.method ?? 'GET'} ${path} failed`)
+    let code: string | undefined
+    try {
+      code = ((await response.json()) as { error?: string }).error
+    } catch {
+      // A 502 from a proxy is not JSON. The status is still the useful part.
+    }
+    throw new ApiError(response.status, `${init.method ?? 'GET'} ${path} failed`, code)
   }
+  // 204 has no body, and response.json() on an empty one throws.
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+/** One of Otto's eight arms. */
+export interface Arm {
+  id: string
+  namespace: string
+  address: string
+  label: string | null
+  /** metamask, rabby, safe, watch_only — what names the arm. */
+  walletType: string
+  /** No proof, so it can never sign. Pasted addresses and Safes. */
+  isWatchOnly: boolean
+  provedAt: string | null
+  createdAt: string
+}
+
+export interface WalletSync {
+  wallets: Arm[]
+  /** Attested but over the eight-arm cap, so the app can say which. */
+  overflow: string[]
+}
+
+export function listWallets(credentials: Credentials): Promise<{ wallets: Arm[] }> {
+  return call('/wallets', credentials)
+}
+
+/**
+ * Reconcile our arms against the wallets Privy attests in the identity token.
+ *
+ * This is what turns a Privy link into an Ottopus arm. Safe to call on every
+ * cold boot: the service treats it as a snapshot and a call that changes
+ * nothing costs one query.
+ *
+ * Requires an identity token. Without one the service answers 400 rather than
+ * syncing an empty list, which would unlink every wallet.
+ */
+export function syncWallets(credentials: Credentials): Promise<WalletSync> {
+  return call('/wallets/sync', credentials, { method: 'POST' })
+}
+
+/** A pasted address. Stored unproven, and it stays that way. */
+export function addWatchOnlyWallet(
+  credentials: Credentials,
+  input: { address: string; label?: string; walletType?: 'watch_only' | 'safe' },
+): Promise<{ wallet: Arm }> {
+  return call('/wallets/watch', credentials, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+/**
+ * Unlink on our side only. A wallet Privy still attests returns on the next
+ * sync, so a proved wallet must be unlinked at Privy first — see the wallets
+ * hook, which does both in order.
+ */
+export function unlinkWallet(credentials: Credentials, id: string): Promise<void> {
+  return call(`/wallets/${id}`, credentials, { method: 'DELETE' })
 }
 
 /**

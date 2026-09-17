@@ -1,7 +1,9 @@
+import Link from 'next/link'
 import { Otto } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
 import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
-import { Button, Chip, EmptyState } from '@/components/ui'
+import { buttonClasses, Chip, EmptyState } from '@/components/ui'
+import { LinkWalletButton } from '@/components/wallets'
 
 export const metadata = { title: 'Portfolio · Ottopus' }
 
@@ -24,9 +26,9 @@ export default function Portfolio() {
         headline={<Figure whole="$0" fraction="00" />}
         detail="No wallets linked yet."
         action={
-          <Button variant="secondary" size="sm">
-            Link wallet
-          </Button>
+          <Link href="/settings" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
+            Manage
+          </Link>
         }
       />
       <TabBar
@@ -46,11 +48,7 @@ export default function Portfolio() {
           title="No wallets yet"
           description="Link a wallet and I’ll start keeping an eye on it. Up to eight."
           illustration={<Otto pose="base" size={120} animated />}
-          action={
-            <Button variant="primary" size="sm">
-              Link wallet
-            </Button>
-          }
+          action={<LinkWalletButton />}
         />
       </div>
 
