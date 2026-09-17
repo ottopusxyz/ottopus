@@ -1,0 +1,40 @@
+# Working notes and planning docs — local only, never published
+.local/
+CLAUDE.md
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+next-env.d.ts
+
+# Environment
+.env
+.env*.local
+.env.production
+
+# Vercel
+.vercel
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor and OS
+.DS_Store
+.idea/
+*.swp
