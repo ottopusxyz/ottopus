@@ -55,6 +55,14 @@ export interface Config {
    * because a bearer token is worth having a list for.
    */
   webOrigins: string[]
+  /**
+   * Zerion, the portfolio provider. A real secret, unlike the Privy values —
+   * it is an HTTP Basic credential, so it never leaves the service and the
+   * browser never sees it.
+   */
+  zerionApiKey: string | undefined
+  /** Overridable so a test or a mock can stand in for the real API. */
+  zerionApiUrl: string | undefined
 }
 
 class ConfigError extends Error {}
@@ -125,6 +133,8 @@ export function loadConfig(): Config {
     privyAppId: readOptional('PRIVY_APP_ID'),
     privyVerificationKey: readOptional('PRIVY_JWT_VERIFICATION_KEY'),
     webOrigins: readList('WEB_ORIGINS', DEFAULT_WEB_ORIGINS),
+    zerionApiKey: readOptional('ZERION_API_KEY'),
+    zerionApiUrl: readOptional('ZERION_API_URL'),
   }
 }
 

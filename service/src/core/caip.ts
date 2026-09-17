@@ -52,14 +52,38 @@ export const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
  * SLIP-44 coin type per EVM chain. Not every EIP-155 chain is ETH — BNB Smart
  * Chain is 714 — so this is a lookup rather than an assumption, and an unknown
  * chain throws instead of silently naming the wrong currency.
+ *
+ * The list covers the chains the portfolio connector reads, because a chain
+ * missing here costs the user their native balance on it: the connector can
+ * name an ERC-20 without this table, but not ETH. Rollups settling to Ethereum
+ * are all 60 — they spend ETH, and a bridged ETH is still ETH. Only add a
+ * non-60 entry against the registered SLIP-44 value, never by inference from
+ * the ticker.
  */
 const EVM_NATIVE_COIN_TYPE: Readonly<Record<string, number>> = {
   '1': 60, // Ethereum, ETH
   '10': 60, // Optimism, ETH
+  '130': 60, // Unichain, ETH
+  '324': 60, // zkSync Era, ETH
+  '480': 60, // World Chain, ETH
+  '1101': 60, // Polygon zkEVM, ETH
+  '1868': 60, // Soneium, ETH
+  '2741': 60, // Abstract, ETH
   '8453': 60, // Base, ETH
+  '34443': 60, // Mode, ETH
   '42161': 60, // Arbitrum One, ETH
+  '57073': 60, // Ink, ETH
+  '59144': 60, // Linea, ETH
+  '81457': 60, // Blast, ETH
+  '534352': 60, // Scroll, ETH
+  '7777777': 60, // Zora, ETH
+  '1313161554': 60, // Aurora, ETH
   '56': 714, // BNB Smart Chain, BNB
+  '100': 700, // Gnosis, xDAI
   '137': 966, // Polygon, POL
+  '250': 1007, // Fantom, FTM
+  '42220': 52752, // Celo, CELO
+  '43114': 9000, // Avalanche C-Chain, AVAX
 }
 
 /** Asset namespaces whose reference is a contract address. */

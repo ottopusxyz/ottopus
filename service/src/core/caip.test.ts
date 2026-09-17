@@ -146,6 +146,20 @@ describe('native assets are per chain, not assumed to be ETH', () => {
     expect(nativeAssetOf('eip155:56')).toBe('eip155:56/slip44:714')
   })
 
+  it('names ETH on the rollups that settle to Ethereum', () => {
+    // A chain missing from the table costs the portfolio its native balance
+    // there, so the rollups are listed rather than left to throw.
+    expect(nativeAssetOf('eip155:42161')).toBe('eip155:42161/slip44:60')
+    expect(nativeAssetOf('eip155:59144')).toBe('eip155:59144/slip44:60')
+    expect(nativeAssetOf('eip155:534352')).toBe('eip155:534352/slip44:60')
+  })
+
+  it('keeps the non-ETH chains distinct from each other', () => {
+    expect(nativeAssetOf('eip155:43114')).toBe('eip155:43114/slip44:9000')
+    expect(nativeAssetOf('eip155:100')).toBe('eip155:100/slip44:700')
+    expect(nativeAssetOf('eip155:42220')).toBe('eip155:42220/slip44:52752')
+  })
+
   it('throws on an unknown chain rather than naming the wrong currency', () => {
     expect(() => nativeAssetOf('eip155:1337')).toThrow(/unknown native currency/)
   })
