@@ -1,0 +1,144 @@
+import { PGlite } from '@electric-sql/pglite'
+import { drizzle } from 'drizzle-orm/pglite'
+import type { MiddlewareHandler } from 'hono'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import type { PrivyWallet } from '../auth/privy.js'
+import { userIdForDid } from '../auth/session.js'
+import { migrationFiles, statementsIn } from '../db/migrate.js'
+import * as schema from '../db/schema.js'
+import { walletRoutes } from './wallets.js'
+
+/**
+ * The routes are exercised with a stub session rather than a real Privy token:
+ * token verification has its own tests, and what matters here is what each
+ * route does once it knows who is calling and what was attested.
+ */
+let db: ReturnType<typeof drizzle<typeof schema>>
+let pg: PGlite
+let userId: string
+
+const address = (n: number) => `0x${n.toString(16).padStart(40, '0')}`
+
+const wallet = (n: number): PrivyWallet => ({
+  address: address(n),
+  walletClientType: 'metamask',
+  chainType: 'ethereum',
+  firstVerifiedAt: '2026-09-01T10:00:00.000Z',
+})
+
+/** Stands in for requireSession. `attested` undefined means no identity token. */
+const signedIn = (attested: PrivyWallet[] | undefined): MiddlewareHandler => {
+  return async (c, next) => {
+    c.set('userId', userId)
+    c.set('privyWallets', attested)
+    await next()
+  }
+}
+
+const app = (attested?: PrivyWallet[] | undefined) => walletRoutes(db, signedIn(attested))
+
+beforeAll(async () => {
+  pg = await PGlite.create()
+  await pg.exec(`create role anon; create role authenticated; create role service_role;`)
+  for (const file of await migrationFiles(new URL('../../drizzle', import.meta.url).pathname)) {
+    for (const stmt of await statementsIn(file)) await pg.exec(stmt)
+  }
+  db = drizzle(pg, { schema, casing: 'snake_case' })
+  userId = await userIdForDid(db, 'did:privy:routes')
+}, 60_000)
+
+beforeEach(async () => {
+  await pg.exec(`delete from linked_wallets`)
+})
+
+const post = (a: PrivyWallet[] | undefined, path: string, body?: unknown) =>
+  app(a).request(path, {
+    method: 'POST',
+    ...(body === undefined
+      ? {}
+      : { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+  })
+
+describe('POST /sync', () => {
+  it('links what the identity token attests', async () => {
+    const res = await post([wallet(1)], '/sync')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { wallets: { address: string }[] }
+    expect(body.wallets.map((w) => w.address)).toEqual([address(1)])
+  })
+
+  /**
+   * The one that could unlink someone's entire account. An absent identity
+   * token looks identical to "Privy attests nothing", and syncing on that
+   * would drop every proved arm. It has to be refused, not treated as empty.
+   */
+  it('refuses a sync with no identity token instead of unlinking everything', async () => {
+    await post([wallet(1)], '/sync')
+
+    const res = await post(undefined, '/sync')
+    expect(res.status).toBe(400)
+    expect((await res.json()) as { error: string }).toMatchObject({
+      error: 'identity_token_required',
+    })
+
+    const after = await app([wallet(1)]).request('/')
+    expect(((await after.json()) as { wallets: unknown[] }).wallets).toHaveLength(1)
+  })
+
+  /** An attestation that genuinely lists nothing is a real unlink, though. */
+  it('does unlink when the token attests an empty list', async () => {
+    await post([wallet(1)], '/sync')
+    const res = await post([], '/sync')
+    expect(((await res.json()) as { wallets: unknown[] }).wallets).toEqual([])
+  })
+})
+
+describe('POST /watch', () => {
+  it('stores a pasted address as watch-only', async () => {
+    const res = await post(undefined, '/watch', { address: address(5), label: 'Treasury' })
+    expect(res.status).toBe(201)
+    const { wallet: arm } = (await res.json()) as { wallet: { isWatchOnly: boolean; label: string } }
+    expect(arm).toMatchObject({ isWatchOnly: true, label: 'Treasury' })
+  })
+
+  it('rejects a malformed address with 400', async () => {
+    expect((await post(undefined, '/watch', { address: '0x123' })).status).toBe(400)
+  })
+
+  it('rejects an empty body with 400', async () => {
+    expect((await post(undefined, '/watch')).status).toBe(400)
+  })
+
+  it('answers 409 for an address already linked', async () => {
+    await post(undefined, '/watch', { address: address(5) })
+    expect((await post(undefined, '/watch', { address: address(5) })).status).toBe(409)
+  })
+
+  it('answers 422 once the arms are full', async () => {
+    for (let i = 0; i < 8; i++) await post(undefined, '/watch', { address: address(i) })
+    expect((await post(undefined, '/watch', { address: address(99) })).status).toBe(422)
+  })
+})
+
+describe('DELETE /:id', () => {
+  it('unlinks an arm', async () => {
+    const created = await post(undefined, '/watch', { address: address(5) })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+
+    const res = await app().request(`/${arm.id}`, { method: 'DELETE' })
+    expect(res.status).toBe(204)
+
+    const list = await app().request('/')
+    expect(((await list.json()) as { wallets: unknown[] }).wallets).toEqual([])
+  })
+
+  it('answers 404 for an id that does not exist', async () => {
+    const missing = '11111111-2222-3333-4444-555555555555'
+    expect((await app().request(`/${missing}`, { method: 'DELETE' })).status).toBe(404)
+  })
+
+  /** A malformed uuid is a bad request, not a database error surfacing as 500. */
+  it('answers 404 for a malformed id', async () => {
+    expect((await app().request('/not-a-uuid', { method: 'DELETE' })).status).toBe(404)
+  })
+})

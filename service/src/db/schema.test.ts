@@ -187,6 +187,41 @@ describe('wallet constraints', () => {
   })
 })
 
+/**
+ * Nothing in the application should ever attempt this, which is precisely why
+ * the guard is in the database: the threat left is our own code, and the
+ * service bypasses RLS.
+ */
+describe('watch-only is permanent', () => {
+  it('refuses to promote a watch-only wallet to a signer', async () => {
+    await expect(
+      db.exec(`
+        update linked_wallets set is_watch_only = false, ownership_proof = '{"via":"privy"}'::jsonb
+        where address = '0xfeed'
+      `),
+    ).rejects.toThrow(/watch-only/i)
+  })
+
+  it('still allows unlinking one', async () => {
+    await db.exec(`update linked_wallets set unlinked_at = now() where address = '0xfeed'`)
+    const r = await db.query(`select unlinked_at from linked_wallets where address = '0xfeed'`)
+    expect((r.rows[0] as { unlinked_at: Date | null }).unlinked_at).not.toBeNull()
+  })
+
+  /** The supported route back to signing: unlink, then link again with proof. */
+  it('lets the same address return as a proven signer', async () => {
+    await db.exec(`
+      insert into linked_wallets (user_id, address, wallet_type, ownership_proof)
+      values ('${USER}', '0xfeed', 'metamask', '{"via":"privy_identity_token"}'::jsonb)
+    `)
+    const r = await db.query(
+      `select is_watch_only from linked_wallets where address = '0xfeed' and unlinked_at is null`,
+    )
+    expect(r.rows).toHaveLength(1)
+    expect((r.rows[0] as { is_watch_only: boolean }).is_watch_only).toBe(false)
+  })
+})
+
 describe('RLS denies client roles', () => {
   it('gives anon no access to plans', async () => {
     await db.exec(`set role anon`)

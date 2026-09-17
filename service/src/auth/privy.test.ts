@@ -116,7 +116,7 @@ describe('access token verification', () => {
   })
 })
 
-describe('identity tokens carry a name, never a wallet', () => {
+describe('identity tokens carry a name and the linked wallets', () => {
   const identity = async (accounts: unknown) =>
     new jose.SignJWT({ linked_accounts: accounts })
       .setProtectedHeader({ alg: 'ES256' })
@@ -128,21 +128,72 @@ describe('identity tokens carry a name, never a wallet', () => {
       .sign(key.privateKey)
 
   const GOOGLE = { type: 'google_oauth', email: 'ada@example.com', name: 'Ada Lovelace' }
-  const WALLET = { type: 'wallet', address: '0xdeadbeef', chain_type: 'ethereum' }
+  const WALLET = {
+    type: 'wallet',
+    address: '0xDeAdBeEf00000000000000000000000000000000',
+    chain_type: 'ethereum',
+    wallet_client_type: 'metamask',
+    connector_type: 'injected',
+    first_verified_at: '2026-09-01T10:00:00.000Z',
+  }
 
   it('reads the name and email a social login carries', async () => {
     const read = await auth().readIdentity(await identity([GOOGLE, WALLET]))
     expect(read).toMatchObject({ did: DID, name: 'Ada Lovelace', email: 'ada@example.com' })
   })
 
+  it('reads the linked wallets', async () => {
+    const read = await auth().readIdentity(await identity([GOOGLE, WALLET]))
+    expect(read.wallets).toEqual([
+      {
+        address: '0xdeadbeef00000000000000000000000000000000',
+        walletClientType: 'metamask',
+        connectorType: 'injected',
+        chainType: 'ethereum',
+        firstVerifiedAt: '2026-09-01T10:00:00.000Z',
+        latestVerifiedAt: undefined,
+      },
+    ])
+  })
+
   /**
-   * The whole reason this is a separate method. A wallet address sitting in a
-   * signed token is still not a proven wallet — that is #7's ownership
-   * challenge, and reading one here would route around it.
+   * Every comparison downstream is lowercase — the address column carries a
+   * check constraint saying so. Normalising at the boundary means no caller
+   * has to remember.
    */
-  it('never returns a wallet address, even though one is right there', async () => {
+  it('lowercases the address', async () => {
     const read = await auth().readIdentity(await identity([WALLET]))
-    expect(JSON.stringify(read)).not.toContain('0xdeadbeef')
+    expect(read.wallets[0]?.address).toBe('0xdeadbeef00000000000000000000000000000000')
+  })
+
+  /** Older tokens date the link in epoch seconds rather than ISO. */
+  it('reads a numeric verification time', async () => {
+    const read = await auth().readIdentity(
+      await identity([{ ...WALLET, first_verified_at: 1788000000 }]),
+    )
+    expect(read.wallets[0]?.firstVerifiedAt).toBe(new Date(1788000000 * 1000).toISOString())
+  })
+
+  it('accepts the camelCase spelling the SDK types use', async () => {
+    const read = await auth().readIdentity(
+      await identity([
+        { type: 'wallet', address: '0xabc', walletClientType: 'rabby', chainType: 'ethereum' },
+      ]),
+    )
+    expect(read.wallets[0]).toMatchObject({ walletClientType: 'rabby', chainType: 'ethereum' })
+  })
+
+  it('has no wallets when none are linked', async () => {
+    const read = await auth().readIdentity(await identity([GOOGLE]))
+    expect(read.wallets).toEqual([])
+  })
+
+  /**
+   * A wallet's `address` field is an account, not an inbox. Treating a wallet
+   * entry as a person would put "0xdead…" in the name or email column.
+   */
+  it('never reads a person out of a wallet entry', async () => {
+    const read = await auth().readIdentity(await identity([WALLET]))
     expect(read.name).toBeUndefined()
     expect(read.email).toBeUndefined()
   })

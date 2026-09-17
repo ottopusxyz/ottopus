@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
+import { walletRoutes } from './wallets.js'
 
 /**
  * Web-facing surface. Mounted at the root of api.ottopus.xyz in production,
@@ -58,12 +59,13 @@ const ready = missing.length === 0
 if (!ready) console.error(`[api] sign-in disabled — ${missing.join('; ')}`)
 
 if (ready) {
+  const db = getDb(config.databaseUrl!)
   const session = requireSession({
     auth: createPrivyAuth({
       appId: config.privyAppId!,
       verificationKey: config.privyVerificationKey!,
     }),
-    db: getDb(config.databaseUrl!),
+    db,
   })
 
   /**
@@ -79,8 +81,12 @@ if (ready) {
 
   /** Who the caller is, without writing anything new. */
   apiApp.get('/me', session, (c) => c.json({ user: c.get('user') }))
+
+  apiApp.route('/wallets', walletRoutes(db, session))
 } else {
   const unconfigured = (c: Context) => c.json({ error: 'not_configured', detail: missing }, 503)
   apiApp.post('/session', unconfigured)
   apiApp.get('/me', unconfigured)
+  apiApp.all('/wallets/*', unconfigured)
+  apiApp.all('/wallets', unconfigured)
 }

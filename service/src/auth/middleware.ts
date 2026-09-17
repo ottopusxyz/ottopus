@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import { PrivyAuthError, bearerToken, type PrivyAuth } from './privy.js'
+import { PrivyAuthError, bearerToken, type PrivyAuth, type PrivyWallet } from './privy.js'
 import { upsertUser, type UserDb } from './session.js'
 
 /**
@@ -16,6 +16,15 @@ declare module 'hono' {
     privyDid: string
     /** The stored user — what we know, not what the caller claims. */
     user: { id: string; privyDid: string; email: string | null; name: string | null }
+    /**
+     * Wallets from a *verified* identity token, when the caller sent one.
+     *
+     * Undefined and empty mean different things, and routes must not confuse
+     * them: undefined is "the caller told us nothing", empty is "Privy says
+     * this user has no wallets". Reconciling on the first would unlink
+     * everything the moment a request arrives without the header.
+     */
+    privyWallets: PrivyWallet[] | undefined
   }
 }
 
@@ -62,11 +71,19 @@ export function requireSession({ auth, db }: SessionOptions): MiddlewareHandler 
     // A bad identity token is not a failed sign-in — the access token already
     // proved who this is. It only means we learn no name this time.
     let profile = {}
+    let wallets: PrivyWallet[] | undefined
     const identity = c.req.header(IDENTITY_HEADER)
     if (identity) {
       try {
         const read = await auth.readIdentity(identity)
-        if (read.did === did) profile = { email: read.email, name: read.name }
+        // The DID check is the load-bearing line. Both tokens verify against
+        // the same key, so a valid identity token for *another* user would
+        // otherwise pass its wallets off as this caller's — and the sync route
+        // would link them to the wrong account.
+        if (read.did === did) {
+          profile = { email: read.email, name: read.name }
+          wallets = read.wallets
+        }
       } catch {
         // Ignored on purpose. See above.
       }
@@ -76,6 +93,7 @@ export function requireSession({ auth, db }: SessionOptions): MiddlewareHandler 
     c.set('userId', user.id)
     c.set('privyDid', did)
     c.set('user', user)
+    c.set('privyWallets', wallets)
     await next()
   }
 }

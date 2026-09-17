@@ -8,10 +8,17 @@ import * as jose from 'jose'
  * key is a public ES256 key from the Privy dashboard — safe in an environment
  * variable in a way an app secret is not.
  *
- * The **access** token, never the identity token. The identity token carries a
- * `linked_accounts` claim including wallet addresses, and reading a wallet from
- * a token would route straight around the server-issued ownership challenge in
- * #7. The only thing taken from here is `sub`, the user's Privy DID.
+ * Two tokens, two jobs. The **access** token is the credential and answers "who
+ * is calling" — `sub`, and nothing else. The **identity** token is an assertion
+ * about that user, and carries the `linked_accounts` claim.
+ *
+ * Both are signed by the same public ES256 key, which is what makes the wallet
+ * addresses in `linked_accounts` usable server-side. They are not a client
+ * claim: the browser cannot mint one, so a caller cannot name an address they
+ * do not control. What they are is *Privy's* attestation — Privy ran the
+ * EIP-4361 exchange (`/siwe/init` for the nonce, `/siwe/link` to verify the
+ * signature) and is telling us it passed. See wallets/reconcile.ts for what
+ * that does and does not buy.
  */
 
 export class PrivyAuthError extends Error {}
@@ -55,13 +62,32 @@ export interface PrivyClaims {
 }
 
 /**
- * What an identity token is allowed to tell us: who you are called, not what
- * you own.
+ * A wallet Privy says this user has linked and proved.
+ *
+ * Field names mirror the claim, not our schema — the mapping onto an arm is
+ * the wallets module's job, so a change in Privy's shape lands in one place.
  */
+export interface PrivyWallet {
+  /** Lowercased here, because every comparison downstream is lowercase. */
+  address: string
+  /** metamask, rabby, coinbase_wallet, privy — this is what names the arm. */
+  walletClientType?: string
+  /** injected, wallet_connect — how it was reached, not what it is. */
+  connectorType?: string
+  /** 'ethereum' or 'solana'. Anything but ethereum is skipped for now. */
+  chainType?: string
+  /** When Privy first verified it, as an ISO string. */
+  firstVerifiedAt?: string
+  /** When Privy last saw it prove itself. */
+  latestVerifiedAt?: string
+}
+
+/** What an identity token tells us: who you are called, and what you linked. */
 export interface PrivyIdentity {
   did: string
   email?: string
   name?: string
+  wallets: PrivyWallet[]
 }
 
 export interface PrivyVerifierConfig {
@@ -82,16 +108,19 @@ export interface PrivyAuth {
   /** The credential. Proves who is calling, and nothing else. */
   verifyAccess: PrivyVerifier
   /**
-   * The profile. Signed by the same key, so the name and email in it are
-   * attested by Privy rather than typed by the caller.
-   *
-   * Wallet addresses in `linked_accounts` are deliberately ignored. A wallet
-   * reaches this system one way — through the server-issued ownership challenge
-   * in #7 — and a claim in a token is not that.
+   * The profile and the linked wallets. Signed by the same key, so everything
+   * in it is attested by Privy rather than typed by the caller.
    */
   readIdentity: (token: string) => Promise<PrivyIdentity>
 }
 
+/**
+ * The claim is documented only as "a lightweight version of linkedAccounts",
+ * and the SDK's own types are camelCase while the JWT is snake_case. Both
+ * spellings are read rather than betting on one — the same reason `nameOf`
+ * below does, and the cost of guessing wrong is a wallet that silently never
+ * syncs.
+ */
 interface LinkedAccount {
   type?: string
   address?: string
@@ -100,6 +129,23 @@ interface LinkedAccount {
   first_name?: string
   last_name?: string
   username?: string
+  wallet_client_type?: string
+  walletClientType?: string
+  connector_type?: string
+  connectorType?: string
+  chain_type?: string
+  chainType?: string
+  first_verified_at?: string | number
+  firstVerifiedAt?: string | number
+  latest_verified_at?: string | number
+  latestVerifiedAt?: string | number
+}
+
+/** Privy sends these as ISO strings and as epoch seconds, depending on age. */
+function timestampOf(value: string | number | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
 }
 
 /**
@@ -194,14 +240,27 @@ export function createPrivyAuth({ appId, verificationKey }: PrivyVerifierConfig)
       const did = didOf(payload)
       const accounts = linkedAccounts(payload.linked_accounts)
 
-      // Only the accounts that carry a person's name or address for mail. A
-      // wallet entry is skipped even though it is sitting right there.
+      // A wallet's `address` is an account, not an inbox — reading names and
+      // email from wallet entries would put "0xabc…" in the name column.
       const people = accounts.filter((a) => a.type !== 'wallet')
       const named = people.map(nameOf).find(Boolean)
       const mailed = people.find((a) => a.email)?.email
       const emailAccount = accounts.find((a) => a.type === 'email' && a.address)?.address
 
-      return { did, name: named, email: mailed ?? emailAccount }
+      const wallets = accounts
+        .filter((a) => a.type === 'wallet' && typeof a.address === 'string' && a.address)
+        .map(
+          (a): PrivyWallet => ({
+            address: a.address!.toLowerCase(),
+            walletClientType: a.wallet_client_type ?? a.walletClientType,
+            connectorType: a.connector_type ?? a.connectorType,
+            chainType: a.chain_type ?? a.chainType,
+            firstVerifiedAt: timestampOf(a.first_verified_at ?? a.firstVerifiedAt),
+            latestVerifiedAt: timestampOf(a.latest_verified_at ?? a.latestVerifiedAt),
+          }),
+        )
+
+      return { did, name: named, email: mailed ?? emailAccount, wallets }
     },
   }
 }
