@@ -38,6 +38,21 @@ export interface Config {
   host: string
   /** Public HTTPS origin this service is reachable at, for OAuth redirects. */
   publicUrl: string | undefined
+  /**
+   * The canonical resource identifier for the MCP server — RFC 8707's
+   * `resource`, and the `resource` field of our protected-resource metadata.
+   *
+   * Exactly one string, even though the surface answers on two shapes
+   * (mcp.ottopus.xyz and /mcp). Audience binding compares tokens against this
+   * value, so a second spelling would be a second audience, and a token minted
+   * for one would be rejected at the other.
+   */
+  mcpUrl: string
+  /**
+   * Where the web app lives. The authorize endpoint redirects a browser to its
+   * consent route, so this is a single origin rather than the allow-list.
+   */
+  webUrl: string
   gitCommit: string
   /** Postgres. Absent locally until someone points at a database. */
   databaseUrl: string | undefined
@@ -112,6 +127,28 @@ function readOptional(name: string): string | undefined {
   return raw === undefined || raw.trim() === '' ? undefined : raw
 }
 
+/**
+ * An absolute URL kept whole — path included, trailing slash removed.
+ *
+ * Distinct from readUrl, which keeps only the origin. A resource identifier may
+ * carry a path (http://localhost:8787/mcp), and RFC 8707 compares it as a
+ * string, so trimming it to the origin would silently change the audience.
+ */
+function readResourceUrl(name: string, fallback: string): string {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return fallback
+  let url: URL
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    throw new ConfigError(`${name} must be an absolute URL — got "${raw}"`)
+  }
+  if (url.hash || url.search) {
+    throw new ConfigError(`${name} must have no query or fragment — got "${raw}"`)
+  }
+  return url.toString().replace(/\/$/, '')
+}
+
 function readUrl(name: string): string | undefined {
   const raw = process.env[name]
   if (raw === undefined || raw === '') return undefined
@@ -123,16 +160,26 @@ function readUrl(name: string): string | undefined {
 }
 
 export function loadConfig(): Config {
+  // Read first: the MCP and web URLs default off them.
+  const port = readInt('PORT', 8787)
+  const publicUrl = readUrl('PUBLIC_URL')
+  const webOrigins = readList('WEB_ORIGINS', DEFAULT_WEB_ORIGINS)
+
   return {
     nodeEnv: readEnum('NODE_ENV', ['development', 'production', 'test'], 'development') as NodeEnv,
-    port: readInt('PORT', 8787),
+    port,
     host: process.env.HOST ?? '0.0.0.0',
-    publicUrl: readUrl('PUBLIC_URL'),
+    publicUrl,
+    mcpUrl: readResourceUrl(
+      'MCP_URL',
+      publicUrl ? `${publicUrl}/mcp` : `http://localhost:${port}/mcp`,
+    ),
+    webUrl: readResourceUrl('WEB_URL', webOrigins[0] ?? DEFAULT_WEB_ORIGINS[0]!),
     gitCommit: process.env.GIT_COMMIT ?? 'dev',
     databaseUrl: readOptional('DATABASE_URL'),
     privyAppId: readOptional('PRIVY_APP_ID'),
     privyVerificationKey: readOptional('PRIVY_JWT_VERIFICATION_KEY'),
-    webOrigins: readList('WEB_ORIGINS', DEFAULT_WEB_ORIGINS),
+    webOrigins,
     zerionApiKey: readOptional('ZERION_API_KEY'),
     zerionApiUrl: readOptional('ZERION_API_URL'),
   }

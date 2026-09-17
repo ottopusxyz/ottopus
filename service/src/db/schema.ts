@@ -87,8 +87,64 @@ export const oauthClients = pgTable('oauth_clients', {
   clientId: text('client_id').primaryKey(),
   clientName: text('client_name').notNull(),
   redirectUris: text('redirect_uris').array().notNull(),
+  /**
+   * Public clients only, so there is no secret to store. Every MCP client we
+   * expect is a desktop app or a browser extension that cannot keep one, and
+   * PKCE is what replaces it — a column here would be a secret we did not need
+   * and would then have to protect.
+   */
+  clientUri: text('client_uri'),
   createdAt,
 })
+
+/**
+ * An authorize request parked while the user decides.
+ *
+ * The authorize endpoint validates the client, redirect URI, PKCE challenge and
+ * resource, then hands the browser an opaque id and sends it to the consent
+ * page. Everything the eventual code needs is frozen here first, so nothing the
+ * consent page posts back can change what was asked for — approving is a yes to
+ * a stored request, not a fresh set of parameters.
+ *
+ * Rows are never updated in place. `decidedAt` and `userId` land together when
+ * the answer arrives, and a row with `decidedAt` set can never be decided again.
+ */
+export const oauthAuthRequests = pgTable(
+  'oauth_auth_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthClients.clientId, { onDelete: 'cascade' }),
+    /** Null until the person on the consent page is known. */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    scopes: text('scopes').array().notNull(),
+    /** RFC 8707. Validated against our own canonical URI before the row exists. */
+    resource: text('resource').notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    /** Opaque to us; handed back to the client untouched. */
+    state: text('state'),
+    codeChallenge: text('code_challenge').notNull(),
+    codeChallengeMethod: text('code_challenge_method').notNull().default('S256'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    approved: boolean('approved'),
+    createdAt,
+  },
+  (t) => [
+    index('oauth_auth_requests_expires_idx').on(t.expiresAt),
+    check('oauth_auth_requests_pkce_s256', sql`${t.codeChallengeMethod} = 'S256'`),
+    // A decision is a user saying yes or no. Neither half means anything alone,
+    // and an approved request with no user behind it would mint a token for
+    // nobody.
+    check(
+      'oauth_auth_requests_decision_complete',
+      sql`(${t.decidedAt} is null and ${t.approved} is null)
+          or (${t.decidedAt} is not null and ${t.approved} is not null
+              and (${t.approved} = false or ${t.userId} is not null))`,
+    ),
+  ],
+)
 
 /**
  * Short-lived authorization codes. Stored hashed — a leaked table must not be
@@ -110,6 +166,12 @@ export const oauthAuthCodes = pgTable(
     codeChallenge: text('code_challenge').notNull(),
     codeChallengeMethod: text('code_challenge_method').notNull().default('S256'),
     redirectUri: text('redirect_uri').notNull(),
+    /** RFC 8707. The audience the token minted from this code may carry. */
+    resource: text('resource'),
+    /** The approved request this code was minted from. One code per approval. */
+    requestId: uuid('request_id').references(() => oauthAuthRequests.id, {
+      onDelete: 'cascade',
+    }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt,
@@ -134,6 +196,12 @@ export const oauthTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     scopes: text('scopes').array().notNull(),
+    /**
+     * RFC 8707 audience. The spec requires the resource server to reject a
+     * token that was not issued for it, so this is checked on every MCP
+     * request rather than trusted because the token verified.
+     */
+    resource: text('resource'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt,
