@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { SignInCta } from '@/components/auth'
 import { Lockup, Otto } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -74,9 +75,7 @@ export default function Landing() {
               </p>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Link href="/portfolio" className={buttonClasses({ variant: 'primary', size: 'lg' })}>
-                  Link your first wallet
-                </Link>
+                <SignInCta>Link your first wallet</SignInCta>
                 <Link href="/review/demo" className={buttonClasses({ variant: 'ghost', size: 'lg' })}>
                   See what a review looks like
                 </Link>

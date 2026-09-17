@@ -36,9 +36,14 @@ describe('landing copy', () => {
 })
 
 describe('landing structure', () => {
-  it('offers exactly one primary button', () => {
-    const primaries = FLAT.match(/variant: 'primary'/g) ?? []
-    expect(primaries).toHaveLength(1)
+  /**
+   * One primary action on the page. SignInCta is primary by default, so the
+   * count is of it plus anything else asking for the coral fill.
+   */
+  it('offers exactly one primary action', () => {
+    const ctas = FLAT.match(/<SignInCta/g) ?? []
+    const explicitPrimaries = FLAT.match(/variant: 'primary'/g) ?? []
+    expect(ctas.length + explicitPrimaries.length).toBe(1)
   })
 
   it('sends the second call to action to a review, not to sign-in', () => {

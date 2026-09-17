@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Figtree, JetBrains_Mono, Quicksand } from 'next/font/google'
+import { PrivyProvider } from '@/components/auth'
 import { themeScript } from '@/components/theme-toggle'
 import './globals.css'
 
@@ -47,7 +48,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Before first paint: a stored dark choice must not flash light. */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <PrivyProvider>{children}</PrivyProvider>
+      </body>
     </html>
   )
 }

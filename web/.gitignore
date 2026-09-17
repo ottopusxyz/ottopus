@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The example is the documentation for which vars exist. It holds no values.
+!.env.example
 
 # vercel
 .vercel

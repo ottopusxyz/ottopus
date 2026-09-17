@@ -26,6 +26,8 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
  */
 export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   '/': 'Landing. A visitor here is not signed in, so there is nothing to navigate.',
+  '/signin':
+    'Sign-in. A signed-out visitor has no nav, and this is where shell routes send them.',
   '/styleguide': 'The design system, for us. App chrome around it would be confusing.',
 }
 
