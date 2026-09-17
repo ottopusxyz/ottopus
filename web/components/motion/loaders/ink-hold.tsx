@@ -71,7 +71,7 @@ export function InkHold({
           type="button"
           onClick={onEscape}
           className={
-            'relative rounded-[var(--ot-radius-pill)] border border-[rgba(255,240,220,0.3)] ' +
+            'relative cursor-pointer rounded-[var(--ot-radius-pill)] border border-[rgba(255,240,220,0.3)] ' +
             'px-[15px] py-[7px] text-[13px] font-semibold text-[var(--ot-cream)] ' +
             'transition-colors duration-[var(--ot-dur-fast)] hover:bg-[rgba(255,240,220,0.08)]'
           }

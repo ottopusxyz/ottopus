@@ -11,3 +11,92 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* --- Tokens on the water ---------------------------------------------------
+   The token section carries the same water as the empty scene, and each row
+   floats on it as its own card. That is what keeps the ambient layer honest:
+   bubbles and sea life pass through the margins and the gaps between rows,
+   never under a balance. The card itself never animates — depth is the one part
+   of the ocean layer allowed behind an amount, precisely because it is still. */
+
+/* Surface fading into depth, the way the empty scene does — it starts fully
+   transparent so the section has no seam against whatever sits above it, then
+   picks up the water tokens and deepens them toward --ot-plan on the way down.
+   Plain .ot-depth is a flat wash: right behind a small panel, far too faint
+   behind a whole section, and it cuts a hard line at the top. */
+.ot-token-sea {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ot-plan) 4%, var(--ot-water-1)) 26%,
+    color-mix(in srgb, var(--ot-plan) 11%, var(--ot-water-2)) 62%,
+    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-3)) 100%
+  );
+}
+
+.ot-token-row {
+  background-color: color-mix(in srgb, var(--ot-card) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ot-border) 55%, transparent);
+  border-radius: var(--ot-radius-md);
+}
+
+.ot-token-row:hover {
+  background-color: var(--ot-card);
+  border-color: var(--ot-border);
+}
+
+/* --- The balance tooltip ---------------------------------------------------
+   A caret anchored to the trigger, because the tooltip is centred on a cell and
+   without one it reads as a floating panel rather than as this number's detail.
+   The entry is a one-shot: 140ms, well under the design's 900ms ceiling. Not on
+   the ambient gate — a tooltip answers a pointer, so freezing it inside a held
+   region would look broken rather than calm. */
+
+.ot-detail-pop {
+  animation: ot-detail-in var(--ot-dur-fast) var(--ot-ease-out) both;
+}
+
+.ot-detail-pop--above {
+  animation-name: ot-detail-in-above;
+}
+
+.ot-detail-pop::before {
+  content: '';
+  position: absolute;
+  left: var(--ot-detail-caret, 24px);
+  width: 9px;
+  height: 9px;
+  background: var(--ot-card);
+  border: 1px solid var(--ot-border-strong);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.ot-detail-pop--below::before {
+  top: -5px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.ot-detail-pop--above::before {
+  bottom: -5px;
+  border-top: 0;
+  border-left: 0;
+}
+
+/* The above-variant carries translateY(-100%) as its resting transform, so its
+   keyframes have to restate it — an animation overrides the inline style. */
+@keyframes ot-detail-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ot-detail-in-above {
+  from { opacity: 0; transform: translateY(calc(-100% + 4px)); }
+  to { opacity: 1; transform: translateY(-100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-detail-pop {
+    animation: none !important;
+  }
+}

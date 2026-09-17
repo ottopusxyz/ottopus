@@ -43,7 +43,7 @@ export function NetworkFilter({ chains, value, onChange, className }: NetworkFil
       }}>
       <button ref={trigger} type="button" aria-expanded={open} aria-label={`Filter by network: ${selected?.name ?? 'All networks'}`}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-full border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-2 text-[12px] font-medium shadow-sm transition-colors hover:bg-[var(--ot-surface-3)]">
+        className="flex cursor-pointer items-center gap-2 rounded-full border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-2 text-[12px] font-medium shadow-sm transition-colors hover:bg-[var(--ot-surface-3)]">
         {selected ? <AssetIcon url={selected.iconUrl} name={selected.name} size={20} /> : (
           <span aria-hidden className="flex -space-x-2 pr-1">
             {chains.slice(0, 3).map((chain) => <AssetIcon key={chain.chainId} url={chain.iconUrl} name={chain.name} size={20} className="ring-2 ring-[var(--ot-card)]" />)}
@@ -59,7 +59,7 @@ export function NetworkFilter({ chains, value, onChange, className }: NetworkFil
           {options.map((chain) => (
             <button key={chain.chainId ?? 'all'} type="button" data-network-option aria-pressed={value === chain.chainId}
               onClick={() => { onChange(chain.chainId); setOpen(false); trigger.current?.focus() }}
-              className={cn('flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-[var(--ot-surface-3)]', value === chain.chainId && 'bg-[var(--ot-surface-3)] font-semibold')}>
+              className={cn('flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-[var(--ot-surface-3)]', value === chain.chainId && 'bg-[var(--ot-surface-3)] font-semibold')}>
               {chain.chainId ? <AssetIcon url={chain.iconUrl} name={chain.name} size={24} /> : (
                 <svg aria-hidden viewBox="0 0 24 24" className="h-6 w-6 text-[var(--ot-text-3)]" fill="none" stroke="currentColor" strokeWidth="1.3">
                   <circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5h14M5 17.5h14" />

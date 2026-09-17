@@ -1,0 +1,109 @@
+/* Ottopus — sea life. Small drifting scenery for the ocean layer.
+
+   Silhouettes only, and never a face: water.css already draws that line for the
+   jelly ("Scenery, not a character: no face, far back"). Otto is the one
+   character this product has, and a fish with eyes competes with him.
+
+   Everything here reads --ot-ambient-play, like the rest of the water. Note the
+   longhands: the `animation` shorthand resets animation-play-state to `running`,
+   so a shorthand in a modifier rule would quietly cancel the stillness gate.
+
+   Held far back on purpose. Sea life is scenery beside a table of numbers — if
+   you notice an individual creature while reading a balance, it is too loud. */
+
+:root {
+  --ot-sea-life: color-mix(in srgb, var(--ot-plan) 30%, transparent);
+  --ot-sea-life-warm: color-mix(in srgb, var(--ot-coral) 34%, transparent);
+}
+
+.ot-sea-life {
+  position: absolute;
+  pointer-events: none;
+  color: var(--ot-sea-life);
+  opacity: var(--ot-sea-opacity, 0.85);
+  animation-play-state: var(--ot-ambient-play);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+.ot-sea-life--warm {
+  color: var(--ot-sea-life-warm);
+}
+
+/* One direction, fading in and out at the ends of the run. Swimming out and
+   back would need the silhouette to turn around, and a fish that reverses
+   tail-first reads as a glitch rather than as a fish. */
+.ot-sea-life--fish {
+  animation-name: ot-swim;
+  animation-duration: var(--ot-sea-dur, 48s);
+  animation-timing-function: linear;
+}
+@keyframes ot-swim {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--ot-sea-opacity, 0.85);
+  }
+  50% {
+    transform: translate3d(calc(var(--ot-sea-travel, 160px) * 0.5), var(--ot-sea-lift, -10px), 0);
+  }
+  88% {
+    opacity: var(--ot-sea-opacity, 0.85);
+  }
+  100% {
+    transform: translate3d(var(--ot-sea-travel, 160px), 0, 0);
+    opacity: 0;
+  }
+}
+
+/* The jelly rises and squashes on the way, the way a bell does. */
+.ot-sea-life--jelly {
+  animation-name: ot-float;
+  animation-duration: var(--ot-sea-dur, 36s);
+  animation-timing-function: ease-in-out;
+}
+@keyframes ot-float {
+  0% {
+    transform: translate3d(0, 0, 0) scaleY(1);
+    opacity: 0;
+  }
+  16% {
+    opacity: var(--ot-sea-opacity, 0.85);
+  }
+  50% {
+    transform: translate3d(var(--ot-sea-travel, 20px), calc(var(--ot-sea-lift, -80px) * 0.55), 0) scaleY(0.9);
+  }
+  84% {
+    opacity: var(--ot-sea-opacity, 0.85);
+  }
+  100% {
+    transform: translate3d(0, var(--ot-sea-lift, -80px), 0) scaleY(1);
+    opacity: 0;
+  }
+}
+
+/* A crab walks sideways, so it can go out and come back without turning. It
+   stays on the floor and stays visible — no fade. */
+.ot-sea-life--crab {
+  animation-name: ot-shuffle;
+  animation-duration: var(--ot-sea-dur, 30s);
+  animation-timing-function: ease-in-out;
+}
+@keyframes ot-shuffle {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  46%,
+  54% {
+    transform: translate3d(var(--ot-sea-travel, 90px), 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-sea-life {
+    animation: none !important;
+  }
+}

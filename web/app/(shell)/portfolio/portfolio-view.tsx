@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
-import { BubbleField } from '@/components/motion'
+import { BubbleField, SeaLife } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
 import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
 import { Button, Callout, EmptyState } from '@/components/ui'
@@ -211,10 +211,20 @@ export function Frame({
               ) : null}
             </div>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {balancesLoading ? <SkeletonShelf rows={3} /> : hasReading && selected ? (
-                <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} />
-              ) : <p className="px-5 py-5 text-[var(--ot-text-2)]">Balances could not be read. Refresh to try again.</p>}
+            /* The same water as the empty scene, for the same reason: this is
+               the page's canvas. The rows float on it as their own cards, so the
+               ambient layer stays in the margins and the gaps between them —
+               never under a number someone is about to act on. */
+            <div className="ot-token-sea relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="ot-caustic" />
+              <div className="ot-caustic ot-caustic--b" />
+              <BubbleField pattern="canvas" />
+              <SeaLife />
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {balancesLoading ? <SkeletonShelf rows={3} avatar={36} className="m-4 sm:m-[22px]" /> : hasReading && selected ? (
+                  <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} />
+                ) : <p className="px-5 py-5 text-[var(--ot-text-2)]">Balances could not be read. Refresh to try again.</p>}
+              </div>
             </div>
           )}
         </>

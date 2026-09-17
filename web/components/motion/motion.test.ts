@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { BUBBLE_LAYOUTS, BUBBLE_PATTERNS, MAX_BUBBLES } from './bubble-field'
+import { MAX_SEA_LIFE, SEA_LIFE, SEA_SPECIES } from './sea-life'
 import { DEPTH_LEVELS, DEPTH_TOKENS } from './depth'
 import { SKELETON_LINES, SWEEP_STAGGER } from './skeleton'
 
@@ -8,6 +9,7 @@ const read = (name: string) =>
   readFileSync(new URL(`../../app/styles/${name}`, import.meta.url), 'utf8')
 
 const WATER = read('water.css')
+const SEA_LIFE_CSS = read('sea-life.css')
 const MOTION = read('motion.css')
 /** The loader family's keyframes are ambient too, and bound by the same gate. */
 const LOADERS = read('loaders.css')
@@ -62,7 +64,7 @@ function rules(css: string, reducedMotion = false): Rule[] {
   return out
 }
 
-const ALL = [...rules(WATER), ...rules(MOTION), ...rules(LOADERS)]
+const ALL = [...rules(WATER), ...rules(SEA_LIFE_CSS), ...rules(MOTION), ...rules(LOADERS)]
 
 /** Declares a keyframe animation, as opposed to merely tuning one. */
 const startsAnimation = (body: string) =>
@@ -189,6 +191,54 @@ describe('bubbles', () => {
         expect(bubble.left, pattern).toBeGreaterThanOrEqual(0)
         expect(bubble.left, pattern).toBeLessThanOrEqual(100)
       }
+    }
+  })
+})
+
+describe('sea life', () => {
+  it('never draws more than three', () => {
+    expect(MAX_SEA_LIFE).toBe(3)
+    expect(SEA_LIFE.length).toBeLessThanOrEqual(MAX_SEA_LIFE)
+  })
+
+  it('has a shape and a keyframe for every species it can draw', () => {
+    const source = readFileSync(new URL('./sea-life.tsx', import.meta.url), 'utf8')
+    for (const species of SEA_SPECIES) {
+      expect(source, species).toContain(`${species}: {`)
+      expect(SEA_LIFE_CSS, species).toContain(`.ot-sea-life--${species}`)
+    }
+  })
+
+  /**
+   * The `animation` shorthand resets animation-play-state to `running`, so a
+   * shorthand in a per-species rule would silently cancel the stillness gate
+   * the base class sets. Longhands only.
+   */
+  it('tunes each species with longhands, so the stillness gate survives', () => {
+    const shorthand = /(^|[;\s])animation\s*:(?!\s*none)/
+    for (const rule of rules(SEA_LIFE_CSS)) {
+      expect(shorthand.test(rule.body), rule.selectors.join(', ')).toBe(false)
+    }
+  })
+
+  it('draws no faces — the water layer is scenery, and Otto is the character', () => {
+    const markup = readFileSync(new URL('./sea-life.tsx', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+    expect(markup).not.toMatch(/eye|pupil|brow|mouth/i)
+  })
+
+  it('staggers them, so they never set off together', () => {
+    const delays = SEA_LIFE.map((creature) => creature.delay)
+    expect(new Set(delays).size).toBe(delays.length)
+  })
+
+  it('keeps every creature inside its container', () => {
+    for (const creature of SEA_LIFE) {
+      expect(creature.left, creature.species).toBeGreaterThanOrEqual(0)
+      expect(creature.left, creature.species).toBeLessThanOrEqual(100)
+      expect(creature.top, creature.species).toBeGreaterThanOrEqual(0)
+      expect(creature.top, creature.species).toBeLessThanOrEqual(100)
     }
   })
 })
