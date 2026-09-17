@@ -21,11 +21,17 @@ ALTER TABLE "plans" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "plan_events" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "simulations" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 
--- Force RLS on the table owner too, so the check is not skipped when migrations
--- or a pooler connect as the owning role.
-ALTER TABLE "plans" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "plan_events" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "simulations" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+-- Deliberately NOT using FORCE ROW LEVEL SECURITY.
+--
+-- FORCE applies RLS to the table owner as well, and the service connects as the
+-- owner. With RLS on and no policies, forcing it would deny our own queries and
+-- take the whole service down. It also buys nothing here: RLS exists to stop a
+-- leaked client key, and anon and authenticated are not the owner, so ordinary
+-- RLS plus the revokes below already deny them.
+--
+-- The service therefore requires a connection role that bypasses RLS — the
+-- table owner, or a role with BYPASSRLS. That is what DATABASE_URL provides.
+-- Immutability does not depend on any of this: triggers apply to every role.
 
 -- Belt and braces: even with RLS off by accident, these roles hold no grants.
 REVOKE ALL ON ALL TABLES IN SCHEMA "public" FROM anon, authenticated;--> statement-breakpoint
