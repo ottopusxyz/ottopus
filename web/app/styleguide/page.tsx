@@ -1,4 +1,17 @@
 import { Lockup, Otto, OttoBadge, POSE_NAMES } from '@/components/brand'
+import {
+  BadgeLoader,
+  BubbleField,
+  DEPTH_LEVELS,
+  DEPTH_TOKENS,
+  Depth,
+  InlineLoader,
+  LoaderDots,
+  OttoLoader,
+  SkeletonRow,
+  SkeletonText,
+  StillnessProvider,
+} from '@/components/motion'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { cn } from '@/lib/cn'
 import {
@@ -388,35 +401,77 @@ export default function Styleguide() {
         </div>
       </Section>
 
+      <Section title="Loaders">
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-wrap items-end gap-8">
+            <OttoLoader label="Otto is planning…" />
+            <OttoLoader pose="simulating" label="Simulating on a fork…" />
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <BadgeLoader label="Otto is planning…" />
+            <InlineLoader label="Simulating on a fork" />
+            <LoaderDots label="Simulating" />
+          </div>
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            Full Otto for waits over ten seconds, the pill for anything shorter. Every loader takes
+            a label, because under reduced motion that line is the whole loader.
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Skeletons">
+        <div className="flex flex-col gap-5">
+          <SkeletonText label="Loading the styleguide sample" />
+          <SkeletonRow label="Loading a portfolio row" />
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            A tidal sweep, not a metallic shimmer — twice as slow as the usual skeleton. Each holds
+            the exact height of what it replaces, so nothing jumps when the numbers arrive.
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Depth">
+        <div className="flex flex-col gap-3">
+          <div className="overflow-hidden rounded-[var(--ot-radius-md)] border border-[var(--ot-border)]">
+            {DEPTH_LEVELS.map((level) => (
+              <Depth key={level} level={level} className="flex items-baseline justify-between px-5 py-4">
+                <span className="text-[14px] font-semibold capitalize">{level}</span>
+                <code className="font-mono text-[11px] text-[var(--ot-text-3)]">
+                  {DEPTH_TOKENS[level]}
+                </code>
+              </Depth>
+            ))}
+          </div>
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            Four steps, each about 2% darker. Depth never moves, which is why it is the one part of
+            the ocean layer allowed behind an amount.
+          </p>
+        </div>
+      </Section>
+
       <Section title="Ambient motion">
         <div className="flex flex-col gap-4">
           <div className="flex gap-4">
-            <div className="ot-depth relative h-28 flex-1 overflow-hidden rounded-[var(--ot-radius-md)]">
+            <StillnessProvider className="ot-depth relative h-28 flex-1 overflow-hidden rounded-[var(--ot-radius-md)]">
               <div className="ot-caustic" />
-              <span className="ot-bubble ot-bubble--lg" style={{ left: 24, bottom: 8, width: 10, height: 10 }} />
-              <span className="ot-bubble ot-bubble--md" style={{ left: 56, bottom: 8, width: 7, height: 7 }} />
-              <span className="ot-bubble ot-bubble--sm" style={{ left: 84, bottom: 8, width: 5, height: 5 }} />
+              <BubbleField pattern="canvas" />
               <span className="absolute bottom-2 left-3 text-[11px] text-[var(--ot-text-3)]">
                 running
               </span>
-            </div>
-            <div
-              data-stillness="held"
+            </StillnessProvider>
+            <StillnessProvider
+              held
               className="ot-depth relative h-28 flex-1 overflow-hidden rounded-[var(--ot-radius-md)]"
             >
               <div className="ot-caustic" />
-              <span className="ot-bubble ot-bubble--lg" style={{ left: 24, bottom: 30, width: 10, height: 10 }} />
-              <span className="ot-bubble ot-bubble--md" style={{ left: 56, bottom: 44, width: 7, height: 7 }} />
-              <span className="ot-bubble ot-bubble--sm" style={{ left: 84, bottom: 20, width: 5, height: 5 }} />
-              <span className="absolute bottom-2 left-3 text-[11px] text-[var(--ot-text-3)]">
-                data-stillness=&quot;held&quot;
-              </span>
-            </div>
+              <BubbleField pattern="canvas" />
+              <LoaderDots label="Held" className="absolute bottom-2 left-3 text-[11px]" />
+            </StillnessProvider>
           </div>
-          <div className="ot-shimmer h-4 w-2/3 rounded-[var(--ot-radius-sm)]" />
           <p className="text-[13px] text-[var(--ot-text-3)]">
-            Stillness is how the product raises its voice. Everything above stops under reduced
-            motion too.
+            Stillness is how the product raises its voice: one risky plan halts everything inside
+            it, and the bubbles do not render at all. Everything above stops under reduced motion
+            too.
           </p>
         </div>
       </Section>
@@ -434,9 +489,6 @@ export default function Styleguide() {
         </ul>
       </Section>
 
-      <p className="text-[13px] text-[var(--ot-text-3)]">
-        Lockups, wordmarks and the badge tiers are still to come.
-      </p>
     </main>
   )
 }

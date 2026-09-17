@@ -1,0 +1,132 @@
+/* Ottopus — motion timings. Authored here, not ported.
+
+   The design system states the bands in prose — "idle loops 3.2–3.6s, loaders
+   1.2–1.6s, one-shots ≤ 900ms" — but ships no tokens for them, so every
+   specimen retypes 3.4s and the band lives only in a paragraph. These name it
+   once. The values are the ones the design actually draws with; the band is
+   what a reviewer should check a new value against.
+
+   water.css owns the ambient classes and the --ot-ambient-play gate. This file
+   loads after it and binds those classes to the tokens, rather than restating
+   the gradients and keyframes. Anything new here that animates must opt into
+   the gate too — an ungated animation would keep moving inside a container the
+   app has deliberately held still, which is the one thing stillness exists to
+   prevent. */
+
+:root {
+  /* Otto's own idle loop: the body bob and the arm sway. Top of the band,
+     because he should read as breathing rather than waiting. */
+  --ot-dur-idle: 3.6s;
+
+  /* Whole-mascot drift inside a loader. Deliberately not --ot-dur-idle: if the
+     drift and the arms shared a period they would lock in phase and the whole
+     thing would tick like a metronome. */
+  --ot-dur-drift: 3.4s;
+
+  /* The beat of anything that means "pending" — dots, badge pulse. */
+  --ot-dur-loader: 1.2s;
+
+  /* A ceiling, not a default. Nothing one-shot may run longer. */
+  --ot-dur-oneshot: 900ms;
+
+  /* The skeleton's tidal sweep. About twice as slow as a conventional
+     shimmer — the point is that it does not read as speed. */
+  --ot-dur-sweep: 2.4s;
+
+  /* A bubble's rise. Breath is brisk because it comes from Otto; the canvas
+     and empty states are slow enough that you notice them only if you look. */
+  --ot-dur-bubble: 2.6s;
+  --ot-dur-bubble-slow: 7.5s;
+
+  /* Water easing: slow in, slow out, no snap at either end. */
+  --ot-ease-drift: cubic-bezier(0.4, 0.05, 0.5, 0.95);
+}
+
+/* Bind the ported ambient classes to the tokens. Same specificity, later file,
+   so these win — and the timings stop being three copies of the same number. */
+.ot-shimmer {
+  animation-duration: var(--ot-dur-sweep);
+}
+.ot-drift {
+  animation-duration: var(--ot-dur-drift);
+}
+.otto-arm {
+  animation-duration: var(--ot-dur-idle);
+}
+.ot-bubble--fast {
+  animation-duration: var(--ot-dur-bubble);
+}
+
+/* A shallower rise, for containers too short for the 46px canvas travel — the
+   inline loader is a 34px pill, and a full-height bubble would leave it. */
+.ot-bubble--shallow {
+  animation-name: ot-rise-shallow;
+  animation-duration: var(--ot-dur-bubble);
+}
+@keyframes ot-rise-shallow {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-30px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Three plan-blue dots — the loader that fits on one line of text. */
+.ot-dot {
+  animation: ot-dot var(--ot-dur-loader) ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* The badge, breathing, at loader tempo. Small enough to sit in a button. */
+.ot-badge-pulse {
+  animation: ot-badge-pulse var(--ot-dur-loader) ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+  transform-origin: center;
+}
+@keyframes ot-badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.94);
+    opacity: 0.85;
+  }
+}
+
+/* Static fallbacks. water.css already stops the ambient classes; these are the
+   ones this file adds, and they need the same treatment — a frozen keyframe
+   would leave the dots at 25% opacity, which reads as broken rather than calm.
+   Every loader carries a text label for exactly this reason. */
+@media (prefers-reduced-motion: reduce) {
+  .ot-dot {
+    animation: none !important;
+    opacity: 0.75;
+  }
+  .ot-badge-pulse {
+    animation: none !important;
+  }
+  .ot-bubble--shallow {
+    animation: none !important;
+    opacity: 0.6;
+  }
+}
