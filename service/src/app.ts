@@ -26,13 +26,24 @@ rootApp.get('/health', (c) =>
 rootApp.route('/mcp', mcpApp)
 rootApp.route('/api', apiApp)
 
-/** Leftmost label of the request host, e.g. "mcp" for mcp.ottopus.xyz. */
+/**
+ * Leftmost label of the request host, e.g. "mcp" for mcp.ottopus.xyz.
+ *
+ * Reads the Host header rather than parsing req.url — this runs on every
+ * request, and it avoids allocating a URL object per request.
+ *
+ * Any proxy in front must preserve the Host header. If one rewrites it, this
+ * returns something unrecognised and the request falls through to path-based
+ * routing, which still works — the surfaces degrade rather than disappear.
+ */
 function subdomain(req: Request): string {
-  try {
-    return new URL(req.url).hostname.split('.')[0] ?? ''
-  } catch {
-    return ''
-  }
+  const host = req.headers.get('host')
+  if (!host) return ''
+  const end = host.indexOf('.')
+  const label = end < 0 ? host : host.slice(0, end)
+  // Strip a port when the host has no dots, e.g. "localhost:8787".
+  const colon = label.indexOf(':')
+  return (colon < 0 ? label : label.slice(0, colon)).toLowerCase()
 }
 
 /**
