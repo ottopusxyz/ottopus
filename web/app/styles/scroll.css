@@ -1,0 +1,69 @@
+/* Ottopus — the scrollbar.
+
+   The platform default is a wide opaque bar, which is fine against a page and
+   wrong against water: it reads as a piece of chrome bolted to the side of the
+   token list. This replaces it with a slim floating thumb in the same slate the
+   quiet text uses, over no track at all.
+
+   Native, not a JavaScript reimplementation. A scripted thumb would have to
+   re-earn click-to-page, drag, keyboard scrolling, momentum and the OS's own
+   auto-hide behaviour, and would get at least one of them wrong on a surface
+   where people scroll a list of balances.
+
+   Two vocabularies, because there is no single one yet: scrollbar-color is the
+   standard and all Firefox understands, while Chrome only learned it in 121 and
+   still gives ::-webkit-scrollbar the finer control. Both are declared; a
+   browser applies whichever it knows. */
+
+:root {
+  /* The reserved gutter. Anything aligning a header to a scrolled list below it
+     needs the same number, so it lives here rather than in one component. */
+  --ot-scroll-size: 10px;
+  --ot-scroll-thumb: color-mix(in srgb, var(--ot-text-3) 42%, transparent);
+  --ot-scroll-thumb-hover: color-mix(in srgb, var(--ot-text-3) 68%, transparent);
+}
+
+.ot-scroll {
+  /* Stable, so a list that grows past its container does not shift its own
+     columns sideways at the moment it becomes scrollable. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ot-scroll-thumb) transparent;
+}
+
+.ot-scroll::-webkit-scrollbar {
+  width: var(--ot-scroll-size);
+  height: var(--ot-scroll-size);
+}
+
+.ot-scroll::-webkit-scrollbar-track,
+.ot-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* The border is transparent and clipped away from the fill, which is how a
+   4px thumb gets a 10px hit target: you grab the padding, you see the pill. */
+.ot-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--ot-scroll-thumb);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: var(--ot-radius-pill);
+}
+
+.ot-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ot-scroll-thumb-hover);
+}
+
+/* A header outside a scroll container has no gutter of its own, so its right
+   edge lands a scrollbar's width past the rows below it. A margin, not padding:
+   it shrinks the header's box by exactly the gutter, whatever padding the
+   header already carries.
+
+   Only from 40rem up. Below that the platform is usually a phone, whose
+   scrollbars overlay the content rather than reserve space beside it, so there
+   is nothing to compensate for. */
+@media (min-width: 40rem) {
+  .ot-scroll-gutter {
+    margin-inline-end: var(--ot-scroll-size);
+  }
+}

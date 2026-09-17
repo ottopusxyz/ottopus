@@ -12,9 +12,9 @@
   overflow: hidden;
 }
 
-/* --- Tokens on the water ---------------------------------------------------
-   The token section carries the same water as the empty scene, and each row
-   floats on it as its own card. That is what keeps the ambient layer honest:
+/* --- The portfolio on the water --------------------------------------------
+   Both tabs stand on the same water, and on the tokens tab each row floats on
+   it as its own card. That is what keeps the ambient layer honest:
    bubbles and sea life pass through the margins and the gaps between rows,
    never under a balance. The card itself never animates — depth is the one part
    of the ocean layer allowed behind an amount, precisely because it is still. */
@@ -24,7 +24,7 @@
    picks up the water tokens and deepens them toward --ot-plan on the way down.
    Plain .ot-depth is a flat wash: right behind a small panel, far too faint
    behind a whole section, and it cuts a hard line at the top. */
-.ot-token-sea {
+.ot-sea {
   background: linear-gradient(
     180deg,
     transparent 0%,

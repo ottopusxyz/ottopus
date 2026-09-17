@@ -63,8 +63,8 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
   }, [selectedId, selected])
   return (
     <>
-    <div className="mx-auto flex w-full max-w-[1120px] min-h-0 min-w-0 flex-1 flex-col px-4 tabular-nums sm:px-6" role="table" aria-label="Token holdings">
-      <div role="row" className={`grid ${COLUMNS} ${GUTTER} shrink-0 pt-3 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase`}>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 tabular-nums sm:px-6" role="table" aria-label="Token holdings">
+      <div role="row" className={`ot-scroll-gutter grid ${COLUMNS} ${GUTTER} shrink-0 pt-3 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase`}>
         <span role="columnheader">Asset</span>
         <span role="columnheader" className="text-right">Balance</span>
         <span role="columnheader" className="hidden text-right lg:block">Spendable</span>
@@ -72,7 +72,7 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
         <span role="columnheader" className="text-right">Value</span>
       </div>
       <div role="rowgroup" aria-label="Assets" tabIndex={0}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-5 [scrollbar-gutter:stable]">
+        className="ot-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-5">
       {tokens.map((token) => {
         const held = heldAs(token)
         const symbol = token.asset.symbol || token.asset.name
@@ -155,7 +155,7 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
           </div>
         </div>
       ) : null}
-      <div className="min-h-0 space-y-2 overflow-y-auto overscroll-contain tabular-nums" aria-label="Network balances" tabIndex={0}>
+      <div className="ot-scroll min-h-0 space-y-2 overflow-y-auto overscroll-contain tabular-nums" aria-label="Network balances" tabIndex={0}>
         {selected?.networks.map((balance) => {
           const chain = networks.get(balance.chainId)
           return (

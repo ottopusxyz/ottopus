@@ -100,13 +100,13 @@ const SHAPES: Record<SeaSpecies, Shape> = {
 
 /**
  * The drawn arrangement, not a generated one — the same rule BubbleField
- * follows. One to each margin and one on the floor, away from the middle, where
- * a table of numbers sits.
+ * follows. Drawn for the lower half of a tall column, because the top of one is
+ * usually where a caller has put something to read.
  */
 export const SEA_LIFE: readonly SeaCreature[] = [
-  { species: 'fish', left: 3, top: 24, size: 22, travel: 210, lift: -14, delay: 0, duration: 52, opacity: 0.85 },
-  { species: 'jelly', left: 93, top: 66, size: 24, travel: 18, lift: -120, delay: 7, duration: 38, opacity: 0.7 },
-  { species: 'crab', left: 6, top: 93, size: 20, travel: 84, lift: 0, delay: 3, duration: 30, opacity: 0.8 },
+  { species: 'fish', left: 8, top: 46, size: 22, travel: 150, lift: -14, delay: 0, duration: 52, opacity: 0.85 },
+  { species: 'jelly', left: 66, top: 64, size: 24, travel: 16, lift: -110, delay: 7, duration: 38, opacity: 0.7 },
+  { species: 'crab', left: 16, top: 92, size: 20, travel: 62, lift: 0, delay: 3, duration: 30, opacity: 0.8 },
 ]
 
 export interface SeaLifeProps {
