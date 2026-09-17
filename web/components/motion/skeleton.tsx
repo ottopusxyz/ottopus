@@ -69,8 +69,11 @@ export interface SkeletonTextProps {
   /**
    * Announced once to screen readers. Say what is loading — "Loading balances"
    * beats "Loading" when three regions load at different speeds.
+   *
+   * `null` for the second and later skeletons in one list: three rows should
+   * announce "Loading balances" once, not three times.
    */
-  label?: string
+  label?: string | null
   className?: string
 }
 
@@ -93,8 +96,8 @@ export function SkeletonText({
     Array.from({ length: lines }, (_, i) => SKELETON_LINES[i % SKELETON_LINES.length])
 
   return (
-    <div role="status" aria-busy className={cn('flex flex-col gap-[10px]', className)}>
-      <span className="sr-only">{label}</span>
+    <div {...announce(label)} className={cn('flex flex-col gap-[10px]', className)}>
+      {label === null ? null : <span className="sr-only">{label}</span>}
       {resolved.map((width, i) => (
         <Skeleton key={`${width}-${i}`} width={width} height={lineHeight} delay={i * SWEEP_STAGGER} />
       ))}
@@ -105,8 +108,17 @@ export function SkeletonText({
 export interface SkeletonRowProps {
   /** Square placeholder on the left — a token logo, a wallet avatar. */
   avatar?: number
-  label?: string
+  /** `null` when an earlier row in the same list already announces. */
+  label?: string | null
   className?: string
+}
+
+/**
+ * A skeleton that is one of several in a list should not announce again. Only
+ * the first carries the live region; the rest are decoration.
+ */
+function announce(label: string | null) {
+  return label === null ? { 'aria-hidden': true } : { role: 'status', 'aria-busy': true }
 }
 
 /**
@@ -115,8 +127,8 @@ export interface SkeletonRowProps {
  */
 export function SkeletonRow({ avatar = 44, label = 'Loading', className }: SkeletonRowProps) {
   return (
-    <div role="status" aria-busy className={cn('flex items-center gap-[10px]', className)}>
-      <span className="sr-only">{label}</span>
+    <div {...announce(label)} className={cn('flex items-center gap-[10px]', className)}>
+      {label === null ? null : <span className="sr-only">{label}</span>}
       <Skeleton width={avatar} height={avatar} radius={10} />
       <div className="flex flex-1 flex-col justify-center gap-2">
         <Skeleton width="50%" height={12} sweep={false} />
