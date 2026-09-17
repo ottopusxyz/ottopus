@@ -9,7 +9,6 @@ export {
   walletClientName,
 } from './naming'
 export { ProofMark, type ProofMarkProps } from './proof-mark'
-export { TokenTable } from './token-table'
 export {
   armsOf,
   useWallets,

@@ -174,7 +174,7 @@ describe('GET /portfolio', () => {
     expect(body.provider).toBe('stub')
     expect(body.currency).toBe('usd')
     expect(body.chains).toEqual([
-      { chainId: 'eip155:8453', name: 'Base', value: 1, share: 1 },
+      { chainId: 'eip155:8453', name: 'Base', iconUrl: null, value: 1, share: 1 },
     ])
   })
 })

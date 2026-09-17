@@ -16,6 +16,7 @@ export interface ChainEntry {
   /** Zerion's slug. */
   id: string
   name: string
+  iconUrl?: string | null
   /** EIP-155 chain id, hex or decimal, however the provider wrote it. */
   externalId: string | null | undefined
 }
@@ -30,10 +31,9 @@ export function evmChainIdOf(externalId: string | null | undefined): number | nu
   if (!externalId) return null
   const raw = externalId.trim()
 
-  const hex = /^0[xX][0-9a-fA-F]+$/.test(raw)
-  if (!hex && !/^[0-9]+$/.test(raw)) return null
+  if (!/^0[xX][0-9a-fA-F]+$/.test(raw) && !/^[0-9]+$/.test(raw)) return null
 
-  const n = Number(hex ? raw : `${raw}`)
+  const n = Number(raw)
   if (!Number.isSafeInteger(n) || n <= 0) return null
   return n
 }
@@ -48,6 +48,7 @@ export function evmChainIdOf(externalId: string | null | undefined): number | nu
 export class ChainMap {
   private readonly toCaip = new Map<string, string>()
   private readonly toSlug = new Map<string, string>()
+  private readonly icons = new Map<string, string>()
   private readonly names = new Map<string, string>()
 
   constructor(entries: readonly ChainEntry[]) {
@@ -68,6 +69,7 @@ export class ChainMap {
       this.toCaip.set(entry.id, caip)
       this.toSlug.set(caip, entry.id)
       this.names.set(caip, entry.name)
+      if (entry.iconUrl) this.icons.set(caip, entry.iconUrl)
     }
   }
 
@@ -84,6 +86,10 @@ export class ChainMap {
   /** Human name for a chain — "BNB Chain", not "binance-smart-chain". */
   nameOf(chainId: string): string | null {
     return this.names.get(chainId) ?? null
+  }
+
+  iconOf(chainId: string): string | null {
+    return this.icons.get(chainId) ?? null
   }
 
   get size(): number {

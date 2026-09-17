@@ -62,3 +62,83 @@ export function formatAmount(
   if (fraction === '') return wholeOut
   return `${wholeOut}.${fraction}`
 }
+
+export interface Money {
+  /** Grouped, with the sign already in it: "$12,431" or "−$40". */
+  whole: string
+  /** Two digits, always. The Figure dims these. */
+  fraction: string
+}
+
+/**
+ * A fiat total, split so the headline can dim the cents.
+ *
+ * Unlike `formatAmount` this takes a number, and that is deliberate: fiat
+ * values arrive from a pricing provider as floats and are estimates to begin
+ * with. Token amounts are the ones that must never round, and they have their
+ * own function.
+ *
+ * The minus sign is U+2212, not a hyphen — it is the same width as a digit, so
+ * a column of tabular figures does not shift when one goes negative.
+ */
+export function formatMoney(value: number, currency = 'usd'): Money {
+  const safe = Number.isFinite(value) ? value : 0
+  const symbol = CURRENCY_SYMBOLS[currency.toLowerCase()] ?? ''
+
+  // Rounded once, then split — rounding after the split can carry into the
+  // whole part and print $12,430.100 for 12430.999.
+  const cents = Math.round(Math.abs(safe) * 100)
+  const whole = Math.trunc(cents / 100)
+  const fraction = cents % 100
+
+  return {
+    whole: `${safe < 0 ? '−' : ''}${symbol}${whole.toLocaleString('en-US')}`,
+    fraction: String(fraction).padStart(2, '0'),
+  }
+}
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  usd: '$',
+  eur: '€',
+  gbp: '£',
+  jpy: '¥',
+  inr: '₹',
+}
+
+/** The whole and the cents as one string — for a table cell, not a headline. */
+export function formatMoneyFlat(value: number, currency = 'usd'): string {
+  const { whole, fraction } = formatMoney(value, currency)
+  return `${whole}.${fraction}`
+}
+
+/**
+ * A daily change, as the line under the headline reads it.
+ *
+ * Returns null when there is nothing to say: no change at all, or no holdings
+ * to have changed. "+$0.00 (0.00%) today" over an empty portfolio is noise
+ * dressed as information.
+ */
+export function formatDelta(
+  change: number,
+  gross: number,
+  currency = 'usd',
+): { text: string; direction: 'up' | 'down' } | null {
+  if (!Number.isFinite(change) || change === 0) return null
+
+  const sign = change > 0 ? '+' : '−'
+  const money = formatMoneyFlat(Math.abs(change), currency)
+  // Yesterday's value is today's minus the change — the denominator a percent
+  // change is actually against. Falling back to today's would understate a rise
+  // and overstate a fall.
+  const before = gross - change
+  const percent = before > 0 ? ` (${((Math.abs(change) / before) * 100).toFixed(2)}%)` : ''
+
+  return { text: `${sign}${money}${percent} today`, direction: change > 0 ? 'up' : 'down' }
+}
+
+/** A 0..1 share as a percentage. Below a tenth of a percent, say so. */
+export function formatShare(share: number): string {
+  if (!Number.isFinite(share) || share <= 0) return '—'
+  if (share < 0.001) return '<0.1%'
+  return `${(share * 100).toFixed(1)}%`
+}

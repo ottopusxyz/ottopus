@@ -1,0 +1,13 @@
+/* Scope the fixed viewport to the portfolio; other pages retain document scrolling. */
+.ot-app-shell:has([data-portfolio]) {
+  height: 100dvh;
+  overflow: hidden;
+}
+.ot-app-shell:has([data-portfolio]) > .ot-app-grid {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.ot-app-shell:has([data-portfolio]) #main {
+  min-height: 0;
+  overflow: hidden;
+}

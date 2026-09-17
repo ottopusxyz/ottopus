@@ -60,6 +60,8 @@ export function isSpendable(positionType: PositionType): boolean {
 }
 
 export interface AssetInfo {
+  /** Provider-scoped identity shared by deployments of the same token across chains. */
+  familyId?: string | null
   symbol: string
   name: string
   decimals: number
@@ -141,4 +143,5 @@ export interface PortfolioConnector {
    * the aggregate falls back to the CAIP id rather than requiring this.
    */
   chainName?(chainId: string): string | null
+  chainIcon?(chainId: string): string | null
 }

@@ -34,7 +34,7 @@ const COLUMN = 'bg-[var(--ot-card)] border-[var(--ot-border)] px-[14px] lg:col-s
  */
 export function AppShell({ children, agent, account }: AppShellProps) {
   return (
-    <div className="flex min-h-dvh flex-col bg-[var(--ot-page)] p-0 sm:p-6">
+    <div className="ot-app-shell flex min-h-dvh flex-col bg-[var(--ot-page)] p-0 sm:p-6">
       <a
         href="#main"
         className={
@@ -47,7 +47,7 @@ export function AppShell({ children, agent, account }: AppShellProps) {
 
       <div
         className={
-          'grid flex-1 overflow-hidden border-[var(--ot-border)] bg-[var(--ot-surface)] ' +
+          'ot-app-grid grid flex-1 overflow-hidden border-[var(--ot-border)] bg-[var(--ot-surface)] ' +
           'sm:rounded-[18px] sm:border ' +
           'lg:grid-cols-[216px_minmax(0,1fr)] lg:grid-rows-[auto_1fr_auto]'
         }

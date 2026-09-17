@@ -24,7 +24,7 @@ function Avatar({ arm, size = 34 }: { arm: Arm; size?: number }) {
 
 export interface ArmCardProps {
   arm: Arm
-  /** Right-hand figure. Null until the portfolio connector lands. */
+  /** Formatted balance. Null while the balance is unknown. */
   value?: string | null
   share?: string | null
 }

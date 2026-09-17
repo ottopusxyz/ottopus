@@ -75,6 +75,7 @@ export interface AssetRow {
 }
 
 export interface ChainRow {
+  iconUrl?: string | null
   chainId: string
   /** The provider's human name, or the CAIP id when it has none. */
   name: string
@@ -139,7 +140,11 @@ export async function readPortfolio(
       : { arm, positions: [], status: statusOf(result.reason) }
   })
 
-  return aggregate(connector.provider, reads, (chainId) => connector.chainName?.(chainId) ?? null)
+  return aggregate(
+    connector.provider, reads,
+    (chainId) => connector.chainName?.(chainId) ?? null,
+    (chainId) => connector.chainIcon?.(chainId) ?? null,
+  )
 }
 
 /**
@@ -150,6 +155,7 @@ export function aggregate(
   provider: string,
   reads: readonly ArmRead[],
   chainName: (chainId: string) => string | null = () => null,
+  chainIcon: (chainId: string) => string | null = () => null,
 ): Portfolio {
   const rows = new Map<string, AssetRow>()
   const arms: ArmSummary[] = []
@@ -229,6 +235,7 @@ export function aggregate(
     .map(([chainId, value]) => ({
       chainId,
       name: chainName(chainId) ?? chainId,
+      iconUrl: chainIcon(chainId),
       value,
       share: shareOf(value, gross),
     }))

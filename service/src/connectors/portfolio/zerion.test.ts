@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { cached } from './cache.js'
+import { readPortfolio } from './aggregate.js'
 import { ChainMap } from './chains.js'
 import { PortfolioError } from './types.js'
 import { ZerionPortfolioConnector, toPosition } from './zerion.js'
@@ -281,5 +283,33 @@ describe('talking to zerion', () => {
 
   it('needs a key at construction, not at the first request', () => {
     expect(() => new ZerionPortfolioConnector({ apiKey: '' })).toThrow(PortfolioError)
+  })
+})
+
+
+describe('portfolio display metadata', () => {
+  it('preserves the live fungible relationship ID shared across chains', () => {
+    const raw = {
+      ...position(),
+      relationships: { chain: { data: { id: 'base' } }, fungible: { data: { id: 'usd-coin' } } },
+    }
+    expect(toPosition(raw, CHAINS)?.asset.familyId).toBe('zerion:usd-coin')
+    expect(toPosition(position(), CHAINS)?.asset.familyId).toBeNull()
+  })
+
+  it('forwards network names and icons through the cache into the API response', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => jsonResponse(
+      String(url).includes('/chains/') ? {
+        data: [{ id: 'base', attributes: { name: 'Base', external_id: '0x2105', icon: { url: 'https://chain-icons.s3.amazonaws.com/chainlist/8453' } } }],
+      } : { data: [position()] },
+    ))
+    const wrapped = cached(connector(fetchImpl as unknown as typeof globalThis.fetch))
+    for (let read = 0; read < 2; read++) {
+      const portfolio = await readPortfolio(wrapped, [{ ...ACCOUNT, walletId: 'wallet' }])
+      expect(portfolio.chains[0]).toMatchObject({
+        chainId: 'eip155:8453', name: 'Base', iconUrl: 'https://chain-icons.s3.amazonaws.com/chainlist/8453',
+      })
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })

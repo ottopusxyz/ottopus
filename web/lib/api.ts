@@ -119,6 +119,104 @@ export function unlinkWallet(credentials: Credentials, id: string): Promise<void
 }
 
 /**
+ * How an asset is held. `wallet` is the only one a plan can spend — a staked
+ * balance is real money and not money you can send today.
+ */
+export type PositionType =
+  | 'wallet'
+  | 'deposit'
+  | 'loan'
+  | 'locked'
+  | 'staked'
+  | 'reward'
+  | 'investment'
+
+/** Why an arm's balances are missing. `ok` means they are not. */
+export type ArmStatus = 'ok' | 'untracked_address' | 'rate_limited' | 'unavailable' | 'not_configured'
+
+export interface ArmSummary {
+  walletId: string
+  address: string
+  status: ArmStatus
+  total: number
+  change1d: number
+  positionCount: number
+}
+
+/** One arm's share of an asset row. */
+export interface Holding {
+  walletId: string
+  positionType: PositionType
+  /** Base units. */
+  amount: string
+  value: number | null
+  protocol: string | null
+  groupId: string | null
+}
+
+export interface AssetInfo {
+  /** Provider-scoped identity shared by deployments of the same token across chains. */
+  familyId?: string | null
+  symbol: string
+  name: string
+  decimals: number
+  iconUrl: string | null
+  verified: boolean
+}
+
+export interface AssetRow {
+  /** CAIP-19 — one asset, on one chain, across every arm. */
+  assetId: string
+  chainId: string
+  asset: AssetInfo
+  /** Base units, summed across arms. Never a number. */
+  amount: string
+  /** Base units held loosely — what a plan could actually spend. */
+  spendable: string
+  /** Signed: a row that is only debt is negative. */
+  value: number
+  price: number | null
+  change1d: number
+  /** Fraction of gross holdings, 0..1. */
+  share: number
+  holdings: Holding[]
+}
+
+export interface ChainRow {
+  iconUrl?: string | null
+  chainId: string
+  name: string
+  value: number
+  share: number
+}
+
+export interface Portfolio {
+  provider: string
+  currency: string
+  asOf: string
+  /** Signed sum across every arm that could be read. Debt reduces it. */
+  total: number
+  /** Sum of positive values — the denominator behind every `share`. */
+  gross: number
+  change1d: number
+  arms: ArmSummary[]
+  chains: ChainRow[]
+  assets: AssetRow[]
+}
+
+/**
+ * Balances for every linked arm, aggregated with the per-arm breakdown kept.
+ *
+ * The service reads them; the browser never holds a portfolio provider's key.
+ * An arm the provider could not read comes back in `arms` with a reason rather
+ * than being dropped, so the page can say six of eight were read instead of
+ * quietly showing a smaller total.
+ */
+export function getPortfolio(credentials: Credentials): Promise<Portfolio> {
+  return call('/portfolio', credentials)
+}
+
+/**
  * Establish the session: exchange a Privy token for an Ottopus user, creating
  * the row on a first ever sign-in. Idempotent, so calling it again on every
  * cold boot is the intended use rather than a waste.

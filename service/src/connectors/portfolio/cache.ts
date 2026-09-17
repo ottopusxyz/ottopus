@@ -105,5 +105,8 @@ export function cached(
   if (connector.chainName) {
     wrapped.chainName = (chainId: string) => connector.chainName!(chainId)
   }
+  if (connector.chainIcon) {
+    wrapped.chainIcon = (chainId: string) => connector.chainIcon!(chainId)
+  }
   return wrapped
 }

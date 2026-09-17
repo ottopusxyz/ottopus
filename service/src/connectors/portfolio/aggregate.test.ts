@@ -280,8 +280,8 @@ describe('the totals a page renders', () => {
     )
 
     expect(portfolio.chains).toEqual([
-      { chainId: 'eip155:8453', name: 'Base', value: 750, share: 0.75 },
-      { chainId: 'eip155:1', name: 'Ethereum', value: 250, share: 0.25 },
+      { chainId: 'eip155:8453', name: 'Base', iconUrl: null, value: 750, share: 0.75 },
+      { chainId: 'eip155:1', name: 'Ethereum', iconUrl: null, value: 250, share: 0.25 },
     ])
   })
 
