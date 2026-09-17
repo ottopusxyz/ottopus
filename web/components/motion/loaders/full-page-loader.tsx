@@ -105,7 +105,8 @@ export function FullPageLoader({
       </div>
 
       <div className="ot-float relative">
-        <Otto pose="planning" size={118} animated />
+        {/* The juggling pose: the design's L4 holds props in the air. */}
+        <Otto pose="loader" size={118} animated />
       </div>
 
       <div className="relative flex flex-col items-center gap-2 px-6 text-center">

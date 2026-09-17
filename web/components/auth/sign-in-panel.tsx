@@ -84,7 +84,7 @@ function Header({
     <div className="flex flex-col items-center gap-[5px] text-center">
       {mascot ?? (
         <Gaze>
-          <OttoBadge tier="icon" size={44} />
+          <OttoBadge tier="icon" size={44} animate="idle" />
         </Gaze>
       )}
       <Heading id={headingId} className="font-display text-[19px] font-bold">

@@ -1,0 +1,250 @@
+/* Ottopus — Otto's own motion, transcribed from Otto.dc.html.
+
+   water.css already carries otto-sway and otto-look. The rest live here: the
+   body bob, the blink, and the per-pose prop animations that make the loader a
+   loader rather than a still drawing of one.
+
+   Every one is gated on --ot-ambient-play, like everything else that moves. */
+
+.otto-bob {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+  animation: otto-bob 3.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* The eyes shut for a fraction of the loop — 92% open, a blink, open again.
+   Origin between the eyes so both lids meet in the middle. */
+.otto-blink {
+  transform-box: view-box;
+  transform-origin: 100px 76px;
+  animation: otto-blink 5.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.08);
+  }
+}
+
+/* The two raised arms catch on the beat the props cross them. */
+.otto-catch {
+  transform-box: view-box;
+  animation: otto-catch 1.3s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-catch {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(-9deg);
+  }
+}
+
+/* The juggle. Two props on mirrored arcs, half a cycle apart — this is the
+   ball at the top of the loader. */
+.otto-juggle-a {
+  animation: otto-juggle-a 1.3s ease-in-out infinite alternate;
+  animation-play-state: var(--ot-ambient-play);
+}
+.otto-juggle-b {
+  animation: otto-juggle-b 1.3s ease-in-out infinite alternate;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-juggle-a {
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-65px, -48px);
+  }
+  100% {
+    transform: translate(-132px, 5px);
+  }
+}
+@keyframes otto-juggle-b {
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(65px, -30px);
+  }
+  100% {
+    transform: translate(132px, -4px);
+  }
+}
+
+/* Simulating: three taps, a rest, and the cube answering each one. */
+.otto-tap {
+  transform-box: view-box;
+  animation: otto-tap 1.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.otto-glow {
+  animation: otto-glow 1.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.otto-cube {
+  transform-box: view-box;
+  transform-origin: 188px 60px;
+  animation: otto-cube 1.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-tap {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  10%,
+  30%,
+  50% {
+    transform: rotate(-7deg);
+  }
+  20%,
+  40% {
+    transform: rotate(0);
+  }
+}
+@keyframes otto-glow {
+  0%,
+  60%,
+  100% {
+    opacity: 0.16;
+  }
+  10%,
+  30%,
+  50% {
+    opacity: 0.42;
+  }
+}
+@keyframes otto-cube {
+  0%,
+  60%,
+  100% {
+    transform: rotate(12deg) scale(1);
+  }
+  10%,
+  30%,
+  50% {
+    transform: rotate(12deg) scale(1.06);
+  }
+}
+
+/* Reduced motion: Otto sits in his base pose, which for a prop means where it
+   started. The glow holds at the value the design gives for a still frame. */
+@media (prefers-reduced-motion: reduce) {
+  .otto-bob,
+  .otto-blink,
+  .otto-catch,
+  .otto-juggle-a,
+  .otto-juggle-b,
+  .otto-tap,
+  .otto-glow,
+  .otto-cube {
+    animation: none !important;
+    transform: none !important;
+  }
+  .otto-glow {
+    opacity: 0.3;
+  }
+}
+
+/* --- The badge's own idle, from OttoBadge.dc.html. Its own timings, not
+   Otto's: the badge is small and often several to a page, so it blinks slower
+   and glances further than the full mascot does. --- */
+.badge-blink {
+  transform-box: view-box;
+  transform-origin: 50px 41px;
+  animation: badge-blink 4.8s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.badge-look {
+  animation: badge-look 7s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+/* The band and the suckers ride up together — the badge is breathing too. */
+.badge-curl {
+  transform-box: view-box;
+  animation: badge-curl 3.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.badge-pulse {
+  transform-origin: 50% 50%;
+  animation: badge-pulse 1.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes badge-blink {
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes badge-look {
+  0%,
+  25% {
+    transform: translate(0, 0);
+  }
+  35%,
+  55% {
+    transform: translate(2.5px, 0);
+  }
+  65%,
+  85% {
+    transform: translate(-2px, 0.5px);
+  }
+  95%,
+  100% {
+    transform: translate(0, 0);
+  }
+}
+@keyframes badge-curl {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.94);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge-blink,
+  .badge-look,
+  .badge-curl,
+  .badge-pulse {
+    animation: none !important;
+    transform: none !important;
+  }
+}

@@ -8,12 +8,23 @@ const BAND = '#FFF0DC'
 
 export type BadgeTier = 'outlined' | 'icon'
 
+/**
+ * `idle` is the badge alive — blinking, glancing, the band curling. `loader`
+ * adds the pulse on top. The design never animates a badge below 24px, so
+ * anything smaller renders still whatever this says.
+ */
+export type BadgeAnimation = 'none' | 'idle' | 'loader'
+
+/** Below this the movement turns to noise, so it is simply not applied. */
+const MIN_ANIMATED_SIZE = 24
+
 export interface OttoBadgeProps {
   /**
    * "icon" drops the outer ring and the eye highlights, which turn to mud below
    * 24px. The design system: icon tier under 24px, outlined at 24 and above.
    */
   tier?: BadgeTier
+  animate?: BadgeAnimation
   size?: number
   /** Single-colour treatment for reversed and one-ink contexts. */
   mono?: boolean
@@ -34,6 +45,7 @@ export interface OttoBadgeProps {
  */
 export function OttoBadge({
   tier = 'outlined',
+  animate = 'none',
   size = 32,
   mono = false,
   monoColor = INK,
@@ -46,12 +58,17 @@ export function OttoBadge({
   // while the geometry matches, silently wrong the moment a variant differs.
   const clipId = `otto-badge-${useId().replace(/:/g, '')}`
 
+  const live = animate !== 'none' && size >= MIN_ANIMATED_SIZE
+  const blink = live ? 'badge-blink' : undefined
+  const look = live ? 'badge-look' : undefined
+  const curl = live ? 'badge-curl' : undefined
+
   return (
     <svg
       viewBox="0 0 100 100"
       width={size}
       height={size}
-      className={cn('block', className)}
+      className={cn('block', animate === 'loader' && live && 'badge-pulse', className)}
       role={label ? 'img' : 'presentation'}
       aria-label={label}
       aria-hidden={label ? undefined : true}
@@ -70,11 +87,13 @@ export function OttoBadge({
             />
           </g>
           <circle cx="50" cy="50" r="43" fill="none" stroke={monoColor} strokeWidth={6} />
-          <circle cx="35" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
-          <circle cx="65" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
-          <g data-part="pupils">
-            <circle cx="37" cy="43" r="4" fill={monoColor} />
-            <circle cx="67" cy="43" r="4" fill={monoColor} />
+          <g className={blink}>
+            <circle cx="35" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
+            <circle cx="65" cy="41" r="10.5" fill="none" stroke={monoColor} strokeWidth={5} />
+            <g data-part="pupils" className={look}>
+              <circle cx="37" cy="43" r="4" fill={monoColor} />
+              <circle cx="67" cy="43" r="4" fill={monoColor} />
+            </g>
           </g>
         </g>
       ) : tier === 'icon' ? (
@@ -91,11 +110,13 @@ export function OttoBadge({
               fill={BAND}
             />
           </g>
-          <circle cx="34" cy="41" r="11" fill="#fff" />
-          <circle cx="66" cy="41" r="11" fill="#fff" />
-          <g data-part="pupils">
-            <circle cx="36" cy="42" r="6" fill={INK} />
-            <circle cx="68" cy="42" r="6" fill={INK} />
+          <g className={blink}>
+            <circle cx="34" cy="41" r="11" fill="#fff" />
+            <circle cx="66" cy="41" r="11" fill="#fff" />
+            <g data-part="pupils" className={look}>
+              <circle cx="36" cy="42" r="6" fill={INK} />
+              <circle cx="68" cy="42" r="6" fill={INK} />
+            </g>
           </g>
         </g>
       ) : (
@@ -107,24 +128,28 @@ export function OttoBadge({
           </defs>
           <circle cx="50" cy="50" r="43" fill={body} />
           <g clipPath={`url(#${clipId})`}>
-            <path
-              d="M2 68 Q16 56 28 68 Q40 80 50 68 Q60 56 72 68 Q84 80 98 66 L98 102 L2 102 Z"
-              fill={BAND}
-            />
-            <g fill={body} opacity={0.85}>
+            <g className={curl}>
+              <path
+                d="M2 68 Q16 56 28 68 Q40 80 50 68 Q60 56 72 68 Q84 80 98 66 L98 102 L2 102 Z"
+                fill={BAND}
+              />
+            </g>
+            <g fill={body} opacity={0.85} className={curl}>
               <circle cx="24" cy="82" r="4" />
               <circle cx="50" cy="86" r="4" />
               <circle cx="76" cy="82" r="4" />
             </g>
           </g>
           <circle cx="50" cy="50" r="43" fill="none" stroke={INK} strokeWidth={6} />
-          <circle cx="35" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
-          <circle cx="65" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
-          <g data-part="pupils">
-            <circle cx="37" cy="43" r="6" fill={INK} />
-            <circle cx="67" cy="43" r="6" fill={INK} />
-            <circle cx="34" cy="39" r="2.2" fill="#fff" />
-            <circle cx="64" cy="39" r="2.2" fill="#fff" />
+          <g className={blink}>
+            <circle cx="35" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
+            <circle cx="65" cy="41" r="12" fill="#fff" stroke={INK} strokeWidth={4.5} />
+            <g data-part="pupils" className={look}>
+              <circle cx="37" cy="43" r="6" fill={INK} />
+              <circle cx="67" cy="43" r="6" fill={INK} />
+              <circle cx="34" cy="39" r="2.2" fill="#fff" />
+              <circle cx="64" cy="39" r="2.2" fill="#fff" />
+            </g>
           </g>
         </g>
       )}

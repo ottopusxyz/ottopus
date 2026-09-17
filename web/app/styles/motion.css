@@ -95,24 +95,6 @@
   }
 }
 
-/* The badge, breathing, at loader tempo. Small enough to sit in a button. */
-.ot-badge-pulse {
-  animation: ot-badge-pulse var(--ot-dur-loader) ease-in-out infinite;
-  animation-play-state: var(--ot-ambient-play);
-  transform-origin: center;
-}
-@keyframes ot-badge-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(0.94);
-    opacity: 0.85;
-  }
-}
-
 /* Static fallbacks. water.css already stops the ambient classes; these are the
    ones this file adds, and they need the same treatment — a frozen keyframe
    would leave the dots at 25% opacity, which reads as broken rather than calm.
@@ -121,9 +103,6 @@
   .ot-dot {
     animation: none !important;
     opacity: 0.75;
-  }
-  .ot-badge-pulse {
-    animation: none !important;
   }
   .ot-bubble--shallow {
     animation: none !important;

@@ -9,11 +9,15 @@ import {
   LoaderDots,
   OttoLoader,
   SkeletonRow,
+  SkeletonShelf,
   SkeletonText,
   StillnessProvider,
+  TentacleRing,
+  TideBar,
 } from '@/components/motion'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { DialogDemo } from './dialog-demo'
+import { LoaderDemo } from './loader-demo'
 import { cn } from '@/lib/cn'
 import {
   AddressChip,
@@ -435,11 +439,62 @@ export default function Styleguide() {
         </div>
       </Section>
 
+      <Section title="Loader family">
+        <div className="flex flex-col gap-6">
+          <p className="text-[13px] leading-[1.6] text-[var(--ot-text-2)]">
+            One rule picks between them: how much of the screen the wait blocks. Inline waits get
+            geometry only — no Otto. Panel and page waits get Otto, because there the wait{' '}
+            <em>is</em> the screen. Never two Otto loaders at once.
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              L1 · Tentacle ring — inline
+            </span>
+            <div className="flex flex-wrap items-center gap-6">
+              <TentacleRing size={40} />
+              <TentacleRing size={24} />
+              <Button variant="primary" disabled>
+                <TentacleRing size={16} tone="current" />
+                Signing in…
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              L2 · Tide bar — route and steps
+            </span>
+            <TideBar label="Loading" />
+            <div className="flex items-center justify-between text-[12.5px] text-[var(--ot-text-3)]">
+              <span>Broadcasting to Base</span>
+              <span className="font-mono">2 of 3</span>
+            </div>
+            <TideBar value={2 / 3} height={8} label="Broadcasting to Base" />
+          </div>
+
+          <LoaderDemo />
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] tracking-[0.14em] text-[var(--ot-text-3)] uppercase">
+              L5 · Skeleton shelf — under 2s
+            </span>
+            <SkeletonShelf label="Loading the styleguide sample" />
+          </div>
+
+          <p className="text-[13px] leading-[1.6] text-[var(--ot-text-3)]">
+            Pick by duration: under 300ms show nothing, under 2s L5 or L1, 2–15s L3, over 15s L6,
+            and L4 full page once per session on cold boot — see it on{' '}
+            <a href="/signin">/signin</a> while a session resolves.
+          </p>
+        </div>
+      </Section>
+
       <Section title="Loaders">
         <div className="flex flex-col gap-6">
           <div className="flex flex-wrap items-end gap-8">
             <OttoLoader label="Otto is planning…" />
-            <OttoLoader pose="simulating" label="Simulating on a fork…" />
+            <OttoLoader pose="tapping" label="Simulating on a fork…" />
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <BadgeLoader label="Otto is planning…" />

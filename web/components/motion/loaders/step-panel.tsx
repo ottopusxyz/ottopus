@@ -36,7 +36,7 @@ export function StepPanel({ title, steps, className }: StepPanelProps) {
     >
       <BubbleField pattern="calm" />
       <div className="ot-drift relative">
-        <OttoBadge tier="outlined" size={72} />
+        <OttoBadge tier="outlined" size={72} animate="loader" />
       </div>
       <p className="font-display relative m-0 text-[17px] font-bold">{title}</p>
 

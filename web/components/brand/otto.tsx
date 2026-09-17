@@ -1,8 +1,13 @@
-import { POSES, type PoseName } from './otto-poses'
+import {
+  CREAM,
+  FRONT_ARM_DELAY,
+  INK,
+  POSES,
+  SWAY_DELAYS,
+  armOrigin,
+  type PoseName,
+} from './otto-poses'
 import { cn } from '@/lib/cn'
-
-const INK = '#16213E'
-const CREAM = '#FFF0DC'
 
 /** Suckers on the front arm, and on the raised arm when a pose tastes. */
 const FRONT_SUCKERS: [number, number][] = [
@@ -22,7 +27,11 @@ export interface OttoProps {
    * so this is the exception rather than a style choice.
    */
   flat?: boolean
-  /** Arms sway and eyes blink. Off by default — motion is opt-in. */
+  /**
+   * He breathes: the body bobs, arms sway out of phase, eyes blink and glance,
+   * and whatever he is holding moves with him. Off by default — motion is
+   * opt-in, and the design forbids animating Otto below 24px.
+   */
   animated?: boolean
   /** Accessible name. Omit for decoration beside text that already says it. */
   label?: string
@@ -44,6 +53,10 @@ export interface OttoProps {
  * Each arm is stroked twice: a wide navy edge, then a narrower body-coloured
  * core over it. That is what produces the outlined look, and it is why an arm
  * is a group rather than a path — the group is what rotates.
+ *
+ * A pose is its geometry *and* its prop. Otto is almost never empty-handed, and
+ * the prop is what says which state this is: a coin in the air means routing, a
+ * cube being tapped means simulating, an amber triangle means read this twice.
  */
 export function Otto({
   pose = 'base',
@@ -59,15 +72,53 @@ export function Otto({
   const edge = flat ? body : INK
   const outline = flat ? 'none' : INK
 
-  const arm = (d: string, i: number, wide: number, narrow: number) => (
-    <g
-      key={`${d}-${i}`}
-      data-arm={i + 1}
-      className={animated ? 'otto-arm' : undefined}
-      style={animated ? { animationDelay: `${-0.35 * i}s` } : undefined}
-    >
-      <path d={d} fill="none" stroke={edge} strokeWidth={wide} strokeLinecap="round" />
-      <path d={d} fill="none" stroke={body} strokeWidth={narrow} strokeLinecap="round" />
+  const arm = (
+    d: string,
+    i: number,
+    wide: number,
+    narrow: number,
+    delay: number,
+    children?: React.ReactNode,
+  ) => {
+    const [ox, oy] = armOrigin(d)
+    const catches = art.catchArms?.includes(i)
+    const taps = art.tapArm === i
+    const moving = animated && (catches || taps || true)
+
+    return (
+      <g
+        key={`${d}-${i}`}
+        data-arm={i + 1}
+        className={
+          moving
+            ? catches
+              ? 'otto-catch'
+              : taps
+                ? 'otto-tap'
+                : 'otto-arm'
+            : undefined
+        }
+        style={
+          moving
+            ? {
+                transformOrigin: `${ox}px ${oy}px`,
+                animationDelay: `${catches ? (i === 6 ? -0.65 : 0) : delay}s`,
+              }
+            : undefined
+        }
+      >
+        <path d={d} fill="none" stroke={edge} strokeWidth={wide} strokeLinecap="round" />
+        <path d={d} fill="none" stroke={body} strokeWidth={narrow} strokeLinecap="round" />
+        {children}
+      </g>
+    )
+  }
+
+  const suckers = (dots: readonly [number, number][]) => (
+    <g fill={CREAM}>
+      {dots.map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={3.1} />
+      ))}
     </g>
   )
 
@@ -81,8 +132,23 @@ export function Otto({
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      <g data-otto="">
-        {art.arms.map((d, i) => arm(d, i, 30, 18))}
+      <g data-otto="" className={animated ? 'otto-bob' : undefined}>
+        {/* Behind everything: the ink cloud, the simulating glow, the arcs. */}
+        {art.behind?.(animated)}
+
+        {art.arms.map((d, i) =>
+          arm(
+            d,
+            i,
+            30,
+            18,
+            SWAY_DELAYS[i] ?? 0,
+            // The tapping arm carries its suckers so they ride with it.
+            art.tapArm === i && art.armSuckers ? suckers(art.armSuckers) : undefined,
+          ),
+        )}
+        {/* On a still pose the reaching arm's suckers are drawn in place. */}
+        {art.armSuckers && art.tapArm === undefined ? suckers(art.armSuckers) : null}
 
         <g data-part="body">
           <path
@@ -98,19 +164,15 @@ export function Otto({
           <ellipse cx="100" cy="131" rx="45" ry="13" fill={CREAM} />
         </g>
 
-        {arm(art.frontArm, 7, 28, 17)}
-        {art.suckers ? (
-          <g fill={CREAM}>
-            {FRONT_SUCKERS.map(([cx, cy]) => (
-              <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={3.1} />
-            ))}
-          </g>
-        ) : null}
+        {arm(art.frontArm, 7, 28, 17, FRONT_ARM_DELAY)}
+        {art.suckers ? suckers(FRONT_SUCKERS) : null}
 
-        <g data-part="eyes">
-          <circle cx="79" cy="76" r={art.eyeR ?? 17} fill="#fff" stroke={outline} strokeWidth={5} />
-          <circle cx="121" cy="76" r={art.eyeR ?? 17} fill="#fff" stroke={outline} strokeWidth={5} />
-          {art.pupils ? (
+        {/* Eyes blink as a group; the pupils glance inside it. Celebrating
+            draws no eyes at all — the closed-happy curves are its face. */}
+        {art.pupils ? (
+          <g data-part="eyes" className={animated ? 'otto-blink' : undefined}>
+            <circle cx="79" cy="76" r={art.eyeR ?? 17} fill="#fff" stroke={outline} strokeWidth={5} />
+            <circle cx="121" cy="76" r={art.eyeR ?? 17} fill="#fff" stroke={outline} strokeWidth={5} />
             <g data-part="pupils" className={animated ? 'otto-look' : undefined}>
               {art.pupils.map(([cx, cy, r]) => (
                 <circle key={`p-${cx}`} cx={cx} cy={cy} r={r} fill={INK} />
@@ -119,8 +181,8 @@ export function Otto({
                 <circle key={`g-${cx}`} cx={cx} cy={cy} r={3} fill="#fff" />
               ))}
             </g>
-          ) : null}
-        </g>
+          </g>
+        ) : null}
 
         <g
           data-part="face"
@@ -133,6 +195,11 @@ export function Otto({
             <path key={d} d={d} />
           ))}
         </g>
+
+        {art.mouth?.(shade)}
+
+        {/* What he is holding. */}
+        {art.prop?.(animated)}
       </g>
     </svg>
   )

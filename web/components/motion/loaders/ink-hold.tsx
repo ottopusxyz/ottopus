@@ -54,7 +54,7 @@ export function InkHold({
       ))}
 
       <div className="ot-ink-pulse relative">
-        <OttoBadge mono monoColor="var(--ot-cream)" size={52} />
+        <OttoBadge mono monoColor="var(--ot-cream)" size={52} animate="idle" />
       </div>
 
       <div className="relative flex flex-col items-center gap-[6px] text-center">

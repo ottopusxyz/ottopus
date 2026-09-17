@@ -25,6 +25,13 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   privyDid: text('privy_did').notNull().unique(),
   email: text('email'),
+  /**
+   * Display name, when the sign-in method carries one. Google gives one; email
+   * and wallet do not, so this is null for them and filled later if they link a
+   * method that has one. Never a required field — a wallet is a legitimate way
+   * to be a person here, and it has no name to give.
+   */
+  name: text('name'),
   createdAt,
 })
 

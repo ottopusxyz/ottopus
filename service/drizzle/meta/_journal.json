@@ -15,6 +15,13 @@
       "when": 1788608342658,
       "tag": "0001_lock_down",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788845500037,
+      "tag": "0002_user_name",
+      "breakpoints": true
     }
   ]
 }

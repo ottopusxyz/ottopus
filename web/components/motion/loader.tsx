@@ -5,8 +5,12 @@ import { BubbleField } from './bubble-field'
 /**
  * The poses a loader may use. Otto is never a progress bar: he is doing
  * something, and which thing is the only choice here.
+ *
+ * `loader` juggles the coin and the chain — that is routing. `tapping` taps the
+ * cube — that is a simulation running. The still poses of the same scenes,
+ * `planning` and `simulating`, are for when nothing is in flight.
  */
-export type LoaderPose = 'planning' | 'simulating'
+export type LoaderPose = 'loader' | 'tapping'
 
 /** The design's Otto, and the box the bubbles are drawn against. */
 const OTTO_SIZE = 104
@@ -33,7 +37,7 @@ export interface OttoLoaderProps {
  * Deliberately fixed-size. The bubble positions are drawn against Otto's dome
  * at this exact scale, so a `size` prop could only be used wrongly.
  */
-export function OttoLoader({ label, pose = 'planning', className }: OttoLoaderProps) {
+export function OttoLoader({ label, pose = 'loader', className }: OttoLoaderProps) {
   return (
     <div role="status" className={cn('flex flex-col items-center gap-3', className)}>
       <div
@@ -131,7 +135,7 @@ export function BadgeLoader({ label, className }: BadgeLoaderProps) {
         className,
       )}
     >
-      <OttoBadge tier="icon" size={24} className="ot-badge-pulse" />
+      <OttoBadge tier="icon" size={24} animate="loader" />
       {label}
     </span>
   )
