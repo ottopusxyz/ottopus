@@ -14,6 +14,14 @@ import { cn } from '@/lib/cn'
 /** Past this, a release dismisses instead of snapping back. */
 const DISMISS_AFTER_PX = 90
 
+/**
+ * How long the exit takes, matching --ot-dur-base in dialog.css.
+ *
+ * A caller that has to wait for the dialog to leave the top layer needs this
+ * number, and the alternative to exporting it is each caller guessing.
+ */
+export const EXIT_MS = 260
+
 export type DialogTone = 'default' | 'destructive'
 
 export interface DialogProps {

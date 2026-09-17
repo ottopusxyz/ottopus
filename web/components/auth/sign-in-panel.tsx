@@ -55,6 +55,16 @@ export interface SignInPanelProps {
   className?: string
   /** Slot for the badge, so a page can hand in a livelier one. */
   mascot?: ReactNode
+  /**
+   * Called, and awaited, before handing over to a UI we do not own.
+   *
+   * Privy's modal is an ordinary element with a high z-index. A native
+   * `<dialog>` opened with `showModal()` sits in the top layer, which nothing
+   * in normal stacking can climb above — so inside our dialog, Privy's renders
+   * behind it and cannot be clicked. The container uses this to get out of the
+   * way first.
+   */
+  onLeave?: () => Promise<void> | void
 }
 
 /**
@@ -112,7 +122,7 @@ function UnconfiguredSignIn(props: SignInPanelProps) {
 type Step = 'choose' | 'email' | 'code'
 
 function LiveSignIn(props: SignInPanelProps) {
-  const { className } = props
+  const { className, onLeave } = props
   const { login } = usePrivy()
   const { sendCode, loginWithCode, state: emailState } = useLoginWithEmail()
   const { initOAuth, state: oauthState } = useLoginWithOAuth()
@@ -191,7 +201,10 @@ function LiveSignIn(props: SignInPanelProps) {
             variant="secondary"
             shape="block"
             disabled={busy}
-            onClick={() => login({ loginMethods: ['wallet'] })}
+            onClick={async () => {
+              await onLeave?.()
+              login({ loginMethods: ['wallet'] })
+            }}
           >
             Connect a wallet
           </Button>

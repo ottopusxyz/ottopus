@@ -144,6 +144,24 @@ describe('timing tokens stay inside the design bands', () => {
   })
 })
 
+describe('the dialog exit duration is not a guess', () => {
+  const dialogCss = read('dialog.css')
+
+  /**
+   * SignInDialog waits EXIT_MS before handing over to Privy's modal, because
+   * the dialog holds the top layer for its whole exit. If the CSS slows down
+   * and the constant does not, Privy opens behind it again.
+   */
+  it('matches the transition it waits for', () => {
+    const source = readFileSync(new URL('../ui/dialog.tsx', import.meta.url), 'utf8')
+    const declared = Number(/EXIT_MS = (\d+)/.exec(source)?.[1])
+    const token = Number(/--ot-dur-base:\s*(\d+)ms/.exec(read('tokens.css'))?.[1])
+
+    expect(declared).toBe(token)
+    expect(dialogCss).toContain('var(--ot-dur-base)')
+  })
+})
+
 describe('bubbles', () => {
   it('never draws more than four', () => {
     expect(MAX_BUBBLES).toBe(4)

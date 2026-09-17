@@ -52,6 +52,9 @@ export function CodeInput({
         value={value}
         // Digits only, and never longer than the code. Stripping here rather
         // than validating on submit means a pasted "Code: 123456" still works.
+        // Digits first, then the length limit. A maxLength attribute here would
+        // truncate the raw paste — "Code: 12 34 56 78" becomes "Code: " and
+        // then strips to nothing — so the limit has to live after the filter.
         onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, length))}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -60,7 +63,6 @@ export function CodeInput({
         aria-label={label}
         aria-invalid={invalid || undefined}
         autoFocus={autoFocus}
-        maxLength={length}
         required
         // Covers the boxes so a tap anywhere focuses it, and invisible rather
         // than off-screen so the browser still scrolls to it and can attach
