@@ -1,0 +1,12 @@
+{
+  "name": "ottopus",
+  "private": true,
+  "packageManager": "pnpm@10.29.3",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./web --filter ./service dev",
+    "build": "pnpm --filter ./web --filter ./service build",
+    "lint": "pnpm --filter ./web lint",
+    "test": "pnpm --recursive test"
+  }
+}
