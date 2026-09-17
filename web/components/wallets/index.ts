@@ -10,6 +10,12 @@ export {
 } from './naming'
 export { ProofMark, type ProofMarkProps } from './proof-mark'
 export { TokenTable } from './token-table'
-export { useWallets, type UseWallets, type WalletsState } from './use-wallets'
+export {
+  armsOf,
+  useWallets,
+  type UseWallets,
+  type WalletsFailure,
+  type WalletsState,
+} from './use-wallets'
 export { WalletList, type WalletListProps } from './wallet-list'
-export { WalletsPanel } from './wallets-panel'
+export { WalletsPanel, failureText } from './wallets-panel'

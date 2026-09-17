@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core'
 import type { PrivyWallet } from '../auth/privy.js'
 import { EVM_ADDRESS_RE } from '../core/caip.js'
 import type * as schema from '../db/schema.js'
-import { linkedWallets } from '../db/schema.js'
+import { linkedWallets, users } from '../db/schema.js'
 import { MAX_ARMS, reconcile, type WalletToLink } from './reconcile.js'
 
 export type WalletDb = PgDatabase<PgQueryResultHKT, typeof schema>
@@ -56,6 +56,28 @@ const toArm = (row: Row): Arm => ({
   provedAt: row.provedAt?.toISOString() ?? null,
   createdAt: row.createdAt.toISOString(),
 })
+
+/**
+ * Take the per-user write lock for the rest of the transaction.
+ *
+ * The cap is checked against a count and then enforced by an insert, and under
+ * READ COMMITTED those are two different moments: two requests arriving at
+ * seven arms both read seven, both decide there is room, and the user ends up
+ * with nine. No constraint catches it — the addresses differ, so the unique
+ * index has nothing to say, and a trigger counting rows would see the same
+ * stale snapshot the application did.
+ *
+ * Locking the `users` row serialises every arm mutation for one person while
+ * leaving other users untouched. It is held to the end of the transaction, so
+ * the count taken after it is the count the insert lands against.
+ */
+export function userLockQuery(db: WalletDb, userId: string) {
+  return db.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update')
+}
+
+async function lockUser(tx: WalletDb, userId: string): Promise<void> {
+  await userLockQuery(tx, userId)
+}
 
 /** Active arms, oldest first — the order they were linked is the order shown. */
 async function activeRows(db: WalletDb, userId: string): Promise<Row[]> {
@@ -140,6 +162,7 @@ export async function syncWallets(
   attested: PrivyWallet[],
 ): Promise<SyncResult> {
   return db.transaction(async (tx) => {
+    await lockUser(tx as WalletDb, userId)
     const existing = await activeRows(tx as WalletDb, userId)
     const plan = reconcile(existing, attested)
 
@@ -186,6 +209,7 @@ export async function addWatchOnlyWallet(
   }
 
   return db.transaction(async (tx) => {
+    await lockUser(tx as WalletDb, userId)
     const existing = await activeRows(tx as WalletDb, userId)
     if (existing.length >= MAX_ARMS) {
       throw new WalletError('too_many_wallets', `Otto has ${MAX_ARMS} arms and they are all full`)

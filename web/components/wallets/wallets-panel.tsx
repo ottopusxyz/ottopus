@@ -7,8 +7,25 @@ import { SkeletonShelf } from '@/components/motion/loaders'
 import { Button, Callout, EmptyState } from '@/components/ui'
 import { LinkWalletDialog } from './link-wallet-dialog'
 import { MAX_ARMS } from './naming'
-import { useWallets } from './use-wallets'
+import { armsOf, useWallets, type WalletsFailure } from './use-wallets'
 import { WalletList } from './wallet-list'
+
+/**
+ * Why a refresh failed, in words. Shared by both wallet surfaces so they
+ * cannot drift into describing the same failure differently.
+ */
+export function failureText(reason: WalletsFailure): { title: string; body: string } {
+  if (reason === 'no-identity-token') {
+    return {
+      title: 'Wallets can’t sync yet',
+      body: 'Identity tokens are switched off for this app, so Ottopus can’t confirm which wallets are yours. Enable them in the Privy dashboard under User management → Authentication → Advanced.',
+    }
+  }
+  return {
+    title: 'Can’t reach Ottopus right now',
+    body: 'Your wallets are safe — this is our side, and nothing has changed. Try again in a moment.',
+  }
+}
 
 /**
  * Settings' wallet card, per P6.
@@ -70,40 +87,43 @@ function ConnectedPanel() {
   const { state, linkWallet, linking, linkError, addWatchOnly, unlink } = useWallets()
   const [open, setOpen] = useState(false)
 
-  const wallets = state.status === 'ready' ? state.wallets : []
+  const wallets = armsOf(state)
   const full = wallets.length >= MAX_ARMS
 
   return (
     <Card
-      count={state.status === 'ready' ? wallets.length : undefined}
+      count={state.status === 'loading' ? undefined : wallets.length}
       action={
         <Button
           variant="secondary"
           size="sm"
           onClick={() => setOpen(true)}
-          disabled={state.status !== 'ready' || full}
+          disabled={state.status === 'loading' || full}
         >
           Link wallet
         </Button>
       }
     >
-      {state.status === 'loading' ? (
-        <SkeletonShelf rows={2} />
-      ) : state.status === 'failed' ? (
-        <div className="px-[22px] py-4">
-          <Callout
-            severity="caution"
-            title={
-              state.reason === 'no-identity-token'
-                ? 'Wallets can’t sync yet'
-                : 'Can’t reach Ottopus right now'
-            }
-          >
-            {state.reason === 'no-identity-token'
-              ? 'Identity tokens are switched off for this app, so Ottopus can’t confirm which wallets are yours. Enable them in the Privy dashboard under User management → Authentication → Advanced.'
-              : 'Your wallets are safe — this is our side. Try again in a moment.'}
+      {/* A failed refresh is reported above the list, never instead of it —
+          it says nothing new about which wallets exist. */}
+      {state.status === 'failed' ? (
+        <div className="px-[22px] pt-4">
+          <Callout severity="caution" title={failureText(state.reason).title}>
+            {failureText(state.reason).body}
           </Callout>
         </div>
+      ) : null}
+
+      {linkError ? (
+        <div className="px-[22px] pt-4">
+          <Callout severity="caution" title="That wallet wasn’t linked">
+            {linkError}
+          </Callout>
+        </div>
+      ) : null}
+
+      {state.status === 'loading' ? (
+        <SkeletonShelf rows={2} />
       ) : wallets.length === 0 ? (
         <div className="px-[22px] py-7">
           <EmptyState
@@ -121,7 +141,7 @@ function ConnectedPanel() {
         <WalletList wallets={wallets} onUnlink={unlink} />
       )}
 
-      {state.status === 'ready' && state.overflow.length > 0 ? (
+      {state.status !== 'loading' && state.overflow.length > 0 ? (
         <p className="border-t border-[var(--ot-border)] bg-[var(--ot-warn-bg)] px-[22px] py-3.5 text-[12.5px] leading-[1.5] text-[var(--ot-warn-text)]">
           {state.overflow.length} wallet{state.overflow.length > 1 ? 's' : ''} didn’t fit — all
           {' '}

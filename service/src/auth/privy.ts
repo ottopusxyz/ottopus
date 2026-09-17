@@ -87,7 +87,13 @@ export interface PrivyIdentity {
   did: string
   email?: string
   name?: string
-  wallets: PrivyWallet[]
+  /**
+   * Undefined when the token carried no readable `linked_accounts` claim — an
+   * access token sent here by mistake, or a shape we do not recognise. Never
+   * treat it as an empty list: callers that reconcile against this must be able
+   * to tell "no wallets" from "this token does not say".
+   */
+  wallets: PrivyWallet[] | undefined
 }
 
 export interface PrivyVerifierConfig {
@@ -159,18 +165,28 @@ function nameOf(account: LinkedAccount): string | undefined {
   return full || account.username || undefined
 }
 
-/** Privy has encoded this as a JSON string and as an array, depending on age. */
-function linkedAccounts(raw: unknown): LinkedAccount[] {
+/**
+ * Privy has encoded this as a JSON string and as an array, depending on age.
+ *
+ * Null means "this token did not tell us" — the claim is absent, or present and
+ * unreadable. That is a different fact from an empty array, and conflating the
+ * two is dangerous: `linked_accounts` is what distinguishes an identity token
+ * from an access token, both are signed by the same key for the same issuer and
+ * audience, and an access token has no such claim. Returning [] for one would
+ * let an access token in the identity header assert "this user has no wallets",
+ * which the sync route would faithfully act on by unlinking all of them.
+ */
+function linkedAccounts(raw: unknown): LinkedAccount[] | null {
   if (Array.isArray(raw)) return raw as LinkedAccount[]
   if (typeof raw === 'string') {
     try {
       const parsed: unknown = JSON.parse(raw)
-      return Array.isArray(parsed) ? (parsed as LinkedAccount[]) : []
+      return Array.isArray(parsed) ? (parsed as LinkedAccount[]) : null
     } catch {
-      return []
+      return null
     }
   }
-  return []
+  return null
 }
 
 /**
@@ -238,7 +254,8 @@ export function createPrivyAuth({ appId, verificationKey }: PrivyVerifierConfig)
     async readIdentity(token: string): Promise<PrivyIdentity> {
       const payload = await claims(token)
       const did = didOf(payload)
-      const accounts = linkedAccounts(payload.linked_accounts)
+      const claimed = linkedAccounts(payload.linked_accounts)
+      const accounts = claimed ?? []
 
       // A wallet's `address` is an account, not an inbox — reading names and
       // email from wallet entries would put "0xabc…" in the name column.
@@ -247,8 +264,8 @@ export function createPrivyAuth({ appId, verificationKey }: PrivyVerifierConfig)
       const mailed = people.find((a) => a.email)?.email
       const emailAccount = accounts.find((a) => a.type === 'email' && a.address)?.address
 
-      const wallets = accounts
-        .filter((a) => a.type === 'wallet' && typeof a.address === 'string' && a.address)
+      const wallets = claimed
+        ?.filter((a) => a.type === 'wallet' && typeof a.address === 'string' && a.address)
         .map(
           (a): PrivyWallet => ({
             address: a.address!.toLowerCase(),

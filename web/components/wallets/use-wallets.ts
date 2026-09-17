@@ -30,10 +30,25 @@ import {
  * linked rather than the list from before it.
  */
 
+export type WalletsFailure = 'unreachable' | 'unconfigured' | 'no-identity-token'
+
+/**
+ * `failed` carries the arms too, and that is the point of the shape.
+ *
+ * A refresh that could not reach the service has not told us anything new
+ * about which wallets exist — it has told us nothing. Dropping the list on the
+ * way through would render "no wallets yet" over a perfectly good account,
+ * which reads as data loss rather than as a network blip.
+ */
 export type WalletsState =
   | { status: 'loading' }
   | { status: 'ready'; wallets: Arm[]; overflow: string[] }
-  | { status: 'failed'; reason: 'unreachable' | 'unconfigured' | 'no-identity-token' }
+  | { status: 'failed'; reason: WalletsFailure; wallets: Arm[]; overflow: string[] }
+
+/** What we currently know, whether or not the last refresh succeeded. */
+export function armsOf(state: WalletsState): Arm[] {
+  return state.status === 'loading' ? [] : state.wallets
+}
 
 export interface UseWallets {
   state: WalletsState
@@ -102,15 +117,20 @@ export function useWallets(): UseWallets {
       } catch (error) {
         if (cancelled || mine !== generation.current) return
         const { status, code } = error as ApiError
-        setState({
-          status: 'failed',
-          reason:
-            code === 'identity_token_required'
-              ? 'no-identity-token'
-              : status === 503
-                ? 'unconfigured'
-                : 'unreachable',
-        })
+        const reason: WalletsFailure =
+          code === 'identity_token_required'
+            ? 'no-identity-token'
+            : status === 503
+              ? 'unconfigured'
+              : 'unreachable'
+        // Functional update so the arms from the last good sync survive. The
+        // effect closes over nothing about them, and reading state here would
+        // capture whatever was current when this run started.
+        setState((previous) =>
+          previous.status === 'loading'
+            ? { status: 'failed', reason, wallets: [], overflow: [] }
+            : { status: 'failed', reason, wallets: previous.wallets, overflow: previous.overflow },
+        )
         setLinking(false)
       }
     })()

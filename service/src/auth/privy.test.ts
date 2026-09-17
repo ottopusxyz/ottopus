@@ -253,3 +253,55 @@ describe('bearerToken', () => {
     expect(bearerToken('')).toBeNull()
   })
 })
+
+/**
+ * The identity header takes a token the caller chose, and every Privy token
+ * verifies against the same key for the same issuer and audience. So the
+ * question "is this actually an identity token" has to be answered from the
+ * claims, and `linked_accounts` is the only thing that answers it.
+ */
+describe('a token that is not an identity token', () => {
+  const bare = async (claims: Record<string, unknown>) =>
+    new jose.SignJWT(claims)
+      .setProtectedHeader({ alg: 'ES256' })
+      .setSubject(DID)
+      .setAudience(APP_ID)
+      .setIssuer('privy.io')
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(key.privateKey)
+
+  /**
+   * The dangerous one. An access token has no linked_accounts claim, verifies
+   * perfectly, and carries the right subject. Reporting [] for it would let it
+   * assert "this user has no wallets" — which the sync route acts on by
+   * unlinking every proved wallet the person has.
+   */
+  it('reports undefined wallets for an access token, not an empty list', async () => {
+    const read = await auth().readIdentity(await bare({}))
+    expect(read.did).toBe(DID)
+    expect(read.wallets).toBeUndefined()
+    expect(read.wallets).not.toEqual([])
+  })
+
+  it.each([
+    ['a claim that is not an array', { linked_accounts: { type: 'wallet' } }],
+    ['a string that is not JSON', { linked_accounts: 'not json' }],
+    ['JSON that is not an array', { linked_accounts: '{"type":"wallet"}' }],
+    ['an explicitly null claim', { linked_accounts: null }],
+    ['a numeric claim', { linked_accounts: 7 }],
+  ])('reports undefined for %s', async (_label, claims) => {
+    expect((await auth().readIdentity(await bare(claims))).wallets).toBeUndefined()
+  })
+
+  /** A real identity token for someone with nothing linked still says so. */
+  it('still reports an empty list when the claim is present and empty', async () => {
+    const read = await auth().readIdentity(await bare({ linked_accounts: [] }))
+    expect(read.wallets).toEqual([])
+  })
+
+  it('accepts the stringified empty array Privy also sends', async () => {
+    const read = await auth().readIdentity(await bare({ linked_accounts: '[]' }))
+    expect(read.wallets).toEqual([])
+  })
+})

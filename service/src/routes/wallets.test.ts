@@ -86,6 +86,23 @@ describe('POST /sync', () => {
   })
 
   /** An attestation that genuinely lists nothing is a real unlink, though. */
+  /**
+   * The route-level half of the access-token substitution. `readIdentity` now
+   * reports undefined rather than [] for a token with no linked_accounts
+   * claim, and this is what that buys: the sync is refused instead of taken as
+   * "this user has no wallets".
+   */
+  it('refuses a token that carried no linked_accounts claim', async () => {
+    await post([wallet(1)], '/sync')
+
+    // What the middleware sets when readIdentity found no readable claim.
+    const res = await post(undefined, '/sync')
+    expect(res.status).toBe(400)
+
+    const after = await app([wallet(1)]).request('/')
+    expect(((await after.json()) as { wallets: unknown[] }).wallets).toHaveLength(1)
+  })
+
   it('does unlink when the token attests an empty list', async () => {
     await post([wallet(1)], '/sync')
     const res = await post([], '/sync')

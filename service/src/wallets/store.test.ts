@@ -13,6 +13,7 @@ import {
   listWallets,
   syncWallets,
   unlinkWallet,
+  userLockQuery,
 } from './store.js'
 
 /**
@@ -247,5 +248,26 @@ describe('linking the same arm twice', () => {
     await linkArms(db, otherId, [link])
     expect(await listWallets(db, userId)).toHaveLength(1)
     expect(await listWallets(db, otherId)).toHaveLength(1)
+  })
+})
+
+/**
+ * PGlite has one in-process connection, so it cannot show two transactions
+ * contending — the real proof lives in store.concurrency.test.ts, which needs
+ * TEST_DATABASE_URL and two connections. What can be checked here is that the
+ * statement is a locking read at all, since dropping `.for('update')` is a
+ * one-character change that nothing else would notice.
+ */
+describe('the per-user write lock', () => {
+  it('is a locking read on the user row', () => {
+    const { sql } = userLockQuery(db, '00000000-0000-0000-0000-000000000000').toSQL()
+    expect(sql.toLowerCase()).toContain('for update')
+    expect(sql.toLowerCase()).toContain('from "users"')
+  })
+
+  /** Locking the arms would not help: the row that must not race is the user's. */
+  it('locks the user, not the wallets', () => {
+    const { sql } = userLockQuery(db, '00000000-0000-0000-0000-000000000000').toSQL()
+    expect(sql.toLowerCase()).not.toContain('linked_wallets')
   })
 })

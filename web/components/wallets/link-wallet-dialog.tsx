@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ApiError } from '@/lib/api'
-import { Button, Callout, Dialog, Input } from '@/components/ui'
+import { Button, Callout, Dialog, EXIT_MS, Input } from '@/components/ui'
 import { ADDRESS_RE, LINK_ERRORS } from './naming'
 
 export interface LinkWalletDialogProps {
@@ -55,6 +55,25 @@ export function LinkWalletDialog({
     onClose()
   }
 
+  /**
+   * Hand over to Privy only once our own dialog has left the top layer.
+   *
+   * `showModal()` puts this dialog in the browser's top layer, and the top
+   * layer beats z-index absolutely: Privy renders its modal into an ordinary
+   * portal, so it paints *underneath* ours and is not hit-testable at all —
+   * verified with elementFromPoint against a portal at z-index 2147483647,
+   * which still lost. Opening Privy from here without closing first produces a
+   * wallet picker nobody can click.
+   *
+   * The wait covers the exit transition as well, so the handover does not
+   * flash. Anything Privy reports afterwards surfaces on the page behind,
+   * since this dialog is gone by then.
+   */
+  function connect() {
+    close()
+    setTimeout(onConnect, EXIT_MS)
+  }
+
   const trimmed = address.trim()
   const full = used >= max
   const valid = ADDRESS_RE.test(trimmed)
@@ -94,7 +113,7 @@ export function LinkWalletDialog({
               You’ll sign a message to prove it’s yours. No transaction, no gas. This is the only
               kind of wallet Ottopus can plan a transaction for.
             </p>
-            <Button variant="primary" onClick={onConnect} disabled={linking} fullWidth>
+            <Button variant="primary" onClick={connect} disabled={linking} fullWidth>
               {linking ? 'Waiting for your wallet…' : 'Connect a wallet'}
             </Button>
             {linkError ? (

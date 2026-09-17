@@ -7,13 +7,16 @@ import { Otto } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
 import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
-import { Button, Chip, EmptyState } from '@/components/ui'
+import { Button, Callout, Chip, EmptyState } from '@/components/ui'
 import {
   ArmCard,
   LinkWalletDialog,
   MAX_ARMS,
   TokenTable,
+  armsOf,
+  failureText,
   useWallets,
+  type WalletsFailure,
 } from '@/components/wallets'
 import type { Arm } from '@/lib/api'
 
@@ -39,12 +42,14 @@ function ConnectedPortfolio() {
   const [linkOpen, setLinkOpen] = useState(false)
   const tab = useSearchParams().get('tab') ?? 'tokens'
 
-  const wallets = state.status === 'ready' ? state.wallets : []
+  const wallets = armsOf(state)
 
   return (
     <Frame
       wallets={wallets}
       loading={state.status === 'loading'}
+      failure={state.status === 'failed' ? state.reason : undefined}
+      linkError={linkError}
       tab={tab}
       onLink={() => setLinkOpen(true)}
       dialog={
@@ -66,12 +71,23 @@ function ConnectedPortfolio() {
 interface FrameProps {
   wallets: Arm[]
   loading?: boolean
+  /** Set when the last refresh failed. The arms above are still what we know. */
+  failure?: WalletsFailure | undefined
+  linkError?: string | null
   tab?: string
   onLink?: (() => void) | undefined
   dialog?: React.ReactNode
 }
 
-function Frame({ wallets, loading = false, tab = 'tokens', onLink, dialog }: FrameProps) {
+function Frame({
+  wallets,
+  loading = false,
+  failure,
+  linkError,
+  tab = 'tokens',
+  onLink,
+  dialog,
+}: FrameProps) {
   const linked = wallets.length > 0
   const free = MAX_ARMS - wallets.length
 
@@ -92,6 +108,26 @@ function Frame({ wallets, loading = false, tab = 'tokens', onLink, dialog }: Fra
           </Button>
         }
       />
+
+      {/* Reported above whatever we already know, never in place of it: a
+          refresh that could not reach the service has said nothing about which
+          wallets exist, and "No wallets yet" over a real account reads as data
+          loss. */}
+      {failure ? (
+        <div className="px-5 pt-4 sm:px-[26px]">
+          <Callout severity="caution" title={failureText(failure).title}>
+            {failureText(failure).body}
+          </Callout>
+        </div>
+      ) : null}
+
+      {linkError ? (
+        <div className="px-5 pt-4 sm:px-[26px]">
+          <Callout severity="caution" title="That wallet wasn’t linked">
+            {linkError}
+          </Callout>
+        </div>
+      ) : null}
 
       {linked ? (
         <>
@@ -130,6 +166,10 @@ function Frame({ wallets, loading = false, tab = 'tokens', onLink, dialog }: Fra
         </>
       ) : loading ? (
         <SkeletonShelf rows={2} />
+      ) : failure ? (
+        // Nothing known and the refresh failed. The banner above has said why;
+        // inviting someone to link a wallet on top of it would be noise.
+        <div className="flex-1" />
       ) : (
         <div className="ot-canvas relative flex flex-1 items-center justify-center overflow-hidden px-5 py-7">
           <BubbleField pattern="calm" />
