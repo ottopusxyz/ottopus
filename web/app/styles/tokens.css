@@ -1,0 +1,133 @@
+/* Ottopus design tokens — ported verbatim from the design project
+   (tokens/tokens.css). Generated there; do not hand-edit here. Re-sync with
+   DesignSync when it changes. Divergences live in globals.css so a re-sync
+   cannot silently drop them. */
+:root {
+  --ot-page: #F7F2EA;
+  --ot-surface: #FFFCF7;
+  --ot-card: #FFFFFF;
+  --ot-surface-2: #F7F2EA;
+  --ot-surface-3: #EFE8DD;
+  --ot-border: #E3DBCF;
+  --ot-border-strong: #C4B9A8;
+  --ot-text: #16213E;
+  --ot-text-2: #4B556E;
+  --ot-text-3: #66708A;
+  --ot-text-4: #9AA2B8;
+  --ot-coral: #F58A6A;
+  --ot-coral-hover: #E8724F;
+  --ot-coral-soft: #FFE6DC;
+  --ot-coral-text: #B3421F;
+  --ot-cream: #FFF0DC;
+  --ot-navy: #16213E;
+  --ot-navy-soft: #DDE2F0;
+  --ot-plan-bg: #E8F0FF;
+  --ot-plan-border: #9DBDF7;
+  --ot-plan-text: #1D4FB0;
+  --ot-plan: #2E7CF6;
+  --ot-warn-bg: #FFF3D6;
+  --ot-warn-border: #F0C36A;
+  --ot-warn-text: #7A4E00;
+  --ot-warn: #F5A524;
+  --ot-ok-bg: #E1F6EC;
+  --ot-ok-border: #88D5B0;
+  --ot-ok-text: #0E6642;
+  --ot-ok: #1FB57A;
+  --ot-block-bg: #FDE8E8;
+  --ot-block-border: #F0A0A3;
+  --ot-block-text: #A0262A;
+  --ot-block: #E5484D;
+  --ot-block-solid: #C93A3E;
+  --ot-block-surface: #F0A0A3; /* destructive button fill — light in both modes so navy --ot-on-state passes AA */
+  --ot-on-state: #16213E; /* text/icon colour on any solid state fill — white fails AA on blue, amber, green */
+  --ot-water-1: #F4F7FB; --ot-water-2: #E9EFF7; --ot-water-3: #DDE7F2;
+  --ot-caustic: rgba(46,124,246,.05); --ot-bubble: rgba(46,124,246,.22);
+  --ot-font-display: "Quicksand", ui-rounded, system-ui, sans-serif;
+  --ot-font-ui: "Figtree", system-ui, sans-serif;
+  --ot-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --ot-radius-sm: 8px; --ot-radius-md: 14px; --ot-radius-lg: 22px; --ot-radius-pill: 999px;
+  --ot-stroke: 2px;
+  --ot-shadow-card: 0 1px 2px rgba(22,33,62,.06), 0 6px 20px rgba(22,33,62,.06);
+  --ot-ease-out: cubic-bezier(.2,.8,.2,1); --ot-ease-bounce: cubic-bezier(.34,1.4,.64,1);
+  --ot-dur-fast: 160ms; --ot-dur-base: 260ms; --ot-dur-slow: 480ms;
+}
+[data-theme="dark"] {
+  --ot-block-surface: #FF9FA1;
+  --ot-page: #0E1626;
+  --ot-water-1: #111B30; --ot-water-2: #141F39; --ot-water-3: #182643;
+  --ot-caustic: rgba(91,155,255,.07); --ot-bubble: rgba(158,194,255,.28);
+  --ot-surface: #0E1626;
+  --ot-card: #141D33;
+  --ot-surface-2: #16213E;
+  --ot-surface-3: #1F2D52;
+  --ot-border: #2B3B69;
+  --ot-border-strong: #41538A;
+  --ot-text: #F5F0E6;
+  --ot-text-2: #BFC7DB;
+  --ot-text-3: #8F9BBD;
+  --ot-text-4: #6B7796;
+  --ot-coral: #FF9A7A;
+  --ot-coral-hover: #FFAE93;
+  --ot-coral-soft: #4A2A22;
+  --ot-coral-text: #FFB9A2;
+  --ot-cream: #FFF0DC;
+  --ot-navy: #16213E;
+  --ot-navy-soft: #2B3B69;
+  --ot-plan-bg: #172A4A;
+  --ot-plan-border: #31569A;
+  --ot-plan-text: #9EC2FF;
+  --ot-plan: #5B9BFF;
+  --ot-warn-bg: #3A2B0D;
+  --ot-warn-border: #7D5C14;
+  --ot-warn-text: #FFCB6B;
+  --ot-warn: #F5A524;
+  --ot-ok-bg: #10352A;
+  --ot-ok-border: #1F6A4E;
+  --ot-ok-text: #7BE3B8;
+  --ot-ok: #3CCB8E;
+  --ot-block-bg: #3D1A1C;
+  --ot-block-border: #7F3034;
+  --ot-block-text: #FF9FA1;
+  --ot-block: #F0595E;
+  --ot-block-solid: #C93A3E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ot-block-surface: #FF9FA1;
+    --ot-page: #0E1626;
+    --ot-surface: #0E1626;
+    --ot-card: #141D33;
+    --ot-surface-2: #16213E;
+    --ot-surface-3: #1F2D52;
+    --ot-border: #2B3B69;
+    --ot-border-strong: #41538A;
+    --ot-text: #F5F0E6;
+    --ot-text-2: #BFC7DB;
+    --ot-text-3: #8F9BBD;
+    --ot-text-4: #6B7796;
+    --ot-coral: #FF9A7A;
+    --ot-coral-hover: #FFAE93;
+    --ot-coral-soft: #4A2A22;
+    --ot-coral-text: #FFB9A2;
+    --ot-cream: #FFF0DC;
+    --ot-navy: #16213E;
+    --ot-navy-soft: #2B3B69;
+    --ot-plan-bg: #172A4A;
+    --ot-plan-border: #31569A;
+    --ot-plan-text: #9EC2FF;
+    --ot-plan: #5B9BFF;
+    --ot-warn-bg: #3A2B0D;
+    --ot-warn-border: #7D5C14;
+    --ot-warn-text: #FFCB6B;
+    --ot-warn: #F5A524;
+    --ot-ok-bg: #10352A;
+    --ot-ok-border: #1F6A4E;
+    --ot-ok-text: #7BE3B8;
+    --ot-ok: #3CCB8E;
+    --ot-block-bg: #3D1A1C;
+    --ot-block-border: #7F3034;
+    --ot-block-text: #FF9FA1;
+    --ot-block: #F0595E;
+    --ot-block-solid: #C93A3E;
+  }
+}

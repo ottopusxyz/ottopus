@@ -1,0 +1,125 @@
+/* Ottopus — ambient water layer. Ported from the design project
+   (tokens/water.css). Every ambient element reads --ot-ambient-play; setting
+   data-stillness="held" on any container freezes everything inside it, because
+   stillness is how the product raises its voice. Ambient motion belongs in
+   gutters and margins only — never behind an address, an amount, slippage or
+   calldata. */
+
+:root { --ot-ambient-play: running; }
+
+[data-stillness="held"] { --ot-ambient-play: paused; }
+
+.ot-ambient,
+.ot-bubble,
+.ot-caustic,
+.ot-drift,
+.ot-shimmer,
+.ot-shaft,
+.ot-jelly {
+  animation-play-state: var(--ot-ambient-play);
+}
+
+.ot-bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--ot-bubble);
+  pointer-events: none;
+  animation: ot-rise 7s ease-in infinite;
+}
+.ot-bubble--fast { animation-duration: 2.6s; }
+@keyframes ot-rise {
+  0%   { transform: translateY(0) scale(.7); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translateY(-46px) scale(1.05); opacity: 0; }
+}
+
+.ot-caustic {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 60% at 20% 0%, var(--ot-caustic) 0%, transparent 60%);
+  animation: ot-wash 14s ease-in-out infinite;
+}
+@keyframes ot-wash {
+  0%, 100% { opacity: .7; transform: translate3d(0, 0, 0); }
+  50%      { opacity: 1;  transform: translate3d(2%, 1%, 0); }
+}
+
+.ot-drift { animation: ot-drift-y 3.4s ease-in-out infinite; }
+@keyframes ot-drift-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+.ot-shimmer {
+  background: linear-gradient(90deg, var(--ot-water-1) 0%, var(--ot-water-3) 50%, var(--ot-water-1) 100%);
+  background-size: 220% 100%;
+  animation: ot-tide 2.4s linear infinite;
+}
+@keyframes ot-tide {
+  0%   { background-position: -160% 0; }
+  100% { background-position: 260% 0; }
+}
+
+.ot-canvas {
+  background: linear-gradient(180deg, var(--ot-card) 0%, var(--ot-water-1) 45%, var(--ot-water-3) 100%);
+}
+
+.ot-depth {
+  background: linear-gradient(180deg, var(--ot-water-1) 0%, var(--ot-water-2) 52%, var(--ot-water-3) 100%);
+}
+
+.ot-caustic--b {
+  background: radial-gradient(90% 50% at 78% 4%, var(--ot-caustic) 0%, transparent 62%);
+  animation: ot-wash-b 19s ease-in-out infinite;
+}
+@keyframes ot-wash-b {
+  0%, 100% { opacity: .55; transform: translate3d(0, 0, 0) scale(1); }
+  50%      { opacity: .95; transform: translate3d(-3%, 2%, 0) scale(1.06); }
+}
+
+.ot-bubble--lg { animation-duration: 11s;  opacity: .45; }
+.ot-bubble--md { animation-duration: 7.4s; opacity: .7; }
+.ot-bubble--sm { animation-duration: 4.2s; opacity: 1; }
+@keyframes ot-rise-far {
+  0%   { transform: translateY(0) scale(.8); opacity: 0; }
+  20%  { opacity: .45; }
+  100% { transform: translateY(-140px) scale(1.05); opacity: 0; }
+}
+@keyframes ot-rise-near {
+  0%   { transform: translateY(0) scale(.6); opacity: 0; }
+  14%  { opacity: 1; }
+  100% { transform: translateY(-190px) scale(1.1); opacity: 0; }
+}
+.ot-bubble--lg { animation-name: ot-rise-far; }
+.ot-bubble--md, .ot-bubble--sm { animation-name: ot-rise-near; }
+
+.ot-shaft {
+  position: absolute;
+  top: -10%;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--ot-caustic) 0%, transparent 78%);
+  transform-origin: top center;
+  animation: ot-sway 22s ease-in-out infinite;
+}
+@keyframes ot-sway {
+  0%, 100% { opacity: .8;  transform: rotate(var(--ot-shaft-tilt, 12deg)) scaleY(1); }
+  50%      { opacity: 1;   transform: rotate(calc(var(--ot-shaft-tilt, 12deg) + 1.5deg)) scaleY(1.04); }
+}
+
+/* Scenery, not a character: no face, far back. */
+.ot-jelly { animation: ot-jelly-drift 26s ease-in-out infinite; }
+@keyframes ot-jelly-drift {
+  0%, 100% { transform: translateY(6px); }
+  50%      { transform: translateY(-14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ot-ambient-play: paused; }
+  .ot-ambient, .ot-bubble, .ot-caustic, .ot-drift, .ot-shimmer,
+  .ot-caustic--b, .ot-shaft, .ot-jelly { animation: none !important; }
+  .ot-bubble { opacity: .5; }
+  .ot-bubble--lg { opacity: .4; }
+  .ot-bubble--md { opacity: .6; }
+  .ot-bubble--sm { opacity: .85; }
+}

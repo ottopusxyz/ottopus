@@ -1,26 +1,80 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
+@import "./styles/water.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* Divergences from the design project live here, never in the ported files, so
+   re-syncing tokens.css cannot silently drop them.
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+   The generated tokens.css defines --ot-water-*, --ot-caustic and --ot-bubble
+   under [data-theme="dark"] but not under prefers-color-scheme. A visitor on
+   system dark who has never picked a theme — the default for most people —
+   would get light-mode water washes over a dark navy page. Fix upstream when
+   the generator is touched; until then this closes it. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --ot-water-1: #111B30;
+    --ot-water-2: #141F39;
+    --ot-water-3: #182643;
+    --ot-caustic: rgba(91, 155, 255, 0.07);
+    --ot-bubble: rgba(158, 194, 255, 0.28);
   }
 }
 
+/* next/font supplies the actual families; the token names stay the contract. */
+:root {
+  --ot-font-display: var(--font-quicksand), ui-rounded, system-ui, sans-serif;
+  --ot-font-ui: var(--font-figtree), system-ui, sans-serif;
+  --ot-font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+/* Expose the tokens to Tailwind utilities. Only what components actually use —
+   an exhaustive mapping would just be a second copy of the token file. */
+@theme inline {
+  --color-page: var(--ot-page);
+  --color-card: var(--ot-card);
+  --color-surface: var(--ot-surface);
+  --color-surface-2: var(--ot-surface-2);
+  --color-surface-3: var(--ot-surface-3);
+  --color-border-ot: var(--ot-border);
+  --color-border-strong: var(--ot-border-strong);
+  --color-text: var(--ot-text);
+  --color-text-2: var(--ot-text-2);
+  --color-text-3: var(--ot-text-3);
+  --color-text-4: var(--ot-text-4);
+  --color-coral: var(--ot-coral);
+  --color-navy: var(--ot-navy);
+  --color-cream: var(--ot-cream);
+  --color-on-state: var(--ot-on-state);
+
+  --font-display: var(--ot-font-display);
+  --font-ui: var(--ot-font-ui);
+  --font-mono: var(--ot-font-mono);
+
+  --radius-sm: var(--ot-radius-sm);
+  --radius-md: var(--ot-radius-md);
+  --radius-lg: var(--ot-radius-lg);
+  --radius-pill: var(--ot-radius-pill);
+
+  --ease-out-ot: var(--ot-ease-out);
+  --ease-bounce: var(--ot-ease-bounce);
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--ot-page);
+  color: var(--ot-text);
+  font-family: var(--ot-font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus is a security affordance here: people tab through a review page
+   before signing, and an invisible focus ring means signing the wrong button. */
+:focus-visible {
+  outline: 2px solid var(--ot-plan);
+  outline-offset: 2px;
+  border-radius: var(--ot-radius-sm);
 }
