@@ -47,6 +47,22 @@ function subdomain(req: Request): string {
 }
 
 /**
+ * On a surface's own hostname the surface answers at the root, and also under
+ * its path prefix. Both forms resolve everywhere, so a URL copied from local
+ * development still works when pasted against the deployed host — which matters
+ * most for the MCP URL, the one address people copy by hand.
+ */
+function hostApp(surface: Hono, prefix: string): Hono {
+  const app = new Hono()
+  app.route('/', surface)
+  app.route(prefix, surface)
+  return app
+}
+
+const mcpHost = hostApp(mcpApp, '/mcp')
+const apiHost = hostApp(apiApp, '/api')
+
+/**
  * Dispatch on hostname first, falling through to path-based routing. Railway's
  * own health check hits the internal domain, which matches neither subdomain —
  * so the root app must always answer /health.
@@ -54,9 +70,9 @@ function subdomain(req: Request): string {
 export function handler(req: Request): Response | Promise<Response> {
   switch (subdomain(req)) {
     case 'mcp':
-      return mcpApp.fetch(req)
+      return mcpHost.fetch(req)
     case 'api':
-      return apiApp.fetch(req)
+      return apiHost.fetch(req)
     default:
       return rootApp.fetch(req)
   }
