@@ -115,65 +115,132 @@ export const humanPlanSchema = z.object({
 })
 
 /**
- * A plan before verification: routed and explained, but not yet hashed, decoded
- * or simulated.
- *
- * Deliberately NOT named planSchema. The canonical Plan also carries planHash,
- * decodedActions and simulation, and zod strips unknown keys by default — so a
- * schema missing those would quietly delete the three security-relevant fields
- * from a complete plan it was asked to validate. Strict, so an unexpected key
- * is an error rather than silent data loss.
- *
- * planHash and the state machine arrive in #15, decodedActions in #18, and
- * simulation in #23. The complete planSchema is assembled there.
+ * What the decoder (#18) says a call does. Evidence, shown on the review page
+ * and checked by verify (#77); not part of the hash, because the calls are, and
+ * the decoding is derived from them.
  */
-export const planDraftSchema = z
-  .strictObject({
-    id: z.uuid(),
-    /** A replacement bumps this and kills the old review link. */
-    version: z.number().int().positive(),
-    userId: z.uuid(),
-    createdVia: z.enum(['agent', 'web']),
-    intent: intentSchema,
-    provenance: provenanceSchema,
-    resolution: resolutionSchema,
-    outcome: outcomeSchema,
-    quote: quoteSchema,
-    humanPlan: humanPlanSchema,
-    status: planStatusSchema,
-    expiresAt: z.iso.datetime(),
-  })
-  // The plan names one account and signing is gated on it, so a call on another
-  // chain could never be signed by the account the review page bound.
-  .refine(
-    (p) =>
-      p.outcome.type !== 'calls' ||
-      p.outcome.calls.every((c) =>
-        sameChain(chainOf(parseAccountId(p.resolution.account.caip10)), parseChainId(c.chainId)),
-      ),
-    { message: 'every call must be on the same chain as the resolved account' },
-  )
-  /**
-   * Bind the plan to the intent it claims to fulfil.
-   *
-   * The resolution and the calls agreeing with each other is not enough: they
-   * can be internally consistent and still execute something the user never
-   * asked for — a Base transfer resolved against an Ethereum account, with
-   * Ethereum calls. This is the relationship planHash exists to secure, so it
-   * has to hold before anything is hashed.
-   */
-  .refine(
-    (p) => sameChain(sourceChainOf(p.intent), chainOf(parseAccountId(p.resolution.account.caip10))),
-    { message: 'the resolved account must be on the chain the intent executes on' },
-  )
-  .refine(
-    (p) =>
-      p.outcome.type !== 'calls' ||
-      p.outcome.calls.every((c) => sameChain(sourceChainOf(p.intent), parseChainId(c.chainId))),
-    { message: 'every call must be on the chain the intent executes on' },
-  )
+export const decodedActionSchema = z.strictObject({
+  target: accountIdSchema,
+  /** Where the ABI came from. "unknown" means raw calldata with a warning. */
+  source: z.enum(['abi', 'sourcify', '4byte', 'unknown']),
+  verified: z.boolean(),
+  /** Signature, e.g. "transfer(address,uint256)", or "unknown". */
+  function: z.string().min(1),
+  args: z.array(z.strictObject({ name: z.string(), type: z.string(), value: z.string() })),
+  /** Native value, wei as a decimal string. */
+  value: z.string().regex(/^[0-9]+$/),
+  approval: z
+    .strictObject({
+      spender: accountIdSchema,
+      /** Base units as a string, or "unlimited" — which is a warning, never a default. */
+      amount: z.union([z.string().regex(/^[0-9]+$/), z.literal('unlimited')]),
+    })
+    .optional(),
+})
+
+/**
+ * One simulation run. A prediction, never a guarantee, and never from the
+ * provider that built the route (invariant 4). Null on a plan until #23 lands;
+ * a transfer can be reviewed from its decoded intent alone.
+ */
+export const simulationSchema = z.strictObject({
+  provider: z.string().min(1),
+  chainId: chainIdSchema,
+  blockNumber: z.string().regex(/^[0-9]+$/),
+  success: z.boolean(),
+  assetChanges: z.array(z.unknown()),
+  gasUsd: z.string(),
+  revertReason: z.string().optional(),
+  resultHash: z.string().min(1),
+  ranAt: z.iso.datetime(),
+})
+
+/** 32 bytes of SHA-256, lowercase hex, no prefix. Computed in core, never in web. */
+export const planHashSchema = z.string().regex(/^[0-9a-f]{64}$/, 'expected a sha256 hex digest')
+
+/**
+ * The fields a plan has before verification: routed and explained, but not yet
+ * hashed, decoded or simulated. Strict, so an unexpected key is an error rather
+ * than silent data loss — zod strips unknown keys by default, and the keys it
+ * would strip from a complete plan are the security-relevant ones.
+ */
+const draftFields = z.strictObject({
+  id: z.uuid(),
+  /** A replacement bumps this and kills the old review link. */
+  version: z.number().int().positive(),
+  userId: z.uuid(),
+  createdVia: z.enum(['agent', 'web']),
+  intent: intentSchema,
+  provenance: provenanceSchema,
+  resolution: resolutionSchema,
+  outcome: outcomeSchema,
+  quote: quoteSchema,
+  humanPlan: humanPlanSchema,
+  status: planStatusSchema,
+  expiresAt: z.iso.datetime(),
+})
+
+type DraftFields = z.infer<typeof draftFields>
+
+/**
+ * The bindings that hold a plan together. Applied to the draft and to the
+ * complete plan alike, so a plan cannot pass as complete what it would have
+ * failed as a draft.
+ */
+function bound<S extends z.ZodType<DraftFields>>(schema: S): S {
+  return schema
+    // The plan names one account and signing is gated on it, so a call on
+    // another chain could never be signed by the account the review page bound.
+    .refine(
+      (p: DraftFields) =>
+        p.outcome.type !== 'calls' ||
+        p.outcome.calls.every((c) =>
+          sameChain(chainOf(parseAccountId(p.resolution.account.caip10)), parseChainId(c.chainId)),
+        ),
+      { message: 'every call must be on the same chain as the resolved account' },
+    )
+    /**
+     * Bind the plan to the intent it claims to fulfil.
+     *
+     * The resolution and the calls agreeing with each other is not enough: they
+     * can be internally consistent and still execute something the user never
+     * asked for — a Base transfer resolved against an Ethereum account, with
+     * Ethereum calls. This is the relationship planHash exists to secure, so it
+     * has to hold before anything is hashed.
+     */
+    .refine(
+      (p: DraftFields) =>
+        sameChain(sourceChainOf(p.intent), chainOf(parseAccountId(p.resolution.account.caip10))),
+      { message: 'the resolved account must be on the chain the intent executes on' },
+    )
+    .refine(
+      (p: DraftFields) =>
+        p.outcome.type !== 'calls' ||
+        p.outcome.calls.every((c) => sameChain(sourceChainOf(p.intent), parseChainId(c.chainId))),
+      { message: 'every call must be on the chain the intent executes on' },
+    ) as S
+}
+
+export const planDraftSchema = bound(draftFields)
+
+/**
+ * The complete plan: a draft plus its hash and its evidence. Parsing one does
+ * not check the hash — that needs the hash function, which lives in hash.ts to
+ * keep this module free of crypto. Use `parsePlan` there for anything read back
+ * from storage.
+ */
+export const planSchema = bound(
+  draftFields.extend({
+    planHash: planHashSchema,
+    decodedActions: z.array(decodedActionSchema),
+    simulation: simulationSchema.nullable(),
+  }),
+)
 
 export type PlanDraft = z.infer<typeof planDraftSchema>
+export type Plan = z.infer<typeof planSchema>
+export type DecodedAction = z.infer<typeof decodedActionSchema>
+export type Simulation = z.infer<typeof simulationSchema>
 export type Call = z.infer<typeof callSchema>
 export type Warning = z.infer<typeof warningSchema>
 export type Outcome = z.infer<typeof outcomeSchema>

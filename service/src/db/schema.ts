@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  bigserial,
   boolean,
   check,
   foreignKey,
@@ -298,6 +299,12 @@ export const plans = pgTable(
      * against plan immutability. Wallets are unlinked, never deleted.
      */
     walletId: uuid('wallet_id').references(() => linkedWallets.id, { onDelete: 'restrict' }),
+    /**
+     * The agent grant that created it, or null for a plan built on the web.
+     * get_plan and cancel_plan are scoped to this: an agent sees only the
+     * plans its own grant made. Restrict for the same reason as wallet_id.
+     */
+    grantId: uuid('grant_id').references(() => oauthGrants.id, { onDelete: 'restrict' }),
     /** Typed intent as the agent expressed it. */
     intent: jsonb('intent').notNull(),
     /** The calls, and everything the review page renders. */
@@ -312,6 +319,7 @@ export const plans = pgTable(
     primaryKey({ columns: [t.id, t.version] }),
     uniqueIndex('plans_hash_idx').on(t.planHash),
     index('plans_user_idx').on(t.userId),
+    index('plans_grant_idx').on(t.grantId),
   ],
 )
 
@@ -324,6 +332,12 @@ export const planEvents = pgTable(
   'plan_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * Insertion order. "Latest event" must not depend on created_at alone:
+     * two rows written in one transaction share a now(), and uuids do not
+     * sort. A sequence is the one thing that always orders inserts.
+     */
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
     planId: uuid('plan_id').notNull(),
     planVersion: integer('plan_version').notNull(),
     status: text('status').notNull(),
@@ -379,5 +393,35 @@ export const simulations = pgTable(
       name: 'simulations_plan_fk',
     }),
     index('simulations_plan_idx').on(t.planId, t.planVersion),
+  ],
+)
+
+/**
+ * Review links. The URL segment is an opaque token; only its hash is stored, so
+ * a leaked table cannot be turned into working links. A token names one plan
+ * version, and a new version revokes the old token rather than reusing it —
+ * the link a person got is the link to what they were shown.
+ *
+ * Not append-only: revocation is an update, and a token is not evidence.
+ */
+export const reviewTokens = pgTable(
+  'review_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    planId: uuid('plan_id').notNull(),
+    planVersion: integer('plan_version').notNull(),
+    /** Its own clock, independent of the quote's. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt,
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.planId, t.planVersion],
+      foreignColumns: [plans.id, plans.version],
+      name: 'review_tokens_plan_fk',
+    }),
+    index('review_tokens_plan_idx').on(t.planId, t.planVersion),
   ],
 )

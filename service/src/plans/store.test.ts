@@ -1,0 +1,245 @@
+import { PGlite } from '@electric-sql/pglite'
+import { drizzle } from 'drizzle-orm/pglite'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { userIdForDid } from '../auth/session.js'
+import { migrationFiles, statementsIn } from '../db/migrate.js'
+import * as schema from '../db/schema.js'
+import { inMinutes, planFor } from './fixtures.js'
+import {
+  PlanError,
+  createPlan,
+  findPlan,
+  listPending,
+  mintReviewToken,
+  resolveReviewToken,
+  revokeReviewTokens,
+  transition,
+} from './store.js'
+
+/**
+ * Against real Postgres, because what matters is what the database enforces:
+ * the append-only trigger, the event sequence, the foreign keys. A mock would
+ * agree with whatever the store already believes.
+ */
+let db: ReturnType<typeof drizzle<typeof schema>>
+let pg: PGlite
+let alice: string
+let bob: string
+
+const TX = `0x${'ab'.repeat(32)}`
+
+beforeAll(async () => {
+  pg = await PGlite.create()
+  await pg.exec(`create role anon; create role authenticated; create role service_role;`)
+  for (const file of await migrationFiles(new URL('../../drizzle', import.meta.url).pathname)) {
+    for (const stmt of await statementsIn(file)) await pg.exec(stmt)
+  }
+  db = drizzle(pg, { schema, casing: 'snake_case' })
+  alice = await userIdForDid(db, 'did:privy:alice')
+  bob = await userIdForDid(db, 'did:privy:bob')
+}, 60_000)
+
+beforeEach(async () => {
+  // TRUNCATE fires no row triggers, so the append-only guard lets it through.
+  await pg.exec(`truncate review_tokens, simulations, plan_events, plans`)
+})
+
+describe('createPlan', () => {
+  it('writes the row and its first event together', async () => {
+    const plan = planFor(alice)
+    const record = await createPlan(db, { plan })
+    expect(record.plan).toEqual(plan)
+    expect(record.plan.status).toBe('awaiting_review')
+
+    const events = await db.select().from(schema.planEvents)
+    expect(events).toHaveLength(1)
+    expect(events[0]!.status).toBe('awaiting_review')
+  })
+
+  it('reads back what it wrote, hash verified', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan, grantId: null })
+    const found = await findPlan(db, alice, plan.id)
+    expect(found?.plan).toEqual(plan)
+  })
+
+  it('refuses to start a plan in a state it cannot start in', async () => {
+    await expect(createPlan(db, { plan: planFor(alice, { status: 'submitted' }) })).rejects.toThrow(PlanError)
+    await expect(createPlan(db, { plan: planFor(alice, { status: 'confirmed' }) })).rejects.toThrow(PlanError)
+  })
+
+  /** The trigger is the last line of defence for invariant 3; prove it is armed. */
+  it('cannot be updated afterwards, whatever the code does', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await expect(pg.exec(`update plans set reason = 'edited'`)).rejects.toThrow(/append-only/)
+    await expect(pg.exec(`delete from plan_events`)).rejects.toThrow(/append-only/)
+  })
+})
+
+describe('transition', () => {
+  it('walks the happy path, one event each', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const step = (to: Parameters<typeof transition>[1]['to'], detail?: Record<string, unknown>) =>
+      transition(db, { userId: alice, planId: plan.id, version: 1, to, detail })
+
+    expect(await step('awaiting_signature')).toBe('awaiting_signature')
+    expect(await step('submitted', { txHash: TX })).toBe('submitted')
+    expect(await step('confirmed')).toBe('confirmed')
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('confirmed')
+    expect(await db.select().from(schema.planEvents)).toHaveLength(4)
+  })
+
+  it('refuses a transition the machine does not allow, and writes nothing', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await expect(
+      transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted' }),
+    ).rejects.toMatchObject({ code: 'illegal_transition' })
+    expect(await db.select().from(schema.planEvents)).toHaveLength(1)
+  })
+
+  it('never leaves a terminal state', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'cancelled' })
+    await expect(
+      transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' }),
+    ).rejects.toMatchObject({ code: 'illegal_transition' })
+  })
+
+  it('treats a plan past its expiry as expired, even with no expired event', async () => {
+    const plan = planFor(alice, { expiresAt: inMinutes(-1) })
+    await createPlan(db, { plan })
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('expired')
+    await expect(
+      transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' }),
+    ).rejects.toMatchObject({ code: 'illegal_transition' })
+  })
+
+  it('refuses a submission with no transaction hash', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' })
+    await expect(
+      transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted' }),
+    ).rejects.toMatchObject({ code: 'missing_tx_hash' })
+    await expect(
+      transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted', detail: { txHash: '0xabc' } }),
+    ).rejects.toMatchObject({ code: 'missing_tx_hash' })
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('awaiting_signature')
+  })
+
+  it('keeps the detail', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted', detail: { txHash: TX } })
+    const [last] = await db.select().from(schema.planEvents).orderBy(schema.planEvents.seq).offset(2)
+    expect(last!.detail).toEqual({ txHash: TX })
+  })
+
+  /** Another person's plan is not found, not forbidden. */
+  it('cannot move another user’s plan', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await expect(
+      transition(db, { userId: bob, planId: plan.id, version: 1, to: 'cancelled' }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    expect(await findPlan(db, bob, plan.id)).toBeNull()
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('awaiting_review')
+  })
+})
+
+describe('listPending', () => {
+  it('lists plans waiting on the person, newest first', async () => {
+    const first = planFor(alice)
+    const second = planFor(alice)
+    await createPlan(db, { plan: first })
+    await new Promise((r) => setTimeout(r, 5))
+    await createPlan(db, { plan: second })
+    await transition(db, { userId: alice, planId: second.id, version: 1, to: 'awaiting_signature' })
+
+    const pending = await listPending(db, alice)
+    expect(pending.map((p) => p.plan.id)).toEqual([second.id, first.id])
+    expect(pending.map((p) => p.plan.status)).toEqual(['awaiting_signature', 'awaiting_review'])
+  })
+
+  it('leaves out terminal, submitted and expired plans', async () => {
+    const cancelled = planFor(alice)
+    const submitted = planFor(alice)
+    const expired = planFor(alice, { expiresAt: inMinutes(-1) })
+    const live = planFor(alice)
+    for (const plan of [cancelled, submitted, expired, live]) await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: cancelled.id, version: 1, to: 'cancelled' })
+    await transition(db, { userId: alice, planId: submitted.id, version: 1, to: 'awaiting_signature' })
+    await transition(db, { userId: alice, planId: submitted.id, version: 1, to: 'submitted', detail: { txHash: TX } })
+
+    expect((await listPending(db, alice)).map((p) => p.plan.id)).toEqual([live.id])
+  })
+
+  it('drops a superseded version and keeps the replacement', async () => {
+    const v1 = planFor(alice)
+    const v2 = planFor(alice, { id: v1.id, version: 2 })
+    await createPlan(db, { plan: v1 })
+    await createPlan(db, { plan: v2 })
+    await transition(db, { userId: alice, planId: v1.id, version: 1, to: 'superseded' })
+
+    const pending = await listPending(db, alice)
+    expect(pending.map((p) => [p.plan.id, p.plan.version])).toEqual([[v1.id, 2]])
+  })
+
+  it('never lists another user’s plans', async () => {
+    await createPlan(db, { plan: planFor(bob) })
+    expect(await listPending(db, alice)).toEqual([])
+  })
+})
+
+describe('review tokens', () => {
+  it('resolves a live token to its plan, for its owner', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const { token } = await mintReviewToken(db, { planId: plan.id, version: 1, expiresAt: new Date(inMinutes(10)) })
+
+    const resolved = await resolveReviewToken(db, alice, token)
+    expect(resolved?.plan).toEqual(plan)
+    expect(resolved?.linkExpiresAt).toBeDefined()
+  })
+
+  it('stores only the hash', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const { token } = await mintReviewToken(db, { planId: plan.id, version: 1, expiresAt: new Date(inMinutes(10)) })
+    const [row] = await db.select().from(schema.reviewTokens)
+    expect(row!.tokenHash).not.toBe(token)
+    expect(row!.tokenHash).not.toContain(token)
+  })
+
+  it('is null for a wrong token, an expired one, a revoked one, or someone else', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const live = await mintReviewToken(db, { planId: plan.id, version: 1, expiresAt: new Date(inMinutes(10)) })
+    const dead = await mintReviewToken(db, { planId: plan.id, version: 1, expiresAt: new Date(inMinutes(-1)) })
+
+    expect(await resolveReviewToken(db, alice, 'not-a-token')).toBeNull()
+    expect(await resolveReviewToken(db, alice, dead.token)).toBeNull()
+    expect(await resolveReviewToken(db, bob, live.token)).toBeNull()
+
+    expect(await revokeReviewTokens(db, plan.id, 1)).toBe(2)
+    expect(await resolveReviewToken(db, alice, live.token)).toBeNull()
+  })
+
+  it('binds to one version: superseding kills the old link only', async () => {
+    const v1 = planFor(alice)
+    const v2 = planFor(alice, { id: v1.id, version: 2 })
+    await createPlan(db, { plan: v1 })
+    await createPlan(db, { plan: v2 })
+    const old = await mintReviewToken(db, { planId: v1.id, version: 1, expiresAt: new Date(inMinutes(10)) })
+    const fresh = await mintReviewToken(db, { planId: v1.id, version: 2, expiresAt: new Date(inMinutes(10)) })
+    await revokeReviewTokens(db, v1.id, 1)
+
+    expect(await resolveReviewToken(db, alice, old.token)).toBeNull()
+    expect((await resolveReviewToken(db, alice, fresh.token))?.plan.version).toBe(2)
+  })
+})

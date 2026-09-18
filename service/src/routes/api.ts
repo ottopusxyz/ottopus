@@ -5,6 +5,7 @@ import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
+import { planRoutes } from './plans.js'
 import { portfolioRoutes } from './portfolio.js'
 import { portfolioProvider } from './portfolio-provider.js'
 import { walletRoutes } from './wallets.js'
@@ -119,6 +120,9 @@ if (ready) {
   /** The agents holding a grant, and the control that ends one. */
   apiApp.route('/agents', agentRoutes(db, session))
 
+  /** Plans waiting on the person, the plan behind a review link, and the web's transitions. */
+  apiApp.route('/plans', planRoutes(db, session))
+
   /**
    * Balances are a separate readiness question from sign-in.
    *
@@ -139,5 +143,7 @@ if (ready) {
   apiApp.get('/me', unconfigured)
   apiApp.all('/wallets/*', unconfigured)
   apiApp.all('/wallets', unconfigured)
+  apiApp.all('/plans/*', unconfigured)
+  apiApp.all('/plans', unconfigured)
   apiApp.all('/portfolio', unconfigured)
 }
