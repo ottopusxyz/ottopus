@@ -56,7 +56,17 @@
   }
 }
 
-/* --- Bottom sheet, below 640px. The design's breakpoint, not a guess. --- */
+/* --- Bottom sheet, below 640px. The design's breakpoint, not a guess. ---
+
+   A sheet and the bottom navbar want the same edge, and the sheet takes it.
+   That is a decision, not an accident of z-index: showModal() puts the dialog
+   and its backdrop in the top layer, which no stacking context can reach past,
+   so the bar is dimmed and blurred behind the backdrop along with everything
+   else. It should be — a modal makes the page inert, and a tab bar still
+   visible above a backdrop is four taps that do nothing.
+
+   The sheet keeps its own home-indicator padding rather than clearing the bar's
+   height. It covers the bar; there is nothing underneath to clear. */
 @media (max-width: 639.98px) {
   .ot-dialog {
     /* Pinned to the bottom: a sheet rises from the edge nearest the thumb. */

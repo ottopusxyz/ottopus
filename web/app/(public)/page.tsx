@@ -41,10 +41,14 @@ export default function Landing() {
     <div className="flex min-h-dvh flex-col">
       {/* The brand bar, as the app design draws it: navy ground, cream lockup,
           a cream hairline underneath. Navy and cream are the two tokens that do
-          not move between themes, so this bar looks identical in both. */}
+          not move between themes, so this bar looks identical in both.
+
+          It wraps below ~360px, where the lockup and a three-way toggle do not
+          fit on one line: the toggle drops beneath the lockup rather than off
+          the edge, which is what it did. */}
       <header
         className={
-          'sticky top-0 z-50 flex items-center justify-between gap-4 ' +
+          'sticky top-0 z-50 flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 ' +
           'border-b border-[rgba(255,240,220,0.14)] bg-[var(--ot-navy)] px-5 py-[14px] sm:px-8'
         }
       >

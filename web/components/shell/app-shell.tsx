@@ -3,6 +3,7 @@ import { OttoBadge } from '@/components/brand'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { AccountRow } from './account-row'
 import { AgentCard } from './agent-card'
+import { BottomNav } from './bottom-nav'
 import { ShellNav } from './nav'
 
 export interface AppShellProps {
@@ -17,20 +18,24 @@ export interface AppShellProps {
 const COLUMN = 'bg-[var(--ot-card)] border-[var(--ot-border)] px-[14px] lg:col-start-1 lg:border-r'
 
 /**
- * The app frame: a 216px sidebar beside the page.
+ * The app frame: a 216px sidebar beside the page at lg, a bottom bar below it.
  *
  * Built once, here, because three screens assume a nav, a page header and a
  * container exist. Whoever built one first would have defined it for the rest
  * by accident.
  *
- * The sidebar is two blocks rather than one, placed into the same grid column.
- * That is what lets the order differ per layout without rendering anything
- * twice: on a phone the nav sits above the page and the account group below it,
- * so a balance is not pushed under 300px of chrome. The DOM order is the tab
- * order is the reading order, on both.
+ * The sidebar is two blocks rather than one, placed into the same grid column,
+ * so the brand and the nav can sit at the top while the account group is pinned
+ * to the bottom without a spacer between them in the DOM.
  *
- * No drawer. There is no mobile drawing in the design, and a drawer needs a
- * trigger, a focus trap and an escape key that nothing else in the app has yet.
+ * Below lg both blocks are gone and BottomNav is the whole nav. #68 replaced
+ * the fallback that came before — a nav strip above the page and an account
+ * strip below it, which sandwiched the balance between two bands of chrome.
+ * The account group's contents did not move to the bar; they moved to Settings,
+ * which is where a four-item bar cannot follow them.
+ *
+ * Still no drawer. A bottom bar needs no trigger, no focus trap and no escape
+ * key, which is exactly why it is the right answer here.
  */
 export function AppShell({ children, agent, account }: AppShellProps) {
   return (
@@ -49,12 +54,16 @@ export function AppShell({ children, agent, account }: AppShellProps) {
         className={
           'ot-app-grid grid flex-1 overflow-hidden border-[var(--ot-border)] bg-[var(--ot-surface)] ' +
           'sm:rounded-[18px] sm:border ' +
-          'lg:grid-cols-[216px_minmax(0,1fr)] lg:grid-rows-[auto_1fr_auto]'
+          // Below lg main is the only item in the grid, and it gets all of it —
+          // a page that pins its own height (the portfolio) needs a definite
+          // row to pin to, and one that does not simply fills the card.
+          'grid-rows-[minmax(0,1fr)] ' +
+          'lg:grid-cols-[216px_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]'
         }
       >
         <aside
           aria-label="Sidebar"
-          className={`${COLUMN} flex flex-col gap-4 border-b py-4 lg:row-start-1 lg:gap-[22px] lg:border-b-0 lg:pt-5`}
+          className={`${COLUMN} hidden flex-col gap-[22px] pt-5 pb-4 lg:row-start-1 lg:flex`}
         >
           <div className="flex items-center gap-[9px] px-2">
             <OttoBadge tier="icon" size={26} />
@@ -72,15 +81,21 @@ export function AppShell({ children, agent, account }: AppShellProps) {
 
         <aside
           aria-label="Account and agent"
-          className={`${COLUMN} flex flex-col gap-3 border-t py-4 lg:row-start-3 lg:border-t-0 lg:pb-5`}
+          className={`${COLUMN} hidden flex-col gap-3 pt-4 pb-5 lg:row-start-3 lg:flex`}
         >
           {agent ?? <AgentCard />}
           {account ?? <AccountRow />}
           {/* The shell is the only chrome the app has; there is no top bar to
-              put the theme control in. */}
+              put the theme control in. Settings carries a second copy for the
+              widths where this column is not on screen. */}
           <ThemeToggle className="justify-center" />
         </aside>
       </div>
+
+      {/* Last in the DOM on purpose: content before chrome, so a tab from the
+          skip link reaches the page rather than the nav. It is painted at the
+          bottom edge regardless — see shell.css. */}
+      <BottomNav />
     </div>
   )
 }

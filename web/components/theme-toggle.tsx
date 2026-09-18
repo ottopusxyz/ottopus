@@ -115,6 +115,10 @@ export function ThemeToggle({
           key={c}
           className={cn(
             'cursor-pointer rounded-[var(--ot-radius-pill)] px-3 py-1 text-[12px] font-medium capitalize',
+            // The label is the control, so the label is the tap target: 36px
+            // below sm, which with the fieldset's own padding puts the row at
+            // 44. A 26px segment is a thumb-width of three wrong answers.
+            'flex items-center justify-center max-sm:min-h-9',
             'transition-colors duration-[var(--ot-dur-fast)]',
             'has-[:focus-visible]:outline has-[:focus-visible]:outline-2',
             'has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--ot-plan)]',

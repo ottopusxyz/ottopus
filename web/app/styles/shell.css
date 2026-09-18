@@ -1,0 +1,48 @@
+/* Ottopus — the app frame's two layouts.
+
+   The design has no mobile drawing, so the bottom bar is specified here rather
+   than ported. What it borrows is the design's own rule for a phone, stated for
+   dialogs: the thing you act on sits at the edge nearest the thumb.
+
+   Why CSS rather than Tailwind classes: the bar's height is reserved twice —
+   once by the bar and once by the shell that must not end underneath it — and
+   the two have to be the same number. A variable is how they stay the same
+   number. The breakpoint is written once here, for the same reason: the bar
+   appearing and the sidebar disappearing are one event. */
+
+:root {
+  /* The strip itself, without the home-indicator inset. Icon, label and enough
+     around them that a 4-up bar clears 44px on the shortest phone. */
+  --ot-bottom-nav: 58px;
+}
+
+.ot-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 1023.98px) {
+  .ot-bottom-nav {
+    display: block;
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    /* Above the portfolio's nudge overlay (z-20), below a dialog — which is in
+       the top layer and covers this on purpose. See dialog.css. */
+    z-index: 40;
+    /* box-sizing is border-box globally, so this height is the whole strip:
+       hairline, content, and the inset. The shell reserves the same
+       expression. */
+    height: calc(var(--ot-bottom-nav) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--ot-border);
+    background: var(--ot-card);
+  }
+
+  /* Nothing may end underneath the bar. Reserved on the shell rather than per
+     page, because one page forgetting is a "Sign out" button hidden behind a
+     tab. On the portfolio, where the shell is a fixed 100dvh box, this shortens
+     the frame instead of padding it — the same expression does both. */
+  .ot-app-shell {
+    padding-bottom: calc(var(--ot-bottom-nav) + env(safe-area-inset-bottom, 0px));
+  }
+}

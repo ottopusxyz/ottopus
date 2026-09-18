@@ -1,11 +1,23 @@
-/* Scope the fixed viewport to the portfolio; other pages retain document scrolling. */
+/* Scope the fixed viewport to the portfolio; other pages retain document scrolling.
+
+   100dvh, not 100vh: on a phone the URL chrome collapses as you scroll and vh
+   is frozen at the tall state, so the last row of the token table would sit
+   under the browser's own bar. Nothing here scrolls the document, so the
+   chrome never actually collapses — but a rotation or a keyboard does resize
+   it, and dvh is the one that follows.
+
+   The bottom bar is not subtracted here. shell.css pads the shell by the bar's
+   height at these widths, and border-box makes that padding come out of the
+   100dvh — so the frame ends where the bar begins, with no second number to
+   keep in agreement. */
 .ot-app-shell:has([data-portfolio]) {
   height: 100dvh;
   overflow: hidden;
 }
+/* The row template is the shell's own — minmax(0, 1fr) in both layouts — so
+   this only has to release the flex item's automatic minimum size. */
 .ot-app-shell:has([data-portfolio]) > .ot-app-grid {
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .ot-app-shell:has([data-portfolio]) #main {
   min-height: 0;

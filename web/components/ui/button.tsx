@@ -59,6 +59,17 @@ const SIZES: Record<Size, string> = {
   lg: 'px-5 py-[13px] text-[15px]',
 }
 
+/**
+ * A finger is not a pointer. Below sm every pill grows to 44px tall whatever
+ * its size says — sm renders at 29px, which is a comfortable click and a miss
+ * with a thumb. The type size and the horizontal padding are untouched, so a
+ * small button still reads as the small one; it just has somewhere to be hit.
+ *
+ * Not applied to block, which is already 44px of stacked choice, or to link,
+ * which is a run of text and would grow a hole around itself.
+ */
+const TOUCH = 'max-sm:min-h-11'
+
 /** The link variant sits tight to its text rather than carrying pill padding. */
 const LINK_SIZES: Record<Size, string> = {
   sm: 'px-1 py-[7px] text-[13px]',
@@ -104,7 +115,7 @@ export function buttonClasses({
     'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
     VARIANTS[variant],
     // Block carries its own padding; the size scale only sets the type size.
-    isLink ? LINK_SIZES[size] : block ? '' : SIZES[size],
+    isLink ? LINK_SIZES[size] : block ? '' : cn(SIZES[size], TOUCH),
     block && 'text-[14px] font-semibold',
     !isLink && DISABLED,
     isLink && 'disabled:cursor-not-allowed disabled:text-[var(--ot-text-4)]',

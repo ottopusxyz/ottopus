@@ -1,21 +1,41 @@
 /**
- * The app's route map, in one place because three things read it: the sidebar
- * nav, the route-shape test, and anything that needs to know whether a path is
- * inside the shell.
+ * The app's route map, in one place because four things read it: the sidebar
+ * nav, the bottom navbar, the route-shape test, and anything that needs to know
+ * whether a path is inside the shell.
  */
+
+/** Which glyph the bottom navbar draws. See nav-icon.tsx for the drawings. */
+export type NavIconName = 'portfolio' | 'requests' | 'activity' | 'settings'
 
 export interface ShellRoute {
   href: string
   label: string
+  /**
+   * Only the bottom bar uses it — the sidebar is text, as the design draws it.
+   * It lives here anyway because a route without an icon is a bottom-bar item
+   * with a hole in it, and this is the list a new route gets added to.
+   */
+  icon: NavIconName
 }
 
-/** Sidebar order, top to bottom. */
+/** Sidebar order, top to bottom; bottom-bar order, left to right. */
 export const SHELL_ROUTES: readonly ShellRoute[] = [
-  { href: '/portfolio', label: 'Portfolio' },
-  { href: '/requests', label: 'Requests' },
-  { href: '/activity', label: 'Activity' },
-  { href: '/settings', label: 'Settings' },
+  { href: '/portfolio', label: 'Portfolio', icon: 'portfolio' },
+  { href: '/requests', label: 'Requests', icon: 'requests' },
+  { href: '/activity', label: 'Activity', icon: 'activity' },
+  { href: '/settings', label: 'Settings', icon: 'settings' },
 ]
+
+/**
+ * Whether a nav item is the page you are on.
+ *
+ * Shared by both navs rather than written twice: they are the same nav in two
+ * shapes, and two copies of this is how one of them ends up highlighting
+ * nothing on /settings/wallets while the other gets it right.
+ */
+export function isActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
 
 /**
  * Routes that live outside the shell, each with the reason it is out.
@@ -35,5 +55,5 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
 }
 
 export function isShellRoute(pathname: string): boolean {
-  return SHELL_ROUTES.some((r) => pathname === r.href || pathname.startsWith(`${r.href}/`))
+  return SHELL_ROUTES.some((r) => isActive(pathname, r.href))
 }
