@@ -10,7 +10,18 @@ const log = (msg: string, extra: Record<string, unknown> = {}) => {
 }
 
 const server = serve({ fetch: handler, port: config.port, hostname: config.host }, (info) => {
-  log('listening', { host: config.host, port: info.port, env: config.nodeEnv })
+  // The advertised identity is in the first line of the deploy log on purpose.
+  // config.ts refuses to boot on a loopback mcpUrl in production, but that
+  // guard needs NODE_ENV to be set, and a deploy that sets nothing at all would
+  // slip past it — so the value it would have caught is printed where anyone
+  // watching a deploy can see it. Every OAuth endpoint is built from mcpUrl.
+  log('listening', {
+    host: config.host,
+    port: info.port,
+    env: config.nodeEnv,
+    mcpUrl: config.mcpUrl,
+    webUrl: config.webUrl,
+  })
 })
 
 /**

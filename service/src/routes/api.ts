@@ -45,6 +45,26 @@ apiApp.use(
 apiApp.get('/health', (c) => c.json({ ok: true, surface: 'api' }))
 
 /**
+ * What the web app has to know about the service that it cannot work out.
+ *
+ * Only the MCP address so far, and it is here because the browser was deriving
+ * it: the connect dialog took the API base and swapped /api for /mcp, which is
+ * right on a laptop where both are paths on one origin and wrong in production
+ * where they are separate subdomains. It handed out https://api.ottopus.xyz/mcp,
+ * which answers 404 — a person pasted it into their agent and blamed the agent.
+ *
+ * The browser cannot derive this. mcpUrl is the issuer, and RFC 8707 compares
+ * tokens against it as a string, so the address someone pastes has to be the
+ * same string the service binds tokens to — not a second spelling of it that
+ * happens to agree. Answering with config.mcpUrl makes them one value.
+ *
+ * Public, and deliberately so: the same string is already served unauthenticated
+ * as `resource` in the protected-resource metadata, and it is a URL we want
+ * people to copy.
+ */
+apiApp.get('/meta', (c) => c.json({ mcpUrl: config.mcpUrl }))
+
+/**
  * Sign-in needs three values wired up. Without them the authenticated routes
  * answer 503 rather than 401: "not configured" and "not signed in" are
  * different problems, and returning 401 here would send someone to fix their

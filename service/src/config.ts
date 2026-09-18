@@ -149,6 +149,42 @@ function readResourceUrl(name: string, fallback: string): string {
   return url.toString().replace(/\/$/, '')
 }
 
+/**
+ * Addresses that only ever mean "this machine".
+ *
+ * `URL.hostname` normalises an IPv6 literal to bracketless form, which is why
+ * `::1` appears without them.
+ */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+
+/**
+ * A loopback identity is right on a laptop and a broken deploy anywhere else.
+ *
+ * This is not a style rule. `mcpUrl` is the issuer, every OAuth endpoint in the
+ * discovery documents is built from it, and RFC 8707 compares tokens against it
+ * as a string — so a production service that falls back to
+ * http://localhost:8080/mcp publishes a registration endpoint no client can
+ * reach and then rejects its own real address as the wrong audience. Both
+ * failures are silent: health is green, the web app is fine, and only an
+ * external agent ever finds out.
+ *
+ * Deployed once with neither PUBLIC_URL nor MCP_URL set, which is what this
+ * exists to stop. The host is not guessed from the request — Host is
+ * attacker-controlled and the issuer must be one fixed string — so the only
+ * safe move is to refuse to start and say which variable is missing.
+ */
+function assertNotLoopback(nodeEnv: NodeEnv, values: Record<string, string>): void {
+  if (nodeEnv !== 'production') return
+  for (const [setting, value] of Object.entries(values)) {
+    if (LOOPBACK.has(new URL(value).hostname)) {
+      throw new ConfigError(
+        `${setting} resolved to ${value}, which is only reachable from inside the container. ` +
+          `Set ${setting} to the public URL this service answers on.`,
+      )
+    }
+  }
+}
+
 function readUrl(name: string): string | undefined {
   const raw = process.env[name]
   if (raw === undefined || raw === '') return undefined
@@ -164,17 +200,28 @@ export function loadConfig(): Config {
   const port = readInt('PORT', 8787)
   const publicUrl = readUrl('PUBLIC_URL')
   const webOrigins = readList('WEB_ORIGINS', DEFAULT_WEB_ORIGINS)
+  const nodeEnv = readEnum(
+    'NODE_ENV',
+    ['development', 'production', 'test'],
+    'development',
+  ) as NodeEnv
+
+  const mcpUrl = readResourceUrl(
+    'MCP_URL',
+    publicUrl ? `${publicUrl}/mcp` : `http://localhost:${port}/mcp`,
+  )
+  // The first default origin is localhost, so an unset WEB_URL in production
+  // sends the consent redirect to the deployer's own laptop.
+  const webUrl = readResourceUrl('WEB_URL', webOrigins[0] ?? DEFAULT_WEB_ORIGINS[0]!)
+  assertNotLoopback(nodeEnv, { MCP_URL: mcpUrl, WEB_URL: webUrl })
 
   return {
-    nodeEnv: readEnum('NODE_ENV', ['development', 'production', 'test'], 'development') as NodeEnv,
+    nodeEnv,
     port,
     host: process.env.HOST ?? '0.0.0.0',
     publicUrl,
-    mcpUrl: readResourceUrl(
-      'MCP_URL',
-      publicUrl ? `${publicUrl}/mcp` : `http://localhost:${port}/mcp`,
-    ),
-    webUrl: readResourceUrl('WEB_URL', webOrigins[0] ?? DEFAULT_WEB_ORIGINS[0]!),
+    mcpUrl,
+    webUrl,
     gitCommit: process.env.GIT_COMMIT ?? 'dev',
     databaseUrl: readOptional('DATABASE_URL'),
     privyAppId: readOptional('PRIVY_APP_ID'),

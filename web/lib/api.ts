@@ -11,16 +11,12 @@
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787/api').replace(/\/$/, '')
 
 /**
- * The MCP endpoint people paste into an agent.
+ * The MCP endpoint people paste into an agent, as an override.
  *
- * Derived from the API base rather than configured twice: the two surfaces are
- * one service, and a deployment that got them out of step would hand out an
- * address nothing is listening on. Overridable for the production split, where
- * they are genuinely different hostnames.
+ * Set this only to pin the value. Unset is the normal case, and then the
+ * service is asked — see fetchMcpUrl.
  */
-export const MCP_URL = (
-  process.env.NEXT_PUBLIC_MCP_URL ?? BASE.replace(/\/api$/, '/mcp')
-).replace(/\/$/, '')
+const MCP_URL_OVERRIDE = process.env.NEXT_PUBLIC_MCP_URL?.trim().replace(/\/$/, '') || null
 
 export class ApiError extends Error {
   constructor(
@@ -31,6 +27,32 @@ export class ApiError extends Error {
   ) {
     super(message)
   }
+}
+
+/**
+ * Ask the service where its MCP surface is.
+ *
+ * This used to be derived here: the API base with /api swapped for /mcp. That
+ * is right on a laptop, where both are paths on one origin, and wrong in
+ * production, where they are separate subdomains — it produced
+ * https://api.ottopus.xyz/mcp, which answers 404. Someone pasted it into their
+ * agent and got a dead address.
+ *
+ * The browser cannot work this out. mcpUrl is the OAuth issuer and RFC 8707
+ * compares tokens against it as a string, so what a person copies has to be the
+ * same string the service binds tokens to, not a second spelling that happens
+ * to agree. There is one source for it, and it is the service.
+ *
+ * No fallback on failure, deliberately. A guessed URL that 404s is worse than
+ * no URL: it looks like the agent is broken rather than the address.
+ */
+export async function fetchMcpUrl(): Promise<string> {
+  if (MCP_URL_OVERRIDE) return MCP_URL_OVERRIDE
+  const response = await fetch(`${BASE}/meta`)
+  if (!response.ok) throw new ApiError(response.status, 'GET /meta failed')
+  const { mcpUrl } = (await response.json()) as { mcpUrl?: string }
+  if (!mcpUrl) throw new ApiError(response.status, 'GET /meta returned no mcpUrl')
+  return mcpUrl.replace(/\/$/, '')
 }
 
 export interface SessionUser {

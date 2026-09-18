@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { config } from '../config.js'
 import { apiApp } from './api.js'
 
 /**
@@ -78,5 +79,30 @@ describe('actual requests', () => {
   it('leaves health open to same-origin callers', async () => {
     const res = await apiApp.request('/health')
     expect(res.status).toBe(200)
+  })
+})
+
+/**
+ * The web app used to derive this by swapping /api for /mcp on the API base,
+ * which is right on one origin and wrong across subdomains — it produced
+ * https://api.ottopus.xyz/mcp, a 404. The address someone pastes has to be the
+ * string the service binds tokens to, so the service is the one that says it.
+ */
+describe('the address to paste into an agent', () => {
+  it('is the same string the service uses as its own identity', async () => {
+    const res = await apiApp.request('/meta')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ mcpUrl: config.mcpUrl })
+  })
+
+  it('needs no session — it is the value already in the public metadata', async () => {
+    const res = await apiApp.request('/meta')
+    expect(res.status).not.toBe(401)
+    expect(res.status).not.toBe(503)
+  })
+
+  it('says nothing else, so a new secret cannot be added here by accident', async () => {
+    const body = (await (await apiApp.request('/meta')).json()) as Record<string, unknown>
+    expect(Object.keys(body)).toEqual(['mcpUrl'])
   })
 })

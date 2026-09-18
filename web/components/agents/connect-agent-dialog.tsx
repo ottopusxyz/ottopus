@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Otto } from '@/components/brand'
+import { Skeleton } from '@/components/motion'
 import { Button, Dialog } from '@/components/ui'
-import { MCP_URL, type AgentGrant } from '@/lib/api'
+import type { AgentGrant } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { agentBrand } from './agent-brand'
 import { AgentIcon } from './agent-icon'
-import { CONNECT_CLIENTS, payloadFor } from './connect-clients'
+import { CONNECT_CLIENTS, payloadFor, type ConnectClient } from './connect-clients'
 import { useAgents } from './use-agents'
+import { useMcpUrl, type McpUrlState } from './use-mcp-url'
 
 export interface ConnectAgentDialogProps {
   open: boolean
@@ -23,13 +25,15 @@ export interface ConnectAgentDialogProps {
  * one, and the numbered steps only where it does not.
  *
  * The URL in the design is `/v1/sse`, which predates the transport decision.
- * This is Streamable HTTP, and the address comes from config rather than the
- * drawing so a deployment cannot hand out one nothing is listening on.
+ * This is Streamable HTTP, and the address is asked of the service rather than
+ * derived from the drawing or from the API base — see useMcpUrl for why the
+ * derivation was wrong, and what it handed out.
  */
 export function ConnectAgentDialog({ open, onClose }: ConnectAgentDialogProps) {
   const [clientKey, setClientKey] = useState(CONNECT_CLIENTS[0]!.key)
   const client = CONNECT_CLIENTS.find((c) => c.key === clientKey) ?? CONNECT_CLIENTS[0]!
   const arrived = useAgentArrival(open)
+  const mcp = useMcpUrl()
 
   return (
     <Dialog
@@ -80,7 +84,7 @@ export function ConnectAgentDialog({ open, onClose }: ConnectAgentDialogProps) {
           ))}
         </nav>
 
-        <CopyRow value={payloadFor(client, MCP_URL)} />
+        <Payload state={mcp} client={client} />
 
         {client.steps ? (
           <ol className="m-0 flex list-none flex-col gap-[9px] p-0">
@@ -98,6 +102,39 @@ export function ConnectAgentDialog({ open, onClose }: ConnectAgentDialogProps) {
         <Waiting />
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * The address, once we know it.
+ *
+ * Nothing copyable is offered until the service has answered. The dialog could
+ * fill this in from a guess and correct it a moment later, but the guess is the
+ * bug this replaced: a wrong address is pasted, copied and pasted again long
+ * before anyone notices it was provisional.
+ */
+function Payload({ state, client }: { state: McpUrlState; client: ConnectClient }) {
+  if (state.status === 'ready') return <CopyRow value={payloadFor(client, state.url)} />
+
+  if (state.status === 'failed') {
+    return (
+      <p
+        role="alert"
+        className="m-0 rounded-[10px] bg-[var(--ot-warn-bg)] px-3 py-2.5 text-[13px] leading-[1.5] text-[var(--ot-warn-text)]"
+      >
+        Couldn&rsquo;t reach Ottopus for its address. Nothing is wrong with your account or your
+        agent &mdash; close this and open it again in a moment.
+      </p>
+    )
+  }
+
+  // The copy row's exact height, so the dialog does not jump under the pointer
+  // at the moment someone reaches for the button.
+  return (
+    <div role="status" aria-busy>
+      <span className="sr-only">Loading the server address</span>
+      <Skeleton height={43} radius={10} />
+    </div>
   )
 }
 

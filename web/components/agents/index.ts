@@ -12,4 +12,5 @@ export { CONNECT_CLIENTS, SERVER_NAME, payloadFor, type ConnectClient } from './
 export { AgentList, type AgentListProps } from './agent-list'
 export { AgentsPanel, ScopeChips } from './agents-panel'
 export { useAgents, type AgentsState, type UseAgents } from './use-agents'
+export { useMcpUrl, type McpUrlState } from './use-mcp-url'
 export { SessionAgentCard } from './session-agent-card'
