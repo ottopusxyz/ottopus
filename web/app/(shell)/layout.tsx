@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { SessionAgentCard } from '@/components/agents'
 import { RequireSession, SessionAccountRow } from '@/components/auth'
 import { AppShell } from '@/components/shell'
 
@@ -11,7 +12,9 @@ import { AppShell } from '@/components/shell'
 export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     <RequireSession>
-      <AppShell account={<SessionAccountRow />}>{children}</AppShell>
+      <AppShell agent={<SessionAgentCard />} account={<SessionAccountRow />}>
+        {children}
+      </AppShell>
     </RequireSession>
   )
 }

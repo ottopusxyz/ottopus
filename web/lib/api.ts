@@ -267,6 +267,8 @@ export interface AgentGrant {
   id: string
   name: string
   uri: string | null
+  /** The callbacks it registered — what tells a terminal from a hosted client. */
+  redirectUris: string[]
   grantedAt: string
   lastUsedAt: string | null
   revokedAt: string | null

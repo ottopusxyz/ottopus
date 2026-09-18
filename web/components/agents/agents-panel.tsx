@@ -36,8 +36,10 @@ const isLive = (agent: AgentGrant) => agent.revokedAt === null
 
 function ConnectedPanel() {
   const { state, revoke } = useAgents()
+  const [showRevoked, setShowRevoked] = useState(false)
   const agents = state.status === 'ready' ? state.agents : []
   const live = agents.filter(isLive)
+  const revoked = agents.filter((agent) => !isLive(agent))
 
   return (
     <Card count={state.status === 'ready' ? live.length : undefined}>
@@ -49,19 +51,46 @@ function ConnectedPanel() {
         </div>
       ) : null}
 
+      {/* The count is live grants, so the empty state has to key off the same
+          thing. Listing revoked ones under "Connected agents 0" reads as a
+          contradiction, and someone whose only grants are revoked still needs
+          telling how to connect one. */}
       {state.status === 'loading' ? (
         <SkeletonShelf rows={2} />
-      ) : agents.length === 0 ? (
+      ) : live.length === 0 ? (
         <div className="px-[22px] py-7">
           <EmptyState
-            title="No agents yet"
+            title={revoked.length > 0 ? 'No agents connected' : 'No agents yet'}
             description="Add the Ottopus MCP server to Claude or Codex, and the grant you approve will show up here."
             illustration={<Otto pose="base" size={96} animated />}
           />
         </div>
       ) : (
-        <AgentList agents={agents} onRevoke={revoke} />
+        <AgentList agents={live} onRevoke={revoke} />
       )}
+
+      {/* Kept, because a revoked grant is the record that an agent once had
+          access and no longer does — but folded away, since it accumulates one
+          row per revocation and none of them can do anything. */}
+      {revoked.length > 0 ? (
+        <div className="border-t border-[var(--ot-border)]">
+          <button
+            type="button"
+            aria-expanded={showRevoked}
+            onClick={() => setShowRevoked((open) => !open)}
+            className="flex w-full cursor-pointer items-center justify-between gap-3 px-[22px] py-3 text-[12.5px] text-[var(--ot-text-2)] transition-colors hover:text-[var(--ot-text)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ot-plan)]"
+          >
+            <span>
+              Previously connected{' '}
+              <span className="text-[var(--ot-text-3)]">{revoked.length}</span>
+            </span>
+            <span aria-hidden className="text-[var(--ot-text-3)]">
+              {showRevoked ? 'Hide' : 'Show'}
+            </span>
+          </button>
+          {showRevoked ? <AgentList agents={revoked} onRevoke={revoke} /> : null}
+        </div>
+      ) : null}
 
       <p className="border-t border-[var(--ot-border)] bg-[var(--ot-surface-2)] px-[22px] py-3.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
         No grant can sign or move anything. Revoking one stops it preparing new requests

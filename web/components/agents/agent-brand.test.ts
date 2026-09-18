@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { agentBrand, surfaceLabel, surfaceOf } from './agent-brand'
+import { AGENT_ICONS, agentBrand, surfaceLabel, surfaceOf } from './agent-brand'
 
 /**
  * Identification is a guess, and these tests are about keeping the guess
@@ -29,22 +30,45 @@ describe('what we can tell from a registration', () => {
   })
 
   it('prefers the more specific vendor when two would match', () => {
-    // "Claude Code" contains "Claude", so order in the rule list is load-bearing.
+    // "Claude Code" contains "Claude", so order in the rule list is load-bearing,
+    // and the two get different marks.
     expect(agentBrand('Claude Code').vendor).toBe('Claude Code')
+    expect(agentBrand('Claude Code').icon).toBe('claude-code')
     expect(agentBrand('Claude Desktop').vendor).toBe('Claude')
+    expect(agentBrand('Claude Desktop').icon).toBe('claude-ai')
   })
 
   it('says nothing rather than guessing for a name it does not know', () => {
     const brand = agentBrand('Totally Unknown Thing', ['https://example.test/cb'])
     expect(brand.vendor).toBeNull()
     expect(brand.label).toBe('Totally Unknown Thing')
-    // A neutral surface token, not a borrowed brand colour.
-    expect(brand.bg).toBe('var(--ot-surface-3)')
+    // A generic bot, never a nearest-guess logo. Drawing a company's mark
+    // beside a name nothing verified would be worse than drawing nothing.
+    expect(brand.icon).toBe('other')
   })
 
   /** An empty name must not produce an empty heading. */
   it('never returns an empty label', () => {
     expect(agentBrand('(only a qualifier)').label).not.toBe('')
+  })
+})
+
+describe('every mark a rule names is a file we actually ship', () => {
+  it('has an svg on disk for each icon key', () => {
+    for (const key of AGENT_ICONS) {
+      const file = new URL(`../../public/agents/${key}.svg`, import.meta.url)
+      expect(existsSync(file), `public/agents/${key}.svg is missing`).toBe(true)
+    }
+  })
+
+  /**
+   * A vendor rule pointing at a key we do not ship would render a broken image
+   * until the onError fallback caught it. Cheaper to fail here.
+   */
+  it('never points a vendor at a key outside that set', () => {
+    for (const name of ['Claude Code', 'Claude', 'Codex', 'VS Code', 'Cursor', 'Zed']) {
+      expect(AGENT_ICONS, name).toContain(agentBrand(name).icon)
+    }
   })
 })
 

@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Dialog } from '@/components/ui'
+import { Button, Chip, Dialog } from '@/components/ui'
 import type { AgentGrant } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { agentBrand, surfaceLabel } from './agent-brand'
+import { AgentIcon } from './agent-icon'
 import { ScopeChips } from './agents-panel'
 
 export interface AgentListProps {
@@ -64,6 +66,8 @@ export function AgentList({ agents, onRevoke }: AgentListProps) {
       <ul className="m-0 flex list-none flex-col p-0">
         {agents.map((agent) => {
           const revoked = agent.revokedAt !== null
+          const brand = agentBrand(agent.name, agent.redirectUris)
+          const surface = surfaceLabel(brand.surface)
           return (
             <li
               key={agent.id}
@@ -72,16 +76,25 @@ export function AgentList({ agents, onRevoke }: AgentListProps) {
                 revoked && 'opacity-60',
               )}
             >
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[15px] font-semibold">{agent.name}</span>
-                  <span className="text-[12px] text-[var(--ot-text-3)]">
-                    {revoked
-                      ? `Revoked ${onDay(agent.revokedAt!)}`
-                      : `${ago(agent.lastUsedAt)} · since ${onDay(agent.grantedAt)}`}
-                  </span>
+              <div className="flex min-w-0 items-start gap-3">
+                <AgentIcon name={agent.name} redirectUris={agent.redirectUris} />
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* The tidied name reads better; the raw one is what the
+                        agent actually called itself, and nothing verified it,
+                        so it stays reachable rather than being replaced. */}
+                    <span title={agent.name} className="text-[15px] font-semibold">
+                      {brand.label}
+                    </span>
+                    {surface ? <Chip className="text-[11px]">{surface}</Chip> : null}
+                    <span className="text-[12px] text-[var(--ot-text-3)]">
+                      {revoked
+                        ? `Revoked ${onDay(agent.revokedAt!)}`
+                        : `${ago(agent.lastUsedAt)} · since ${onDay(agent.grantedAt)}`}
+                    </span>
+                  </div>
+                  {revoked ? null : <ScopeChips agent={agent} />}
                 </div>
-                {revoked ? null : <ScopeChips agent={agent} />}
               </div>
 
               {revoked ? null : (
@@ -103,7 +116,7 @@ export function AgentList({ agents, onRevoke }: AgentListProps) {
         open={confirming !== null}
         onClose={dismiss}
         tone="destructive"
-        title={`Revoke ${confirming?.name ?? ''}?`}
+        title={`Revoke ${confirming ? agentBrand(confirming.name, confirming.redirectUris).label : ''}?`}
         // The consequence, both halves of it. #27 asks for this explicitly, and
         // the second half is the one that stops the confirm feeling dangerous:
         // revoking cannot undo anything that already happened.

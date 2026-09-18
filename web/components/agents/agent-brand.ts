@@ -9,9 +9,10 @@
  *
  * So this is a guess, and the code says so everywhere it is used. The name is
  * self-asserted at registration by anyone who can POST to /register: an agent
- * may call itself whatever it likes, and nothing here verifies it. The tile is
+ * may call itself whatever it likes, and nothing here verifies it. The mark is
  * decoration derived from a claim, never a badge that vouches for one — which
- * is why the surfaces that use it keep the raw name visible alongside.
+ * is why the surfaces that use it keep the raw name visible alongside, and why
+ * anything unrecognised gets a generic bot rather than a nearest guess.
  */
 
 export const AGENT_SURFACES = ['cli', 'desktop', 'web', 'unknown'] as const
@@ -24,34 +25,39 @@ export interface AgentBrand {
   /** Tidied for display — "Claude Code (ottopus-local)" reads as "Claude Code". */
   label: string
   surface: AgentSurface
-  /** Brand tint for the tile, with a foreground that clears AA on it. */
-  bg: string
-  fg: string
+  /** Which mark in public/agents to draw. `other` for anything unrecognised. */
+  icon: AgentIconKey
 }
 
+/** The marks we actually have. Anything else falls back to `other`. */
+export const AGENT_ICONS = ['claude-code', 'claude-ai', 'codex', 'vscode', 'other'] as const
+
+export type AgentIconKey = (typeof AGENT_ICONS)[number]
+
 /**
- * Vendor tints, each the client's own brand colour, with the foreground stored
- * rather than derived — exactly as WALLET_AVATARS does it, and for the same
- * reason: no single foreground clears 4.5:1 on both a light and a dark tint.
+ * Order is load-bearing: "Claude Code" contains "Claude", so the specific rule
+ * has to come first or every Claude Code grant reads as Claude.
+ *
+ * A vendor with no mark of its own still gets its name — that half is useful on
+ * its own, and `other` is an honest answer to "which logo", not a failure.
  */
 interface VendorRule {
   vendor: string
   /** Matched case-insensitively against the client's self-reported name. */
   match: RegExp
-  bg: string
-  fg: string
+  icon: AgentIconKey
 }
 
 const VENDORS: readonly VendorRule[] = [
-  { vendor: 'Claude Code', match: /claude\s*code/i, bg: '#D97757', fg: '#16213E' },
-  { vendor: 'Claude', match: /claude/i, bg: '#D97757', fg: '#16213E' },
-  { vendor: 'Codex', match: /codex|openai/i, bg: '#BFC3C7', fg: '#16213E' },
-  { vendor: 'Cursor', match: /cursor/i, bg: '#9AA2B8', fg: '#16213E' },
-  { vendor: 'VS Code', match: /visual\s*studio\s*code|vscode/i, bg: '#4FA3E3', fg: '#16213E' },
-  { vendor: 'Windsurf', match: /windsurf/i, bg: '#3CCB8E', fg: '#16213E' },
-  { vendor: 'Zed', match: /\bzed\b/i, bg: '#B3A0F5', fg: '#16213E' },
-  { vendor: 'Cline', match: /\bcline\b/i, bg: '#88D5B0', fg: '#16213E' },
-  { vendor: 'Continue', match: /\bcontinue\b/i, bg: '#F0C36A', fg: '#16213E' },
+  { vendor: 'Claude Code', match: /claude\s*code/i, icon: 'claude-code' },
+  { vendor: 'Claude', match: /claude/i, icon: 'claude-ai' },
+  { vendor: 'Codex', match: /codex|openai/i, icon: 'codex' },
+  { vendor: 'VS Code', match: /visual\s*studio\s*code|vscode/i, icon: 'vscode' },
+  { vendor: 'Cursor', match: /cursor/i, icon: 'other' },
+  { vendor: 'Windsurf', match: /windsurf/i, icon: 'other' },
+  { vendor: 'Zed', match: /\bzed\b/i, icon: 'other' },
+  { vendor: 'Cline', match: /\bcline\b/i, icon: 'other' },
+  { vendor: 'Continue', match: /\bcontinue\b/i, icon: 'other' },
 ]
 
 /**
@@ -98,8 +104,7 @@ export function agentBrand(name: string, redirectUris: readonly string[] = []): 
     vendor: rule?.vendor ?? null,
     label: rule?.vendor ?? tidy(name),
     surface: surfaceOf(redirectUris, name),
-    bg: rule?.bg ?? 'var(--ot-surface-3)',
-    fg: rule?.fg ?? 'var(--ot-text-2)',
+    icon: rule?.icon ?? 'other',
   }
 }
 
