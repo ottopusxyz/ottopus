@@ -10,6 +10,18 @@
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787/api').replace(/\/$/, '')
 
+/**
+ * The MCP endpoint people paste into an agent.
+ *
+ * Derived from the API base rather than configured twice: the two surfaces are
+ * one service, and a deployment that got them out of step would hand out an
+ * address nothing is listening on. Overridable for the production split, where
+ * they are genuinely different hostnames.
+ */
+export const MCP_URL = (
+  process.env.NEXT_PUBLIC_MCP_URL ?? BASE.replace(/\/api$/, '/mcp')
+).replace(/\/$/, '')
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,

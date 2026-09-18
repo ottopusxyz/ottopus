@@ -109,3 +109,24 @@
     opacity: 0.6;
   }
 }
+
+/* A determinate-looking spinner for the one place something is genuinely
+   pending on someone else: the connect dialog, waiting for an agent to
+   complete its handshake. Not a loader in the L1–L6 family — those say "we are
+   working". This says "we are listening", which is why it is a bare ring. */
+.ot-spin {
+  animation: ot-spin 900ms linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+
+@keyframes ot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-spin {
+    animation: none !important;
+  }
+}

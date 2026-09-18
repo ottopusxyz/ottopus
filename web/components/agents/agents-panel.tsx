@@ -4,9 +4,10 @@ import { useState, type ReactNode } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { SkeletonShelf } from '@/components/motion/loaders'
-import { Callout, Chip, EmptyState } from '@/components/ui'
+import { Button, Callout, Chip, EmptyState } from '@/components/ui'
 import type { AgentGrant } from '@/lib/api'
 import { AgentList } from './agent-list'
+import { ConnectAgentDialog } from './connect-agent-dialog'
 import { useAgents } from './use-agents'
 
 /**
@@ -37,12 +38,19 @@ const isLive = (agent: AgentGrant) => agent.revokedAt === null
 function ConnectedPanel() {
   const { state, revoke } = useAgents()
   const [showRevoked, setShowRevoked] = useState(false)
+  const [connecting, setConnecting] = useState(false)
   const agents = state.status === 'ready' ? state.agents : []
   const live = agents.filter(isLive)
   const revoked = agents.filter((agent) => !isLive(agent))
 
+  const connect = (
+    <Button variant="secondary" size="sm" onClick={() => setConnecting(true)}>
+      Connect agent
+    </Button>
+  )
+
   return (
-    <Card count={state.status === 'ready' ? live.length : undefined}>
+    <Card count={state.status === 'ready' ? live.length : undefined} action={connect}>
       {state.status === 'failed' ? (
         <div className="px-[22px] pt-4">
           <Callout severity="caution" title="Can’t reach Ottopus right now">
@@ -63,6 +71,7 @@ function ConnectedPanel() {
             title={revoked.length > 0 ? 'No agents connected' : 'No agents yet'}
             description="Add the Ottopus MCP server to Claude or Codex, and the grant you approve will show up here."
             illustration={<Otto pose="base" size={96} animated />}
+            action={connect}
           />
         </div>
       ) : (
@@ -96,12 +105,22 @@ function ConnectedPanel() {
         No grant can sign or move anything. Revoking one stops it preparing new requests
         immediately.
       </p>
+
+      <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} />
     </Card>
   )
 }
 
 /** The P6 frame, matching the wallets card it sits beside. */
-function Card({ children, count }: { children: ReactNode; count?: number | undefined }) {
+function Card({
+  children,
+  count,
+  action,
+}: {
+  children: ReactNode
+  count?: number | undefined
+  action?: ReactNode
+}) {
   return (
     <section className="overflow-hidden rounded-[18px] border border-[var(--ot-border)] bg-[var(--ot-card)]">
       <div className="flex items-center justify-between gap-4 border-b border-[var(--ot-border)] px-[22px] py-4">
@@ -111,6 +130,7 @@ function Card({ children, count }: { children: ReactNode; count?: number | undef
             <span className="font-normal text-[var(--ot-text-3)]">{count}</span>
           ) : null}
         </h2>
+        {action}
       </div>
       {children}
     </section>

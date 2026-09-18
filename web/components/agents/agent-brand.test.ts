@@ -30,12 +30,16 @@ describe('what we can tell from a registration', () => {
   })
 
   it('prefers the more specific vendor when two would match', () => {
-    // "Claude Code" contains "Claude", so order in the rule list is load-bearing,
-    // and the two get different marks.
+    // "Claude Code" contains "Claude", so order in the rule list is load-bearing.
     expect(agentBrand('Claude Code').vendor).toBe('Claude Code')
-    expect(agentBrand('Claude Code').icon).toBe('claude-code')
     expect(agentBrand('Claude Desktop').vendor).toBe('Claude')
+  })
+
+  /** Same product, two surfaces. The name carries the difference, not the mark. */
+  it('gives every Claude surface the Claude mark', () => {
+    expect(agentBrand('Claude Code').icon).toBe('claude-ai')
     expect(agentBrand('Claude Desktop').icon).toBe('claude-ai')
+    expect(agentBrand('Claude').icon).toBe('claude-ai')
   })
 
   it('says nothing rather than guessing for a name it does not know', () => {

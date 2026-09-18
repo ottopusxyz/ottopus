@@ -12,6 +12,8 @@ export type AgentsState =
 export interface UseAgents {
   state: AgentsState
   revoke: (id: string) => Promise<void>
+  /** Ask again. The connect dialog polls this while it waits for a handshake. */
+  refresh: () => void
 }
 
 /**
@@ -58,5 +60,10 @@ export function useAgents(): UseAgents {
     [credentials],
   )
 
-  return { state, revoke }
+  // Stable, and that is load-bearing rather than tidy: the connect dialog puts
+  // this in a setInterval keyed on its identity, so a new function every render
+  // would tear the interval down and restart it before it could ever fire.
+  const refresh = useCallback(() => setNonce((n) => n + 1), [])
+
+  return { state, revoke, refresh }
 }

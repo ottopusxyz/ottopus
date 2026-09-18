@@ -30,13 +30,14 @@ export interface AgentBrand {
 }
 
 /** The marks we actually have. Anything else falls back to `other`. */
-export const AGENT_ICONS = ['claude-code', 'claude-ai', 'codex', 'vscode', 'other'] as const
+export const AGENT_ICONS = ['claude-ai', 'codex', 'vscode', 'other'] as const
 
 export type AgentIconKey = (typeof AGENT_ICONS)[number]
 
 /**
  * Order is load-bearing: "Claude Code" contains "Claude", so the specific rule
- * has to come first or every Claude Code grant reads as Claude.
+ * has to come first or every Claude Code grant reads as Claude. They share a
+ * mark but not a name, and the name is the half that differs.
  *
  * A vendor with no mark of its own still gets its name — that half is useful on
  * its own, and `other` is an honest answer to "which logo", not a failure.
@@ -49,7 +50,10 @@ interface VendorRule {
 }
 
 const VENDORS: readonly VendorRule[] = [
-  { vendor: 'Claude Code', match: /claude\s*code/i, icon: 'claude-code' },
+  // Both wear the Claude mark. Claude Code is Claude in a terminal, not a
+  // different product, and the Anthropic wordmark names the company rather than
+  // the thing holding the grant.
+  { vendor: 'Claude Code', match: /claude\s*code/i, icon: 'claude-ai' },
   { vendor: 'Claude', match: /claude/i, icon: 'claude-ai' },
   { vendor: 'Codex', match: /codex|openai/i, icon: 'codex' },
   { vendor: 'VS Code', match: /visual\s*studio\s*code|vscode/i, icon: 'vscode' },

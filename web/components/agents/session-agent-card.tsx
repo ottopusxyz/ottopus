@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { AgentCard } from '@/components/shell'
 import { AgentIcon } from './agent-icon'
 import { agentBrand } from './agent-brand'
+import { ConnectAgentDialog } from './connect-agent-dialog'
 import { useAgents } from './use-agents'
 
 /**
@@ -25,9 +27,21 @@ export function SessionAgentCard() {
 
 function LiveAgentCard() {
   const { state } = useAgents()
+  // Only the empty card opens the dialog; once something is connected the card
+  // points at Settings, which has its own Connect agent button.
+  const [connecting, setConnecting] = useState(false)
   const live = state.status === 'ready' ? state.agents.filter((a) => a.revokedAt === null) : []
 
-  if (live.length === 0) return <AgentCard />
+  // The shell's card has said "Connect agent" since #51 with nothing behind the
+  // button. Same card, same words — now it opens the dialog.
+  if (live.length === 0) {
+    return (
+      <>
+        <AgentCard onConnect={() => setConnecting(true)} />
+        <ConnectAgentDialog open={connecting} onClose={() => setConnecting(false)} />
+      </>
+    )
+  }
 
   const [first] = live
   const brand = agentBrand(first!.name, first!.redirectUris)
@@ -47,9 +61,12 @@ function LiveAgentCard() {
       </div>
       {/* Settings is where a grant is read and ended, so the card points there
           rather than describing what it could do. */}
+      {/* One link, not two. The column is 216px wide and a second action wraps
+          both of them onto three lines — and Settings, where this goes, is
+          where connecting another one lives anyway. */}
       <Link
         href="/settings"
-        className="w-fit text-[12px] font-medium text-[var(--ot-plan-text)] underline underline-offset-[3px] hover:text-[var(--ot-text)]"
+        className="w-fit text-[12px] font-medium whitespace-nowrap text-[var(--ot-plan-text)] underline underline-offset-[3px] hover:text-[var(--ot-text)]"
       >
         Manage access
       </Link>
