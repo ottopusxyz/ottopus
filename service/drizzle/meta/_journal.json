@@ -43,6 +43,27 @@
       "when": 1788894678822,
       "tag": "0005_lock_down_auth_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788897584156,
+      "tag": "0006_oauth_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788897585156,
+      "tag": "0007_lock_down_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788897586156,
+      "tag": "0008_backfill_grants",
+      "breakpoints": true
     }
   ]
 }

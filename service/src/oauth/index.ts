@@ -8,6 +8,7 @@ export {
   protectedResourceMetadata,
   protectedResourceMetadataUrl,
   resourceUrl,
+  wellKnownPaths,
 } from './metadata.js'
 export { oauthRoutes } from './routes.js'
 export {
@@ -32,11 +33,16 @@ export {
   findAuthRequest,
   findClient,
   findToken,
+  grantFor,
   issueTokens,
+  listGrants,
   mintAuthCode,
   purgeExpired,
   registerClient,
+  revokeGrant,
   revokeToken,
+  touchGrant,
+  type AgentGrant,
   type AuthRequest,
   type IssuedTokens,
   type RegisteredClient,

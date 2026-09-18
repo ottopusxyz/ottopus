@@ -182,6 +182,56 @@ export const oauthAuthCodes = pgTable(
   ],
 )
 
+/**
+ * A standing grant: this agent, acting for this person, with these scopes.
+ *
+ * The thing Settings lists and the thing a person revokes. Tokens rotate — a
+ * refresh mints a new pair every hour — so a token is the wrong unit for both:
+ * "connected since" would drift as old rows aged out, and revoking would have
+ * to chase every row rather than setting one flag.
+ *
+ * Kept after revocation rather than deleted, so Settings can say a grant was
+ * revoked instead of quietly losing it, and so the audit trail behind a plan
+ * an agent prepared still resolves to the grant that allowed it.
+ */
+export const oauthGrants = pgTable(
+  'oauth_grants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthClients.clientId, { onDelete: 'cascade' }),
+    scopes: text('scopes').array().notNull(),
+    resource: text('resource'),
+    /** The consent that created it, so "granted at" is the moment someone said yes. */
+    requestId: uuid('request_id').references(() => oauthAuthRequests.id, {
+      onDelete: 'set null',
+    }),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Last time a token from this grant reached a tool. Written at most once a
+     * minute and never awaited — it is the difference between "connected" and
+     * "connected and actually working", and it is not worth a round trip on
+     * every call to keep it to the second.
+     */
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt,
+  },
+  (t) => [
+    index('oauth_grants_user_idx').on(t.userId),
+    // One live grant per agent per person. A second consent from the same
+    // client reuses it rather than stacking a second row in Settings that says
+    // the same thing.
+    uniqueIndex('oauth_grants_live_idx')
+      .on(t.userId, t.clientId)
+      .where(sql`${t.revokedAt} is null`),
+  ],
+)
+
 /** Access and refresh tokens, hashed. Revocable, which Settings exposes. */
 export const oauthTokens = pgTable(
   'oauth_tokens',
@@ -195,6 +245,8 @@ export const oauthTokens = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** The standing grant this pair belongs to. Revoking it revokes them all. */
+    grantId: uuid('grant_id').references(() => oauthGrants.id, { onDelete: 'cascade' }),
     scopes: text('scopes').array().notNull(),
     /**
      * RFC 8707 audience. The spec requires the resource server to reject a

@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
 import { schema } from '../db/client.js'
 import { hashSecret, mintSecret } from './crypto.js'
@@ -15,7 +15,7 @@ import type { Scope } from './scopes.js'
  * that.
  */
 
-const { oauthClients, oauthAuthRequests, oauthAuthCodes, oauthTokens } = schema
+const { oauthClients, oauthAuthRequests, oauthAuthCodes, oauthGrants, oauthTokens } = schema
 
 /** Long enough for a person to read a consent screen, short enough to matter. */
 export const AUTH_REQUEST_TTL_MS = 10 * 60 * 1000
@@ -164,6 +164,8 @@ export interface ConsumedCode {
   codeChallenge: string
   redirectUri: string
   resource: string | null
+  /** The consent behind it, so a grant can be dated from when someone said yes. */
+  requestId: string | null
 }
 
 /**
@@ -193,7 +195,144 @@ export async function consumeAuthCode(db: Db, code: string): Promise<ConsumedCod
     codeChallenge: row.codeChallenge,
     redirectUri: row.redirectUri,
     resource: row.resource,
+    requestId: row.requestId,
   }
+}
+
+/**
+ * The standing grant behind a code exchange, created on the first exchange and
+ * reused on every later one.
+ *
+ * Dated from the consent rather than from this moment: "connected since" should
+ * be when a person approved it, and those differ by however long the agent took
+ * to redeem the code.
+ *
+ * A second consent from the same agent lands on the existing row instead of
+ * stacking a duplicate in Settings — the partial unique index enforces one live
+ * grant per agent per person, and this is the read that respects it.
+ */
+export async function grantFor(db: Db, code: ConsumedCode): Promise<string> {
+  const [existing] = await db
+    .select({ id: oauthGrants.id })
+    .from(oauthGrants)
+    .where(
+      and(
+        eq(oauthGrants.userId, code.userId),
+        eq(oauthGrants.clientId, code.clientId),
+        isNull(oauthGrants.revokedAt),
+      ),
+    )
+  if (existing) {
+    // Scopes can change between consents, and the grant is what Settings shows.
+    await db
+      .update(oauthGrants)
+      .set({ scopes: code.scopes })
+      .where(eq(oauthGrants.id, existing.id))
+    return existing.id
+  }
+
+  let grantedAt: Date | undefined
+  if (code.requestId) {
+    const request = await findAuthRequest(db, code.requestId)
+    grantedAt = request?.decidedAt ?? undefined
+  }
+
+  const [row] = await db
+    .insert(oauthGrants)
+    .values({
+      userId: code.userId,
+      clientId: code.clientId,
+      scopes: code.scopes,
+      resource: code.resource,
+      requestId: code.requestId,
+      ...(grantedAt ? { grantedAt } : {}),
+    })
+    .returning({ id: oauthGrants.id })
+  return row!.id
+}
+
+export interface AgentGrant {
+  id: string
+  clientId: string
+  clientName: string
+  clientUri: string | null
+  scopes: Scope[]
+  grantedAt: Date
+  lastUsedAt: Date | null
+  revokedAt: Date | null
+}
+
+/** What Settings lists: every agent this person has ever authorised. */
+export async function listGrants(db: Db, userId: string): Promise<AgentGrant[]> {
+  const rows = await db
+    .select({
+      id: oauthGrants.id,
+      clientId: oauthGrants.clientId,
+      clientName: oauthClients.clientName,
+      clientUri: oauthClients.clientUri,
+      scopes: oauthGrants.scopes,
+      grantedAt: oauthGrants.grantedAt,
+      lastUsedAt: oauthGrants.lastUsedAt,
+      revokedAt: oauthGrants.revokedAt,
+    })
+    .from(oauthGrants)
+    .innerJoin(oauthClients, eq(oauthClients.clientId, oauthGrants.clientId))
+    .where(eq(oauthGrants.userId, userId))
+    .orderBy(desc(oauthGrants.grantedAt))
+  return rows.map((row) => ({ ...row, scopes: row.scopes as Scope[] }))
+}
+
+/**
+ * Revoke a grant, and everything issued under it.
+ *
+ * Scoped to the user, so an id guessed from somewhere else revokes nothing.
+ * Returns false when there was no live grant to revoke, which the route reports
+ * rather than pretending something happened.
+ *
+ * The tokens are revoked too even though findToken already refuses a token
+ * whose grant is revoked. Two independent reasons to say no is the point: this
+ * is the control a person reaches for when they think something is wrong.
+ */
+export async function revokeGrant(db: Db, userId: string, grantId: string): Promise<boolean> {
+  const now = new Date()
+  const [row] = await db
+    .update(oauthGrants)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(oauthGrants.id, grantId),
+        eq(oauthGrants.userId, userId),
+        isNull(oauthGrants.revokedAt),
+      ),
+    )
+    .returning({ id: oauthGrants.id })
+  if (!row) return false
+
+  await db
+    .update(oauthTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(oauthTokens.grantId, grantId), isNull(oauthTokens.revokedAt)))
+  return true
+}
+
+/**
+ * Note that a grant was used, at most once a minute.
+ *
+ * The conditional is what keeps this off the hot path: Postgres skips the write
+ * when the row was touched recently, so a chatty agent costs one update a minute
+ * rather than one per tool call. Callers do not await it — a missed timestamp is
+ * a cosmetic loss, and latency on a tool call is not.
+ */
+export async function touchGrant(db: Db, grantId: string): Promise<void> {
+  await db
+    .update(oauthGrants)
+    .set({ lastUsedAt: new Date() })
+    .where(
+      and(
+        eq(oauthGrants.id, grantId),
+        sql`(${oauthGrants.lastUsedAt} is null or ${oauthGrants.lastUsedAt} < now() - interval '1 minute')`,
+      ),
+    )
 }
 
 export interface IssuedTokens {
@@ -205,7 +344,13 @@ export interface IssuedTokens {
 
 export async function issueTokens(
   db: Db,
-  grant: { clientId: string; userId: string; scopes: Scope[]; resource: string | null },
+  grant: {
+    clientId: string
+    userId: string
+    scopes: Scope[]
+    resource: string | null
+    grantId: string
+  },
 ): Promise<IssuedTokens> {
   const accessToken = mintSecret()
   const refreshToken = mintSecret()
@@ -237,6 +382,8 @@ export interface TokenGrant {
   userId: string
   scopes: Scope[]
   resource: string | null
+  /** Null only for a token issued before grants existed. */
+  grantId: string | null
 }
 
 /** A live token of the given kind, or null. Expired and revoked look the same. */
@@ -245,9 +392,12 @@ export async function findToken(
   token: string,
   kind: 'access' | 'refresh',
 ): Promise<TokenGrant | null> {
+  // Left join, because a token predating grants has none and is still valid;
+  // the filter below only refuses a grant that exists and was revoked.
   const [row] = await db
-    .select()
+    .select({ token: oauthTokens, grantRevokedAt: oauthGrants.revokedAt })
     .from(oauthTokens)
+    .leftJoin(oauthGrants, eq(oauthGrants.id, oauthTokens.grantId))
     .where(
       and(
         eq(oauthTokens.tokenHash, hashSecret(token)),
@@ -256,13 +406,14 @@ export async function findToken(
         sql`${oauthTokens.expiresAt} > now()`,
       ),
     )
-  if (!row) return null
+  if (!row || row.grantRevokedAt) return null
   return {
-    id: row.id,
-    clientId: row.clientId,
-    userId: row.userId,
-    scopes: row.scopes as Scope[],
-    resource: row.resource,
+    id: row.token.id,
+    clientId: row.token.clientId,
+    userId: row.token.userId,
+    scopes: row.token.scopes as Scope[],
+    resource: row.token.resource,
+    grantId: row.token.grantId,
   }
 }
 

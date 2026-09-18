@@ -3,7 +3,7 @@ import { bearerToken } from '../auth/privy.js'
 import type { Db } from '../db/client.js'
 import { challenge, resourceUrl } from './metadata.js'
 import { hasScope, type Scope } from './scopes.js'
-import { findToken } from './store.js'
+import { findToken, touchGrant } from './store.js'
 
 /**
  * The resource-server half: what an MCP request has to prove before it reaches
@@ -57,6 +57,10 @@ export function requireGrant(db: Db): MiddlewareHandler {
     c.set('userId', grant.userId)
     c.set('grantScopes', grant.scopes)
     c.set('grantClientId', grant.clientId)
+    // Deliberately not awaited. Settings wants to say when an agent last did
+    // something; nobody's tool call should wait on a cosmetic timestamp, and
+    // the update is a no-op unless a minute has passed.
+    if (grant.grantId) void touchGrant(db, grant.grantId).catch(() => {})
     await next()
   }
 }

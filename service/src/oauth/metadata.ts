@@ -38,6 +38,25 @@ export function authorizationServerMetadataUrl(): string {
   return `${url.origin}/.well-known/oauth-authorization-server${path}`
 }
 
+/**
+ * Every path the two discovery documents must answer on, derived from the
+ * resource identifier rather than written down.
+ *
+ * A resource with a path gets the path inserted after the well-known segment,
+ * and the bare form is served too because the same document is mounted on the
+ * MCP surface, where that path is already the mount point. Hardcoding "/mcp"
+ * here would be right for one deployment and wrong for any MCP_URL with a
+ * different path.
+ */
+export function wellKnownPaths(): { protectedResource: string[]; authorizationServer: string[] } {
+  const path = new URL(resourceUrl()).pathname.replace(/\/$/, '')
+  const both = (base: string) => (path ? [base, `${base}${path}`] : [base])
+  return {
+    protectedResource: both('/.well-known/oauth-protected-resource'),
+    authorizationServer: both('/.well-known/oauth-authorization-server'),
+  }
+}
+
 export const endpoints = () => ({
   authorization: `${resourceUrl()}/oauth/authorize`,
   token: `${resourceUrl()}/oauth/token`,

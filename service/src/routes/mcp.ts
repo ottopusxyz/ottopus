@@ -3,10 +3,12 @@ import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import {
+  authorizationServerMetadata,
   challenge,
   oauthRoutes,
   protectedResourceMetadata,
   requireGrant,
+  wellKnownPaths,
 } from '../oauth/index.js'
 
 /**
@@ -21,22 +23,29 @@ export const mcpApp = new Hono()
 mcpApp.get('/health', (c) => c.json({ ok: true, surface: 'mcp' }))
 
 /**
- * RFC 9728, served from the resource's own origin.
+ * Discovery, served from the resource's own origin.
  *
- * Also mounted on the root app, because the well-known path is anchored to the
- * origin and the resource may carry a path: on mcp.ottopus.xyz the document
- * belongs at /.well-known/oauth-protected-resource, while at localhost:8787/mcp
- * it belongs at /.well-known/oauth-protected-resource/mcp. Both forms answer, so
- * a client that constructs the path itself and one that follows the URL we hand
- * it in the 401 both arrive.
+ * Both well-known paths are anchored to the origin, not to wherever the surface
+ * happens to be mounted, and RFC 8414 and RFC 9728 both insert the resource's
+ * path after the well-known segment. So on mcp.ottopus.xyz the documents live at
+ * /.well-known/oauth-authorization-server, while at localhost:8787/mcp they live
+ * at /.well-known/oauth-authorization-server/mcp — and this app is mounted on
+ * both the root app and the MCP app so every spelling resolves.
+ *
+ * Getting this wrong is not a subtle failure. A client that cannot find the
+ * authorization server document never learns the registration endpoint, falls
+ * back to guessing one off the issuer, and reports a 404 from dynamic client
+ * registration — which says nothing about the real problem.
  */
 export const wellKnownApp = new Hono()
-wellKnownApp.get('/.well-known/oauth-protected-resource', (c) =>
-  c.json(protectedResourceMetadata()),
-)
-wellKnownApp.get('/.well-known/oauth-protected-resource/mcp', (c) =>
-  c.json(protectedResourceMetadata()),
-)
+
+for (const path of wellKnownPaths().protectedResource) {
+  wellKnownApp.get(path, (c) => c.json(protectedResourceMetadata()))
+}
+
+for (const path of wellKnownPaths().authorizationServer) {
+  wellKnownApp.get(path, (c) => c.json(authorizationServerMetadata()))
+}
 
 mcpApp.route('/', wellKnownApp)
 
@@ -52,15 +61,6 @@ if (!config.databaseUrl) {
   const db = getDb(config.databaseUrl)
 
   mcpApp.route('/oauth', oauthRoutes(db))
-
-  /**
-   * Also served here for clients that append the well-known path to the full
-   * authorization server URL rather than inserting it at the origin. Both
-   * spellings are in the wild; answering both costs one route.
-   */
-  mcpApp.get('/.well-known/oauth-authorization-server', (c) =>
-    c.redirect('/oauth/.well-known/oauth-authorization-server', 302),
-  )
 
   /**
    * The MCP endpoint itself. One handler for every method the transport uses —

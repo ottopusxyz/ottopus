@@ -10,6 +10,7 @@ import {
   createAuthRequest,
   findClient,
   findToken,
+  grantFor,
   issueTokens,
   registerClient,
   revokeToken,
@@ -232,11 +233,15 @@ export function oauthRoutes(db: Db): Hono {
         return c.json(fail('invalid_grant', 'code_verifier does not match the challenge.'), 400)
       }
 
+      // The standing grant, created on the first exchange and reused after —
+      // it is what Settings lists and what a person revokes.
+      const grantId = await grantFor(db, consumed)
       const tokens = await issueTokens(db, {
         clientId: consumed.clientId,
         userId: consumed.userId,
         scopes: consumed.scopes,
         resource: consumed.resource ?? resourceUrl(),
+        grantId,
       })
       return c.json(tokenResponse(tokens))
     }
@@ -250,6 +255,11 @@ export function oauthRoutes(db: Db): Hono {
       if (!grant) {
         return c.json(fail('invalid_grant', 'That refresh token is expired or revoked.'), 400)
       }
+      // A token minted before grants existed has none to refresh into. Rather
+      // than invent one, refuse: the agent reconnects and gets a real grant.
+      if (!grant.grantId) {
+        return c.json(fail('invalid_grant', 'That grant predates this server. Reconnect.'), 400)
+      }
       // Rotation: the presented token dies with the pair it produces, so a
       // stolen refresh token is usable at most once rather than being a
       // standing key for ninety days.
@@ -259,6 +269,7 @@ export function oauthRoutes(db: Db): Hono {
         userId: grant.userId,
         scopes: grant.scopes,
         resource: grant.resource ?? resourceUrl(),
+        grantId: grant.grantId,
       })
       return c.json(tokenResponse(tokens))
     }
