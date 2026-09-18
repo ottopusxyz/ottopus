@@ -256,6 +256,7 @@ export interface AgentGrant {
   clientId: string
   clientName: string
   clientUri: string | null
+  redirectUris: string[]
   scopes: Scope[]
   grantedAt: Date
   lastUsedAt: Date | null
@@ -270,6 +271,7 @@ export async function listGrants(db: Db, userId: string): Promise<AgentGrant[]> 
       clientId: oauthGrants.clientId,
       clientName: oauthClients.clientName,
       clientUri: oauthClients.clientUri,
+      redirectUris: oauthClients.redirectUris,
       scopes: oauthGrants.scopes,
       grantedAt: oauthGrants.grantedAt,
       lastUsedAt: oauthGrants.lastUsedAt,

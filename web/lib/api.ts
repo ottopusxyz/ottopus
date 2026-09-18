@@ -256,6 +256,31 @@ export function decideConsent(
   })
 }
 
+/**
+ * An agent holding a grant, as Settings shows it.
+ *
+ * A grant, not a token: tokens rotate hourly, so "connected since" would drift
+ * and revoking would have to chase every one. Revoked grants come back too —
+ * losing one silently would make revocation feel like it might not have worked.
+ */
+export interface AgentGrant {
+  id: string
+  name: string
+  uri: string | null
+  grantedAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  scopes: { scope: string; title: string; detail: string }[]
+}
+
+export function listAgents(credentials: Credentials): Promise<{ agents: AgentGrant[] }> {
+  return call<{ agents: AgentGrant[] }>('/agents', credentials)
+}
+
+export function revokeAgent(credentials: Credentials, id: string): Promise<void> {
+  return call<void>(`/agents/${encodeURIComponent(id)}`, credentials, { method: 'DELETE' })
+}
+
 export function establishSession(credentials: Credentials): Promise<{ user: SessionUser }> {
   return call('/session', credentials, { method: 'POST' })
 }

@@ -4,6 +4,7 @@ import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { ZerionPortfolioConnector, cached } from '../connectors/portfolio/index.js'
 import { getDb } from '../db/client.js'
+import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
 import { portfolioRoutes } from './portfolio.js'
 import { walletRoutes } from './wallets.js'
@@ -94,6 +95,9 @@ if (ready) {
    * route on this surface.
    */
   apiApp.route('/oauth/consent', consentRoutes(db, session))
+
+  /** The agents holding a grant, and the control that ends one. */
+  apiApp.route('/agents', agentRoutes(db, session))
 
   /**
    * Balances are a separate readiness question from sign-in.
