@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Dialog } from '@/components/ui'
-import { armName } from '@/components/wallets/naming'
+import { armName, walletMark } from '@/components/wallets/naming'
 import type { Arm, Portfolio, AssetRow } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatAmount, formatMoneyFlat, formatShare } from '@/lib/format'
@@ -31,8 +31,6 @@ export interface TokenTableProps {
   currency?: string
   /** The arms, so a holding's walletId becomes a name and a mark. */
   wallets?: readonly Arm[]
-  /** Wallet logos by lowercased address, from the connected browser wallets. */
-  walletIcons?: ReadonlyMap<string, string>
 }
 
 /** What a row knows about a wallet: enough to name it and draw it. */
@@ -40,6 +38,35 @@ interface WalletRef {
   id: string
   name: string
   icon: string | null
+  /** Set by the person, so its first letter stands for it. */
+  label: string | null
+  watchOnly: boolean
+}
+
+/**
+ * A wallet's mark, in three forms: the client's bundled mark (public/wallets,
+ * keyed by the type stored on the arm — the same on every device); an eye for
+ * a watch-only address, because "watched, not held" is the fact about it that
+ * matters, whatever it is called; else the first letter of its name, for a
+ * client we have no mark for. One glyph per circle — AssetIcon's two-letter
+ * fallback sat off the baseline beside real images and read as a ticker.
+ */
+function WalletMark({ wallet, size, className }: { wallet: WalletRef; size: number; className?: string }) {
+  const eye = wallet.watchOnly
+  if (wallet.icon && !eye) return <AssetIcon url={wallet.icon} name={wallet.name} size={size} className={className} />
+  return (
+    <span aria-hidden style={{ width: size, height: size }}
+      className={cn('inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--ot-surface-3)] font-semibold leading-none text-[var(--ot-text-2)] ring-1 ring-[var(--ot-border)]', className)}>
+      {eye ? (
+        <svg viewBox="0 0 16 16" width={size * 0.7} height={size * 0.7} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1.6 8s2.4-4 6.4-4 6.4 4 6.4 4-2.4 4-6.4 4S1.6 8 1.6 8Z" />
+          <circle cx="8" cy="8" r="1.6" />
+        </svg>
+      ) : (
+        <span style={{ fontSize: Math.round(size * 0.55) }}>{(wallet.label ?? wallet.name).trim().charAt(0).toUpperCase()}</span>
+      )}
+    </span>
+  )
 }
 
 /**
@@ -57,7 +84,7 @@ function holdersOf(
   return [...sums]
     .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
     .map(([id, amount]) => ({
-      ...(lookup.get(id) ?? { id, name: 'Unlinked wallet', icon: null }),
+      ...(lookup.get(id) ?? { id, name: 'Unlinked wallet', icon: null, label: null, watchOnly: false }),
       amount,
     }))
 }
@@ -79,7 +106,7 @@ function WalletMarks({ holders }: { holders: readonly WalletRef[] }) {
     >
       {holders.slice(0, 3).map((wallet, index) => (
         <span key={wallet.id} className="relative" style={{ zIndex: 3 - index }}>
-          <AssetIcon url={wallet.icon} name={wallet.name} size={16} className="ring-2 ring-[var(--ot-card)]" />
+          <WalletMark wallet={wallet} size={16} className="ring-2 ring-[var(--ot-card)]" />
         </span>
       ))}
       {extra > 0 ? (
@@ -121,15 +148,21 @@ function Balance({ amount, decimals, symbol, label }: {
   )
 }
 
-export function TokenTable({ rows, chains, currency = 'usd', wallets = [], walletIcons }: TokenTableProps) {
+export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: TokenTableProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const networks = useMemo(() => new Map(chains.map((chain) => [chain.chainId, chain])), [chains])
   const walletRefs = useMemo(
     () => new Map<string, WalletRef>(wallets.map((arm) => [
       arm.id,
-      { id: arm.id, name: armName(arm), icon: walletIcons?.get(arm.address.toLowerCase()) ?? null },
+      {
+        id: arm.id,
+        name: armName(arm),
+        icon: walletMark(arm.walletType),
+        label: arm.label,
+        watchOnly: arm.isWatchOnly,
+      },
     ])),
-    [wallets, walletIcons],
+    [wallets],
   )
   const tokens = useMemo(() => groupTokens(rows), [rows])
   const selected = tokens.find((token) => token.id === selectedId)
@@ -262,7 +295,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [], walle
               <ul className="mt-2.5 flex list-none flex-col gap-1.5 border-t border-[var(--ot-border)] p-0 pt-2.5">
                 {holdersOf(selected.holdings.filter((holding) => holding.chainId === balance.chainId), walletRefs).map((wallet) => (
                   <li key={wallet.id} className="flex items-center gap-2 text-[12px]">
-                    <AssetIcon url={wallet.icon} name={wallet.name} size={18} />
+                    <WalletMark wallet={wallet} size={18} />
                     <span className="min-w-0 flex-1 truncate">{wallet.name}</span>
                     <span title={`${exactAmount(wallet.amount.toString(), selected.asset.decimals)} ${selectedSymbol}`} className="shrink-0 font-mono text-[var(--ot-text-2)]">
                       {pretty(wallet.amount.toString(), selected.asset.decimals)} {selectedSymbol}

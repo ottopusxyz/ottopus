@@ -112,3 +112,31 @@ export function walletClientName(arm: Pick<Arm, 'label' | 'walletType'>): string
   if (arm.walletType === 'watch_only') return null
   return client
 }
+
+/**
+ * Types that share another type's mark. Coinbase Smart Wallet and Base Account
+ * are Coinbase products drawn with the Coinbase mark; `walletconnect` is the
+ * spelling one Privy version used for `wallet_connect`.
+ */
+const MARK_ALIASES: Readonly<Record<string, string>> = {
+  walletconnect: 'wallet_connect',
+  coinbase_smart_wallet: 'coinbase_wallet',
+  base_account: 'coinbase_wallet',
+}
+
+/** The types with a file in public/wallets. Kept in step with that folder. */
+const MARKS = new Set([
+  'backpack', 'bitget_wallet', 'brave_wallet', 'coinbase_wallet', 'ledger', 'metamask',
+  'okx_wallet', 'phantom', 'rabby_wallet', 'rainbow', 'safe', 'trust', 'uniswap',
+  'wallet_connect', 'zerion',
+])
+
+/**
+ * The wallet client's own mark, as a path under public/, or null for a client
+ * we have no mark for. See public/wallets/README.md for where they came from
+ * and why they are bundled rather than read from the session.
+ */
+export function walletMark(walletType: string): string | null {
+  const type = MARK_ALIASES[walletType] ?? walletType
+  return MARKS.has(type) ? `/wallets/${type}.svg` : null
+}

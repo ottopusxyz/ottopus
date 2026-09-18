@@ -5,12 +5,15 @@ import { Chip } from '@/components/ui'
 import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { truncateAddress } from '@/lib/format'
-import { WALLET_AVATARS, armName, walletClientName } from './naming'
+import { WALLET_AVATARS, armName, walletClientName, walletMark } from './naming'
 import { ProofMark } from './proof-mark'
 
 /**
- * The wallet's own logo where we have it, and the lettered brand tile where we
- * do not — an arm linked in another browser has no connector to ask.
+ * The wallet client's own mark where we bundle one, and the lettered brand tile
+ * where we do not. The mark follows from the type stored on the arm, so it is
+ * the same on every device and surface — it used to come from whatever the
+ * connected extension announced, which made it depend on the browser you were
+ * in and left nothing for an arm linked elsewhere.
  *
  * The tile is not a placeholder for a missing icon: its colour is the client's
  * own brand, picked in naming.ts to clear AA against the glyph, and it is how
@@ -18,7 +21,8 @@ import { ProofMark } from './proof-mark'
  * a neutral card rather than on that tint, which would put an orange fox on an
  * orange ground.
  */
-function Avatar({ arm, icon, size = 34 }: { arm: Arm; icon?: string | null; size?: number }) {
+function Avatar({ arm, size = 34 }: { arm: Arm; size?: number }) {
+  const icon = walletMark(arm.walletType)
   const brand = WALLET_AVATARS[arm.walletType]
   const [failed, setFailed] = useState(false)
   const showIcon = !!icon && !failed
@@ -37,15 +41,18 @@ function Avatar({ arm, icon, size = 34 }: { arm: Arm; icon?: string | null; size
       )}
     >
       {showIcon ? (
-        // Whatever the extension announced about itself — usually a data URI,
-        // but the wallet chooses, so this has to be able to fail back.
+        // A bundled file, so a failure here is a mark removed without naming.ts
+        // being told; the tile is the fallback either way.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={icon}
           alt=""
           width={size}
           height={size}
-          className="h-full w-full object-contain p-[3px]"
+          // Full bleed with the tile's own radius: the bundled marks are app
+          // icons with their own backgrounds, and a square one sitting inset
+          // in a rounded tile read as a sticker rather than the wallet.
+          className="h-full w-full rounded-[10px] object-cover"
           onError={() => setFailed(true)}
         />
       ) : armName(arm).charAt(0).toUpperCase()}
@@ -59,7 +66,6 @@ export interface ArmCardProps {
   value?: string | null
   share?: string | null
   /** The wallet client's own logo, when this arm is connected here. */
-  icon?: string | null
 }
 
 /**
@@ -68,13 +74,13 @@ export interface ArmCardProps {
  * Read-only by design: unlinking lives on Settings, where the confirm can say
  * what it costs without a balance sheet competing for attention.
  */
-export function ArmCard({ arm, value = null, share = null, icon = null }: ArmCardProps) {
+export function ArmCard({ arm, value = null, share = null }: ArmCardProps) {
   const client = walletClientName(arm)
 
   return (
     <div className="flex items-center justify-between gap-4 rounded-[12px] border border-[var(--ot-border)] bg-[var(--ot-card)] px-4 py-3.5">
       <div className="flex min-w-0 items-center gap-3">
-        <Avatar arm={arm} icon={icon} />
+        <Avatar arm={arm} />
         <div className="flex min-w-0 flex-col gap-[3px]">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-[15px] font-semibold">{armName(arm)}</span>

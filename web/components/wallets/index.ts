@@ -9,7 +9,6 @@ export {
   walletClientName,
 } from './naming'
 export { ProofMark, type ProofMarkProps } from './proof-mark'
-export { useWalletIcons } from './use-wallet-icons'
 export {
   armsOf,
   useWallets,
