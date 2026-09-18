@@ -27,15 +27,18 @@ const wallet = (n: number): PrivyWallet => ({
 })
 
 /** Stands in for requireSession. `attested` undefined means no identity token. */
-const signedIn = (attested: PrivyWallet[] | undefined): MiddlewareHandler => {
+const signedIn = (attested: PrivyWallet[] | undefined, as = userId): MiddlewareHandler => {
   return async (c, next) => {
-    c.set('userId', userId)
+    c.set('userId', as)
     c.set('privyWallets', attested)
     await next()
   }
 }
 
 const app = (attested?: PrivyWallet[] | undefined) => walletRoutes(db, signedIn(attested))
+
+/** The same routes, as a different person. */
+const appAs = (as: string) => walletRoutes(db, signedIn(undefined, as))
 
 beforeAll(async () => {
   pg = await PGlite.create()
@@ -157,5 +160,22 @@ describe('DELETE /:id', () => {
   /** A malformed uuid is a bad request, not a database error surfacing as 500. */
   it('answers 404 for a malformed id', async () => {
     expect((await app().request('/not-a-uuid', { method: 'DELETE' })).status).toBe(404)
+  })
+
+  /**
+   * Another person's wallet id must look exactly like a missing one, and the
+   * wallet must still be there for its owner afterwards.
+   */
+  it('answers 404 for a wallet belonging to someone else, and leaves it linked', async () => {
+    const stranger = await userIdForDid(db, 'did:privy:someone-else')
+    const created = await post(undefined, '/watch', { address: address(7) })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+
+    expect((await appAs(stranger).request(`/${arm.id}`, { method: 'DELETE' })).status).toBe(404)
+
+    const list = await app().request('/')
+    const { wallets } = (await list.json()) as { wallets: { id: string }[] }
+    expect(wallets.map((w) => w.id)).toEqual([arm.id])
+    expect(((await appAs(stranger).request('/').then((r) => r.json())) as { wallets: unknown[] }).wallets).toEqual([])
   })
 })

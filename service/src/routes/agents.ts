@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from 'hono'
+import { z } from 'zod'
 import type { Db } from '../db/client.js'
 import { SCOPE_COPY, listGrants, revokeGrant } from '../oauth/index.js'
 
@@ -46,7 +47,12 @@ export function agentRoutes(db: Db, session: MiddlewareHandler): Hono {
    * survives — that is our bookkeeping, not their mental model.
    */
   app.delete('/:id', async (c) => {
-    const revoked = await revokeGrant(db, c.get('userId'), c.req.param('id'))
+    const id = c.req.param('id')
+    // Postgres raises on a malformed uuid, which would surface as a 500 for
+    // what is plainly a bad request. Same answer as an id that does not exist.
+    if (!z.uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404)
+
+    const revoked = await revokeGrant(db, c.get('userId'), id)
     // 404 rather than 204 when nothing was live: a caller who revokes twice
     // should be able to tell that the second call did nothing, and an id that
     // belongs to someone else must not read as a success.
