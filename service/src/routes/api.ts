@@ -2,11 +2,11 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
-import { ZerionPortfolioConnector, cached } from '../connectors/portfolio/index.js'
 import { getDb } from '../db/client.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
 import { portfolioRoutes } from './portfolio.js'
+import { portfolioProvider } from './portfolio-provider.js'
 import { walletRoutes } from './wallets.js'
 
 /**
@@ -126,14 +126,9 @@ if (ready) {
    * sign in and link wallets — only the numbers are missing. Folding this into
    * `missing` above would take the whole API down over a portfolio provider.
    */
-  if (config.zerionApiKey) {
-    const zerion = new ZerionPortfolioConnector({
-      apiKey: config.zerionApiKey,
-      ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
-    })
-    apiApp.route('/portfolio', portfolioRoutes(db, session, cached(zerion)))
+  if (portfolioProvider) {
+    apiApp.route('/portfolio', portfolioRoutes(db, session, portfolioProvider))
   } else {
-    console.error('[api] portfolio disabled — ZERION_API_KEY is not set')
     apiApp.all('/portfolio', (c) =>
       c.json({ error: 'not_configured', detail: ['ZERION_API_KEY is not set'] }, 503),
     )

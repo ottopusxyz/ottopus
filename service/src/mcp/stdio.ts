@@ -1,6 +1,12 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { findUserById } from '../auth/session.js'
+import { config } from '../config.js'
+import { readPortfolio } from '../connectors/portfolio/index.js'
+import { getDb } from '../db/client.js'
 import { SCOPES } from '../oauth/scopes.js'
-import { buildServer } from './server.js'
+import { portfolioProvider } from '../routes/portfolio-provider.js'
+import { listWallets } from '../wallets/index.js'
+import { buildServer, type ToolDeps } from './server.js'
 
 /**
  * The stdio variant, for local development. Same tool code, no OAuth.
@@ -25,12 +31,31 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const server = buildServer({
-    userId,
-    clientId: 'stdio',
-    // No grant to narrow, because there was no consent screen to narrow it.
-    scopes: [...SCOPES],
-  })
+  // The same reads the remote surface wires, against the same database: a
+  // tool that answered differently over stdio would be a tool nobody tested.
+  if (!config.databaseUrl) {
+    console.error('[mcp:stdio] set DATABASE_URL — the tools read wallets from it')
+    process.exit(1)
+  }
+  const db = getDb(config.databaseUrl)
+  const provider = portfolioProvider
+  const deps: ToolDeps = {
+    findUser: (id) => findUserById(db, id),
+    // No client row: nothing registered, because nothing was asked to.
+    findAgent: async () => ({ clientName: 'This local agent' }),
+    listWallets: (id) => listWallets(db, id),
+    readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+  }
+
+  const server = buildServer(
+    {
+      userId,
+      clientId: 'stdio',
+      // No grant to narrow, because there was no consent screen to narrow it.
+      scopes: [...SCOPES],
+    },
+    deps,
+  )
 
   await server.connect(new StdioServerTransport())
   console.error('[mcp:stdio] ready')

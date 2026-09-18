@@ -1,7 +1,13 @@
 import { Hono } from 'hono'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
+import { findUserById } from '../auth/session.js'
+import { readPortfolio } from '../connectors/portfolio/index.js'
+import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
+import { findClient } from '../oauth/store.js'
+import { listWallets } from '../wallets/index.js'
+import { portfolioProvider } from './portfolio-provider.js'
 import {
   authorizationServerMetadata,
   challenge,
@@ -63,16 +69,33 @@ if (!config.databaseUrl) {
   mcpApp.route('/oauth', oauthRoutes(db))
 
   /**
+   * What the tools may read, bound to this database and this deployment's
+   * balance provider. The same functions the web surface's routes call —
+   * two adapters over one core, and neither with logic of its own.
+   */
+  const provider = portfolioProvider
+  const deps: ToolDeps = {
+    findUser: (userId) => findUserById(db, userId),
+    findAgent: (clientId) => findClient(db, clientId),
+    listWallets: (userId) => listWallets(db, userId),
+    readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+  }
+
+  /**
    * The MCP endpoint itself. One handler for every method the transport uses —
    * POST carries requests, GET opens a stream, DELETE ends a session — because
    * the transport decides what each means, not us.
    */
   mcpApp.on(['POST', 'GET', 'DELETE'], '/', requireGrant(db), (c) =>
-    handleMcpRequest(c, {
-      userId: c.get('userId'),
-      clientId: c.get('grantClientId'),
-      scopes: c.get('grantScopes'),
-    }),
+    handleMcpRequest(
+      c,
+      {
+        userId: c.get('userId'),
+        clientId: c.get('grantClientId'),
+        scopes: c.get('grantScopes'),
+      },
+      deps,
+    ),
   )
 
   /** An unauthenticated probe should still learn where to authenticate. */

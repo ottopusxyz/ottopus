@@ -77,3 +77,19 @@ export async function upsertUser(
 export async function userIdForDid(db: UserDb, did: string): Promise<string> {
   return (await upsertUser(db, did)).id
 }
+
+/**
+ * The stored profile for an id, or null.
+ *
+ * Read-only, unlike upsertUser: the MCP surface uses this to say who an agent
+ * is acting for, and a lookup that could create someone would be the wrong
+ * shape for a surface that must never write a person into existence.
+ */
+export async function findUserById(db: UserDb, id: string): Promise<SessionUser | null> {
+  const [row] = await db
+    .select({ id: users.id, privyDid: users.privyDid, email: users.email, name: users.name })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1)
+  return row ?? null
+}

@@ -1,6 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { Context } from 'hono'
-import { buildServer, type ToolContext } from './server.js'
+import { buildServer, type ToolContext, type ToolDeps } from './server.js'
 
 /**
  * Streamable HTTP, stateless.
@@ -21,8 +21,12 @@ import { buildServer, type ToolContext } from './server.js'
  * polled, deliberately, because the MCP interface must never hold a request open
  * waiting for a person. When something does, this becomes a real decision.
  */
-export async function handleMcpRequest(c: Context, ctx: ToolContext): Promise<Response> {
-  const server = buildServer(ctx)
+export async function handleMcpRequest(
+  c: Context,
+  ctx: ToolContext,
+  deps: ToolDeps,
+): Promise<Response> {
+  const server = buildServer(ctx, deps)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
