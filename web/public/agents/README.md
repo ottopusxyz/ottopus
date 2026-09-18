@@ -11,7 +11,11 @@ Ported from the logr repo, which is where they were first assembled.
   drawing a company's mark beside a name nothing verified would be worse than
   drawing nothing.
 
-All carry `viewBox="-2.5 -2.5 29 29"` — a 24px mark with its own padding — so
+`hermes` is the odd one: a 64px PNG wrapped in an SVG, so it does not scale as
+cleanly as the vector marks. Kept anyway — a slightly soft real mark beats a
+crisp generic bot.
+
+The rest carry `viewBox="-2.5 -2.5 29 29"` — a 24px mark with its own padding — so
 they can share one tile size without per-file nudging.
 
 `claude-ai` covers Claude Code and Claude Desktop alike: they are one product on

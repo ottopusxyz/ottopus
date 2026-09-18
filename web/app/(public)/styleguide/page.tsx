@@ -29,6 +29,7 @@ import {
   CalloutValue,
   Chip,
   EmptyState,
+  ErrorState,
   Card,
   CardBody,
   CardHeader,
@@ -426,6 +427,22 @@ export default function Styleguide() {
           description="Tell your agent what you want done. Otto will work out which arm should do it."
           action={<Button variant="primary">Link a wallet</Button>}
         />
+      </Section>
+
+      <Section title="Error states">
+        <ErrorState
+          illustration={<Otto pose="ink" size={112} />}
+          title="Couldn’t read your balances"
+          description="Your wallets are linked and safe — the balances behind them are what we could not reach. Nothing was signed and no request was built."
+          action={<Button variant="secondary">Try again</Button>}
+        />
+        <p className="text-[13px] text-[var(--ot-text-3)]">
+          The sibling of an empty state, and the difference is the point. An empty state
+          invites; an error reports. Otto is inked, the water is held still — stopping the
+          ambient motion is how the product raises its voice — and the last sentence names
+          what did <em>not</em> happen, because a failure nobody can bound is one they have
+          to assume the worst about.
+        </p>
       </Section>
 
       <Section title="Addresses and amounts">

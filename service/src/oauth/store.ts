@@ -169,6 +169,31 @@ export interface ConsumedCode {
 }
 
 /**
+ * Read a code without spending it, so the request can be checked first.
+ *
+ * A failed PKCE check must not burn the code. Consuming before validating made
+ * a wrong verifier permanently kill the exchange, which hands anyone holding a
+ * stolen code a denial of service against the client that legitimately owns it
+ * — they cannot redeem it, but they can stop the real client from doing so.
+ *
+ * Single use is still guaranteed, because consumeAuthCode below is the gate and
+ * it is conditional. This only moves the validation in front of it.
+ */
+export async function findAuthCode(db: Db, code: string): Promise<ConsumedCode | null> {
+  const [row] = await db
+    .select()
+    .from(oauthAuthCodes)
+    .where(
+      and(
+        eq(oauthAuthCodes.codeHash, hashSecret(code)),
+        isNull(oauthAuthCodes.consumedAt),
+        sql`${oauthAuthCodes.expiresAt} > now()`,
+      ),
+    )
+  return row ? toConsumedCode(row) : null
+}
+
+/**
  * Redeem a code, exactly once.
  *
  * The consume and the read are one statement. Checking first and updating after
@@ -187,7 +212,10 @@ export async function consumeAuthCode(db: Db, code: string): Promise<ConsumedCod
       ),
     )
     .returning()
-  if (!row) return null
+  return row ? toConsumedCode(row) : null
+}
+
+function toConsumedCode(row: typeof oauthAuthCodes.$inferSelect): ConsumedCode {
   return {
     clientId: row.clientId,
     userId: row.userId,
@@ -416,6 +444,53 @@ export async function findToken(
     scopes: row.token.scopes as Scope[],
     resource: row.token.resource,
     grantId: row.token.grantId,
+  }
+}
+
+/**
+ * Spend a refresh token, exactly once, and say who won.
+ *
+ * The revoke and the read are one statement for the same reason the auth code's
+ * are: a select followed by an update leaves a window where two simultaneous
+ * refreshes both see a live token and both mint a pair. That would make
+ * rotation a description rather than a guarantee, and a stolen refresh token
+ * usable more than once by racing the owner.
+ *
+ * Returns null when somebody else got there first, which the caller reports as
+ * invalid_grant — the same answer a replayed token deserves.
+ */
+export async function consumeRefreshToken(db: Db, token: string): Promise<TokenGrant | null> {
+  const [row] = await db
+    .update(oauthTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(oauthTokens.tokenHash, hashSecret(token)),
+        eq(oauthTokens.kind, 'refresh'),
+        isNull(oauthTokens.revokedAt),
+        sql`${oauthTokens.expiresAt} > now()`,
+      ),
+    )
+    .returning()
+  if (!row) return null
+
+  // The grant is checked separately: revoking it does not revoke the row above,
+  // and a refresh must not outlive the grant a person ended.
+  if (row.grantId) {
+    const [grant] = await db
+      .select({ revokedAt: oauthGrants.revokedAt })
+      .from(oauthGrants)
+      .where(eq(oauthGrants.id, row.grantId))
+    if (!grant || grant.revokedAt) return null
+  }
+
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    userId: row.userId,
+    scopes: row.scopes as Scope[],
+    resource: row.resource,
+    grantId: row.grantId,
   }
 }
 

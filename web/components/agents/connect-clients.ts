@@ -66,6 +66,13 @@ export const CONNECT_CLIENTS: readonly ConnectClient[] = [
     note: "Adds the server to Copilot's MCP config.",
   },
   {
+    key: 'hermes',
+    label: 'Hermes',
+    icon: 'hermes',
+    command: (url) => `hermes mcp add ${SERVER_NAME} --url ${url}`,
+    note: `Add it with --auth oauth, then hermes mcp login ${SERVER_NAME}.`,
+  },
+  {
     key: 'other',
     label: 'Any client',
     icon: 'other',

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { cn } from '@/lib/cn'
-import { agentBrand } from './agent-brand'
+import { agentBrand, type AgentIconKey } from './agent-brand'
 
 /**
  * The agent's own mark, on a tile.
@@ -17,17 +17,23 @@ import { agentBrand } from './agent-brand'
 export function AgentIcon({
   name,
   redirectUris = [],
+  iconKey,
   size = 34,
   className,
 }: {
   name: string
   redirectUris?: readonly string[]
+  /**
+   * Skip the guess. The connect dialog already knows which mark each of its
+   * own pills wants, and re-deriving it from a display label is a round trip
+   * that can only lose — as it did, drawing the bot for "VS Code".
+   */
+  iconKey?: AgentIconKey
   size?: number
   className?: string
 }) {
-  const brand = agentBrand(name, redirectUris)
   const [failed, setFailed] = useState(false)
-  const key = failed ? 'other' : brand.icon
+  const key = failed ? 'other' : (iconKey ?? agentBrand(name, redirectUris).icon)
 
   return (
     <span

@@ -59,10 +59,17 @@ export function isScope(value: string): value is Scope {
 /**
  * Parse a space-delimited scope string, keeping only what we recognise.
  *
- * Unknown scopes are dropped rather than rejected: OAuth 2.1 lets a server
- * issue a narrower grant than was asked for, and a client that requests one
- * scope we have never heard of should still get a working token for the rest.
- * The token response says what was actually granted.
+ * Unknown scopes are dropped rather than rejected, and that is a decision worth
+ * defending because the alternative looks tidier. RFC 6749 §3.3 permits issuing
+ * a narrower grant provided the response says so, which ours does — the token
+ * response carries the granted `scope`, so a client is told exactly what it
+ * got rather than left to assume.
+ *
+ * Rejecting instead would fail a whole connection over one unrecognised word.
+ * Clients send scopes from cached metadata, from a newer version of a server,
+ * and the MCP spec itself has clients optionally adding `offline_access`. On a
+ * surface whose entire value is that an agent can connect, refusing outright
+ * trades a real failure for a hygiene benefit we already get from the response.
  */
 export function parseScopes(raw: string | undefined | null): Scope[] {
   if (!raw) return []

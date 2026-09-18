@@ -5,7 +5,7 @@ import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
 import { resourceUrl } from './metadata.js'
 import { oauthRoutes } from './routes.js'
-import { decideAuthRequest, mintAuthCode, registerClient } from './store.js'
+import { decideAuthRequest, listGrants, mintAuthCode, registerClient, revokeGrant } from './store.js'
 import { userIdForDid } from '../auth/session.js'
 
 /**
@@ -199,6 +199,43 @@ describe('the token endpoint', () => {
     expect((await response.json()).error).toBe('invalid_grant')
   })
 
+  /**
+   * A wrong verifier must not spend the code. Anyone who intercepts a code
+   * cannot redeem it without the verifier — but if a failed attempt consumed
+   * it, they could still stop the legitimate client from redeeming it, which
+   * is a denial of service bought with a stolen value they cannot otherwise
+   * use.
+   */
+  it('leaves the code redeemable after a wrong verifier', async () => {
+    const { clientId } = await client()
+    const code = await codeFor(clientId)
+
+    const rejected = await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: 'b'.repeat(64) }),
+    )
+    expect(rejected.status).toBe(400)
+
+    const accepted = await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER }),
+    )
+    expect(accepted.status).toBe(200)
+  })
+
+  /** Same for the other two bindings, which are checked before the spend too. */
+  it('leaves the code redeemable after a mismatched client', async () => {
+    const { clientId } = await client()
+    const other = await client()
+    const code = await codeFor(clientId)
+
+    await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER, client_id: other.clientId }),
+    )
+    const accepted = await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER, client_id: clientId }),
+    )
+    expect(accepted.status).toBe(200)
+  })
+
   it('refuses a replayed code', async () => {
     const { clientId } = await client()
     const code = await codeFor(clientId)
@@ -244,6 +281,71 @@ describe('the token endpoint', () => {
       form({ grant_type: 'refresh_token', refresh_token: first.refresh_token }),
     )
     expect(replayed.status).toBe(400)
+  })
+
+  /**
+   * Two refreshes on one token. Exactly one may win, or rotation is a
+   * description rather than a guarantee and a stolen refresh token is usable
+   * more than once by racing its owner.
+   *
+   * Honest limit: PGlite is a single in-process connection, so these serialise
+   * and the old read-then-revoke would also pass. What actually holds the
+   * property is that consuming is now one conditional UPDATE — the same shape
+   * consumeAuthCode uses. Proving the race needs two real connections, as
+   * store.concurrency.test.ts does.
+   */
+  it('lets exactly one of two simultaneous refreshes win', async () => {
+    const { clientId } = await client()
+    const code = await codeFor(clientId)
+    const first = await (
+      await app.request(form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER }))
+    ).json()
+
+    const [a, b] = await Promise.all([
+      app.request(form({ grant_type: 'refresh_token', refresh_token: first.refresh_token })),
+      app.request(form({ grant_type: 'refresh_token', refresh_token: first.refresh_token })),
+    ])
+    const codes = [a.status, b.status].sort()
+    expect(codes).toEqual([200, 400])
+  })
+
+  /** A refresh must not outlive the grant a person ended. */
+  it('refuses to refresh once the grant behind it is revoked', async () => {
+    const { clientId } = await client()
+    const code = await codeFor(clientId)
+    const first = await (
+      await app.request(form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER }))
+    ).json()
+
+    const [grant] = await listGrants(db, userId)
+    await revokeGrant(db, userId, grant!.id)
+
+    const refreshed = await app.request(
+      form({ grant_type: 'refresh_token', refresh_token: first.refresh_token }),
+    )
+    expect(refreshed.status).toBe(400)
+  })
+
+  /**
+   * A request mixing a known scope with an unknown one narrows rather than
+   * fails, and the response says what was granted — which is what RFC 6749
+   * §3.3 asks of a server that issues less than was requested. Rejecting would
+   * be tidier and would break any client that sends a scope from a newer
+   * server or a cached metadata document.
+   */
+  it('narrows an unknown scope away and reports what was actually granted', async () => {
+    const { clientId } = await client()
+    const response = await app.request(
+      authorizeUrl({ ...validParams(clientId), scope: 'plans:read unknown:scope' }),
+    )
+    const requestId = new URL(response.headers.get('location')!).searchParams.get('request')!
+    const decided = await decideAuthRequest(db, { id: requestId, userId, approved: true })
+    const code = await mintAuthCode(db, decided!)
+
+    const token = await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER }),
+    )
+    expect((await token.json()).scope).toBe('plans:read')
   })
 
   it('refuses a grant type we do not support', async () => {

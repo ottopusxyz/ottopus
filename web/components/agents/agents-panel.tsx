@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { SkeletonShelf } from '@/components/motion/loaders'
-import { Button, Callout, Chip, EmptyState } from '@/components/ui'
+import { Button, Chip, EmptyState, ErrorState } from '@/components/ui'
 import type { AgentGrant } from '@/lib/api'
 import { AgentList } from './agent-list'
 import { ConnectAgentDialog } from './connect-agent-dialog'
@@ -22,12 +22,11 @@ export function AgentsPanel() {
     <ConnectedPanel />
   ) : (
     <Card>
-      <div className="px-[22px] py-4">
-        <Callout severity="caution" title="Sign-in isn’t configured">
-          Agent grants need Privy, and this deployment has no valid app id. Nothing is wrong with
-          your account.
-        </Callout>
-      </div>
+      <ErrorState
+        title="Sign-in isn’t configured"
+        description="Agent grants need Privy, and this deployment has no valid app id. Nothing is wrong with your account."
+        illustration={<Otto pose="ink" size={112} />}
+      />
     </Card>
   )
 }
@@ -36,7 +35,7 @@ export function AgentsPanel() {
 const isLive = (agent: AgentGrant) => agent.revokedAt === null
 
 function ConnectedPanel() {
-  const { state, revoke } = useAgents()
+  const { state, revoke, refresh } = useAgents()
   const [showRevoked, setShowRevoked] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const agents = state.status === 'ready' ? state.agents : []
@@ -51,19 +50,26 @@ function ConnectedPanel() {
 
   return (
     <Card count={state.status === 'ready' ? live.length : undefined} action={connect}>
+      {/* A failed read is not an empty list. Rendering "No agents yet" over a
+          request that never arrived tells someone their grants are gone. */}
       {state.status === 'failed' ? (
-        <div className="px-[22px] pt-4">
-          <Callout severity="caution" title="Can’t reach Ottopus right now">
-            Your grants are unchanged — this is our side. Try again in a moment.
-          </Callout>
-        </div>
+        <ErrorState
+          title="Can’t reach Ottopus right now"
+          description="This is our side, not yours. No grant was changed, revoked or created — we simply could not read the list."
+          illustration={<Otto pose="ink" size={112} />}
+          action={
+            <Button variant="secondary" size="sm" onClick={refresh}>
+              Try again
+            </Button>
+          }
+        />
       ) : null}
 
       {/* The count is live grants, so the empty state has to key off the same
           thing. Listing revoked ones under "Connected agents 0" reads as a
           contradiction, and someone whose only grants are revoked still needs
           telling how to connect one. */}
-      {state.status === 'loading' ? (
+      {state.status === 'failed' ? null : state.status === 'loading' ? (
         <SkeletonShelf rows={2} />
       ) : live.length === 0 ? (
         <div className="px-[22px] py-7">

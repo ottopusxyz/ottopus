@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { AGENT_ICONS, agentBrand, surfaceLabel, surfaceOf } from './agent-brand'
+import { CONNECT_CLIENTS } from './connect-clients'
 
 /**
  * Identification is a guess, and these tests are about keeping the guess
@@ -72,6 +73,21 @@ describe('every mark a rule names is a file we actually ship', () => {
   it('never points a vendor at a key outside that set', () => {
     for (const name of ['Claude Code', 'Claude', 'Codex', 'VS Code', 'Cursor', 'Zed']) {
       expect(AGENT_ICONS, name).toContain(agentBrand(name).icon)
+    }
+  })
+
+  /**
+   * The connect dialog labels its own pills, and those labels are the exact
+   * strings a person reads. "VS Code" did not match a pattern written for
+   * "vscode", so the pill quietly drew the fallback bot — this is that bug.
+   *
+   * The dialog now passes its icon key directly, so this no longer decides what
+   * renders there. It still has to hold: the same label arriving from a real
+   * registration must resolve to the same mark.
+   */
+  it('resolves every label the connect dialog shows to that client own mark', () => {
+    for (const client of CONNECT_CLIENTS) {
+      expect(agentBrand(client.label).icon, client.label).toBe(client.icon)
     }
   })
 })

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { SkeletonShelf } from '@/components/motion/loaders'
-import { Button, Callout, EmptyState } from '@/components/ui'
+import { Button, Callout, EmptyState, ErrorState } from '@/components/ui'
 import { LinkWalletDialog } from './link-wallet-dialog'
 import { MAX_ARMS } from './naming'
 import { armsOf, useWallets, type WalletsFailure } from './use-wallets'
@@ -84,7 +84,7 @@ function Card({
 }
 
 function ConnectedPanel() {
-  const { state, linkWallet, linking, linkError, addWatchOnly, unlink } = useWallets()
+  const { state, linkWallet, linking, linkError, addWatchOnly, unlink, refresh } = useWallets()
   const [open, setOpen] = useState(false)
 
   const wallets = armsOf(state)
@@ -104,9 +104,11 @@ function ConnectedPanel() {
         </Button>
       }
     >
-      {/* A failed refresh is reported above the list, never instead of it —
-          it says nothing new about which wallets exist. */}
-      {state.status === 'failed' ? (
+      {/* A failed refresh is reported above the list, never instead of it — it
+          says nothing new about which wallets exist. But with nothing known it
+          has the whole card, because "No wallets yet" over a read that never
+          arrived is the one reading that is definitely wrong. */}
+      {state.status === 'failed' && wallets.length > 0 ? (
         <div className="px-[22px] pt-4">
           <Callout severity="caution" title={failureText(state.reason).title}>
             {failureText(state.reason).body}
@@ -124,6 +126,17 @@ function ConnectedPanel() {
 
       {state.status === 'loading' ? (
         <SkeletonShelf rows={2} />
+      ) : state.status === 'failed' && wallets.length === 0 ? (
+        <ErrorState
+          title={failureText(state.reason).title}
+          description={failureText(state.reason).body}
+          illustration={<Otto pose="ink" size={112} />}
+          action={
+            <Button variant="secondary" size="sm" onClick={refresh}>
+              Try again
+            </Button>
+          }
+        />
       ) : wallets.length === 0 ? (
         <div className="px-[22px] py-7">
           <EmptyState

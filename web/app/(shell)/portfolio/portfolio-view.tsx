@@ -7,7 +7,7 @@ import { Otto } from '@/components/brand'
 import { BubbleField, SeaLife } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
 import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
-import { Button, Callout, EmptyState } from '@/components/ui'
+import { Button, Callout, EmptyState, ErrorState } from '@/components/ui'
 import {
   ArmCard,
   LinkWalletDialog,
@@ -179,8 +179,10 @@ export function Frame({
       {/* Reported above whatever we already know, never in place of it: a
           refresh that could not reach the service has said nothing about which
           wallets exist, and "No wallets yet" over a real account reads as data
-          loss. */}
-      {failure ? (
+          loss. With nothing known there is no data to sit above, and the error
+          state below says the same thing at full size — so this would only be
+          the same sentence twice. */}
+      {failure && linked ? (
         <div className="px-5 pt-4 sm:px-[26px]">
           <Callout severity="caution" title={failureText(failure).title}>
             {failureText(failure).body}
@@ -254,7 +256,21 @@ export function Frame({
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   {balancesLoading ? <SkeletonShelf rows={3} avatar={36} className="m-4 sm:m-[22px]" /> : hasReading && selected ? (
                     <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} />
-                  ) : <p className="px-5 py-5 text-[var(--ot-text-2)]">Balances could not be read. Refresh to try again.</p>}
+                  ) : (
+                    // S4's error state, not a sentence. The last line is the
+                    // one that matters on a surface that moves money: naming
+                    // what did not happen is what bounds the damage.
+                    <ErrorState
+                      title="Couldn’t read your balances"
+                      description="Your wallets are linked and safe — the balances behind them are what we could not reach. Nothing was signed and no request was built."
+                      illustration={<Otto pose="ink" size={112} />}
+                      action={
+                        <Button variant="secondary" size="sm" onClick={onRefresh} disabled={!onRefresh}>
+                          Try again
+                        </Button>
+                      }
+                    />
+                  )}
                 </div>
                 {/* The right-hand space. Reserved as a column of its own so the
                     table reads left-aligned rather than adrift in the middle;
@@ -274,9 +290,23 @@ export function Frame({
       ) : loading ? (
         <SkeletonShelf rows={2} />
       ) : failure ? (
-        // Nothing known and the refresh failed. The banner above has said why;
-        // inviting someone to link a wallet on top of it would be noise.
-        <div className="flex-1" />
+        // Nothing known and the refresh failed. S4's error state rather than a
+        // blank panel under a banner: the page should say what did not happen,
+        // not leave a hole where the answer would be.
+        <Sea>
+          <div className="relative flex flex-1 items-center justify-center">
+            <ErrorState
+              title={failureText(failure).title}
+              description={failureText(failure).body}
+              illustration={<Otto pose="ink" size={112} />}
+              action={
+                <Button variant="secondary" size="sm" onClick={onRefresh} disabled={!onRefresh}>
+                  Try again
+                </Button>
+              }
+            />
+          </div>
+        </Sea>
       ) : (
         <div className="ot-canvas relative flex flex-1 items-center justify-center overflow-hidden px-5 py-7">
           <BubbleField pattern="calm" />

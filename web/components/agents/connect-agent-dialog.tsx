@@ -74,7 +74,7 @@ export function ConnectAgentDialog({ open, onClose }: ConnectAgentDialogProps) {
                   : 'font-medium text-[var(--ot-text-3)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
               )}
             >
-              <AgentIcon name={entry.label} size={18} className="rounded-[5px]" />
+              <AgentIcon name={entry.label} iconKey={entry.icon} size={18} className="rounded-[5px]" />
               {entry.label}
             </button>
           ))}

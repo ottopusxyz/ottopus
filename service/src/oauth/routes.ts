@@ -7,9 +7,10 @@ import { authorizationServerMetadata, resourceUrl } from './metadata.js'
 import { defaultScopes, parseScopes, SCOPES } from './scopes.js'
 import {
   consumeAuthCode,
+  consumeRefreshToken,
   createAuthRequest,
+  findAuthCode,
   findClient,
-  findToken,
   grantFor,
   issueTokens,
   registerClient,
@@ -215,22 +216,33 @@ export function oauthRoutes(db: Db): Hono {
         return c.json(fail('invalid_request', 'code and code_verifier are required.'), 400)
       }
 
-      const consumed = await consumeAuthCode(db, code)
-      if (!consumed) {
+      // Read first, spend last. A wrong verifier must not burn the code:
+      // consuming before validating let anyone holding a stolen code deny the
+      // legitimate client its one exchange, without ever being able to redeem
+      // it themselves.
+      const pending = await findAuthCode(db, code)
+      if (!pending) {
         return c.json(fail('invalid_grant', 'That code is expired, unknown or already used.'), 400)
       }
       // The bindings from RFC 6749 and RFC 7636. A code minted for one client,
       // or against one redirect URI, is not redeemable by another.
       const presentedClient = field('client_id')
-      if (presentedClient && presentedClient !== consumed.clientId) {
+      if (presentedClient && presentedClient !== pending.clientId) {
         return c.json(fail('invalid_grant', 'That code was issued to another client.'), 400)
       }
       const presentedRedirect = field('redirect_uri')
-      if (presentedRedirect && presentedRedirect !== consumed.redirectUri) {
+      if (presentedRedirect && presentedRedirect !== pending.redirectUri) {
         return c.json(fail('invalid_grant', 'redirect_uri does not match the authorization.'), 400)
       }
-      if (!verifyPkce(verifier, consumed.codeChallenge)) {
+      if (!verifyPkce(verifier, pending.codeChallenge)) {
         return c.json(fail('invalid_grant', 'code_verifier does not match the challenge.'), 400)
+      }
+
+      // Now spend it. Still the single conditional update, so two requests that
+      // both pass validation cannot both succeed.
+      const consumed = await consumeAuthCode(db, code)
+      if (!consumed) {
+        return c.json(fail('invalid_grant', 'That code is expired, unknown or already used.'), 400)
       }
 
       // The standing grant, created on the first exchange and reused after —
@@ -251,7 +263,10 @@ export function oauthRoutes(db: Db): Hono {
       if (!presented) {
         return c.json(fail('invalid_request', 'refresh_token is required.'), 400)
       }
-      const grant = await findToken(db, presented, 'refresh')
+      // Spent in one statement rather than read-then-revoke: two refreshes
+      // arriving together must not both mint a pair, or rotation is a
+      // description rather than a guarantee.
+      const grant = await consumeRefreshToken(db, presented)
       if (!grant) {
         return c.json(fail('invalid_grant', 'That refresh token is expired or revoked.'), 400)
       }
@@ -260,10 +275,6 @@ export function oauthRoutes(db: Db): Hono {
       if (!grant.grantId) {
         return c.json(fail('invalid_grant', 'That grant predates this server. Reconnect.'), 400)
       }
-      // Rotation: the presented token dies with the pair it produces, so a
-      // stolen refresh token is usable at most once rather than being a
-      // standing key for ninety days.
-      await revokeToken(db, presented)
       const tokens = await issueTokens(db, {
         clientId: grant.clientId,
         userId: grant.userId,

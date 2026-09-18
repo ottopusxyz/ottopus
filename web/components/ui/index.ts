@@ -6,6 +6,7 @@ export { CodeInput, type CodeInputProps } from './code-input'
 export { Dialog, EXIT_MS, type DialogProps, type DialogTone } from './dialog'
 export { Callout, CalloutValue, type CalloutProps, type CalloutSeverity } from './callout'
 export { EmptyState, type EmptyStateProps } from './empty-state'
+export { ErrorState, type ErrorStateProps } from './error-state'
 export { Input, type InputProps } from './input'
 export {
   PLAN_STATUSES,

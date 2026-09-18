@@ -30,7 +30,7 @@ export interface AgentBrand {
 }
 
 /** The marks we actually have. Anything else falls back to `other`. */
-export const AGENT_ICONS = ['claude-ai', 'codex', 'vscode', 'other'] as const
+export const AGENT_ICONS = ['claude-ai', 'codex', 'vscode', 'hermes', 'other'] as const
 
 export type AgentIconKey = (typeof AGENT_ICONS)[number]
 
@@ -56,7 +56,11 @@ const VENDORS: readonly VendorRule[] = [
   { vendor: 'Claude Code', match: /claude\s*code/i, icon: 'claude-ai' },
   { vendor: 'Claude', match: /claude/i, icon: 'claude-ai' },
   { vendor: 'Codex', match: /codex|openai/i, icon: 'codex' },
-  { vendor: 'VS Code', match: /visual\s*studio\s*code|vscode/i, icon: 'vscode' },
+  // "VS Code" with the space is how the client names itself, and it is what the
+  // connect dialog labels its own pill — a pattern that only matched the
+  // squashed spelling quietly drew the fallback bot instead.
+  { vendor: 'VS Code', match: /vs\s*code|visual\s*studio\s*code/i, icon: 'vscode' },
+  { vendor: 'Hermes', match: /hermes/i, icon: 'hermes' },
   { vendor: 'Cursor', match: /cursor/i, icon: 'other' },
   { vendor: 'Windsurf', match: /windsurf/i, icon: 'other' },
   { vendor: 'Zed', match: /\bzed\b/i, icon: 'other' },
