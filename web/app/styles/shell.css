@@ -47,6 +47,33 @@
   }
 }
 
+/* --- The frame is the viewport; the page scrolls inside it ------------------
+   The shell is exactly the viewport and main is the scrolling region, on every
+   page at every width. The document never scrolls: the sidebar never leaves the
+   screen, the bottom bar never has a page sliding under it, and there is never
+   a second scrollbar at the window's edge beside the one in the page.
+
+   Every width on purpose. A phone's URL chrome only collapses when the
+   document scrolls, so it stays open here — the price of a frame that behaves
+   like an app rather than a page, and 100dvh follows the chrome either way.
+
+   The portfolio adds to this rather than replacing it: its main is
+   overflow:hidden because its table and its wallet list are their own
+   scrolling regions. That rule is more specific than this one and wins where
+   both apply. */
+.ot-app-shell {
+  height: 100dvh;
+  overflow: hidden;
+}
+.ot-app-shell > .ot-app-grid {
+  min-height: 0;
+}
+.ot-app-shell #main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* --- The account menu -------------------------------------------------------
    A native popover, so it sits in the top layer: the UA gives it position:fixed
    with inset:0 and margin:auto, which centres it in the viewport. The component

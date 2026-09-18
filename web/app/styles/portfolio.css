@@ -1,4 +1,8 @@
-/* Scope the fixed viewport to the portfolio; other pages retain document scrolling.
+/* The portfolio pins the viewport at every width, not just at lg where
+   shell.css pins it for every page: its table and its wallet list are their
+   own scrolling regions, and on a phone they need a definite height to scroll
+   inside. Its main is overflow:hidden rather than the shell's auto for the
+   same reason — the regions scroll, the frame does not.
 
    100dvh, not 100vh: on a phone the URL chrome collapses as you scroll and vh
    is frozen at the tall state, so the last row of the token table would sit
@@ -22,6 +26,10 @@
 .ot-app-shell:has([data-portfolio]) #main {
   min-height: 0;
   overflow: hidden;
+  /* main carries ot-scroll for the pages that scroll it, and a stable gutter
+     is reserved on overflow:hidden too — which would put a 10px dead strip
+     down the right of a page whose scrollers are inside it. */
+  scrollbar-gutter: auto;
 }
 
 /* --- The portfolio on the water --------------------------------------------

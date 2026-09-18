@@ -1,5 +1,5 @@
 import { Otto } from '@/components/brand'
-import { PageHeader } from '@/components/shell'
+import { PageColumn, PageHeader } from '@/components/shell'
 import { EmptyState } from '@/components/ui'
 
 export const metadata = { title: 'Requests · Ottopus' }
@@ -7,7 +7,7 @@ export const metadata = { title: 'Requests · Ottopus' }
 /** #54 fills this. The shell and the empty state are what the route needs today. */
 export default function Requests() {
   return (
-    <>
+    <PageColumn>
       <PageHeader title="Requests" detail="Plans waiting on you." />
       <div className="px-5 py-10 sm:px-[26px]">
         <EmptyState
@@ -16,6 +16,6 @@ export default function Requests() {
           illustration={<Otto pose="base" size={150} animated />}
         />
       </div>
-    </>
+    </PageColumn>
   )
 }

@@ -93,12 +93,22 @@ export function Dialog({
   }, [open])
 
   // showModal() makes the background inert but does not stop it scrolling.
+  //
+  // Both the document and #main: inside the app frame main is the scroller and
+  // the document never moves, but the public pages have no frame and scroll the
+  // document. main carries scrollbar-gutter: stable, so flipping it to hidden
+  // shifts nothing.
   useEffect(() => {
     if (!open) return
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const scrollers = [document.body, document.getElementById('main')].filter(
+      (el): el is HTMLElement => el !== null,
+    )
+    const previous = scrollers.map((el) => el.style.overflow)
+    for (const el of scrollers) el.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = previous
+      scrollers.forEach((el, i) => {
+        el.style.overflow = previous[i] ?? ''
+      })
     }
   }, [open])
 

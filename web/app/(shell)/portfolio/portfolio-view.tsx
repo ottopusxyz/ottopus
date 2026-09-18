@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
-import { BubbleField, SeaLife } from '@/components/motion'
+import { BubbleField, OttoLoader, SeaLife } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
 import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
 import { Button, Callout, EmptyState, ErrorState } from '@/components/ui'
@@ -288,7 +288,17 @@ export function Frame({
           )}
         </>
       ) : loading ? (
-        <SkeletonShelf rows={2} />
+        // Otto, centred on the water, whichever way this resolves — a table or
+        // "no wallets yet" — so both arrive from the same scene rather than
+        // from a shelf of grey rows that only one of them matches. The
+        // design's rule picks him too: this wait blocks the whole body, and a
+        // wait that is the screen gets the mascot. The assets skeleton that
+        // follows is not Otto, so the two never share a screen.
+        <Sea>
+          <div className="relative flex flex-1 items-center justify-center">
+            <OttoLoader label="Finding your wallets…" />
+          </div>
+        </Sea>
       ) : failure ? (
         // Nothing known and the refresh failed. S4's error state rather than a
         // blank panel under a banner: the page should say what did not happen,

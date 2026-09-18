@@ -71,7 +71,21 @@ export function AppShell({ children, agent, account }: AppShellProps) {
           <ShellNav />
         </aside>
 
-        <main id="main" className="flex min-w-0 flex-col lg:col-start-2 lg:row-span-3 lg:row-start-1">
+        {/* The scrolling region — see shell.css. ot-scroll for the same thin
+            bar every other scroller in the app draws.
+
+            `relative` is load-bearing, not layout: a scroll container has to be
+            the containing block for what it scrolls. Without it, anything
+            position:absolute inside — every .sr-only label, the theme
+            control's hidden radios — resolves against the viewport instead,
+            and its static position far down the page pads the *document's*
+            scroll area while main clips it from view. The symptom was a second
+            scrollbar at the window edge and an empty band under the frame,
+            exactly as tall as the page's overflow. */}
+        <main
+          id="main"
+          className="ot-scroll relative flex min-w-0 flex-col lg:col-start-2 lg:row-span-3 lg:row-start-1"
+        >
           {children}
         </main>
 

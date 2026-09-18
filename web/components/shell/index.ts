@@ -5,6 +5,7 @@ export { BottomNav } from './bottom-nav'
 export { EXAMPLE_PROMPT, FirstIntentNudge } from './first-intent-nudge'
 export { ShellNav } from './nav'
 export { NAV_ICON_NAMES, NavIcon } from './nav-icon'
+export { PageColumn } from './page-column'
 export { Figure, PageHeader, type FigureProps, type PageHeaderProps } from './page-header'
 export {
   PUBLIC_ROUTES,

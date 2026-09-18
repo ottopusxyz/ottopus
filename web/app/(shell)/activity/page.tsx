@@ -1,5 +1,5 @@
 import { Otto } from '@/components/brand'
-import { PageHeader } from '@/components/shell'
+import { PageColumn, PageHeader } from '@/components/shell'
 import { EmptyState } from '@/components/ui'
 
 export const metadata = { title: 'Activity · Ottopus' }
@@ -7,7 +7,7 @@ export const metadata = { title: 'Activity · Ottopus' }
 /** #26 fills this. */
 export default function Activity() {
   return (
-    <>
+    <PageColumn>
       <PageHeader title="Activity" detail="Everything that has been decided." />
       <div className="px-5 py-10 sm:px-[26px]">
         <EmptyState
@@ -16,6 +16,6 @@ export default function Activity() {
           illustration={<Otto pose="base" size={150} animated />}
         />
       </div>
-    </>
+    </PageColumn>
   )
 }
