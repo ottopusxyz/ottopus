@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { OttoBadge } from '@/components/brand'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { AccountRow } from './account-row'
+import { AccountMenu } from './account-menu'
 import { AgentCard } from './agent-card'
 import { BottomNav } from './bottom-nav'
 import { ShellNav } from './nav'
@@ -84,11 +83,10 @@ export function AppShell({ children, agent, account }: AppShellProps) {
           className={`${COLUMN} hidden flex-col gap-3 pt-4 pb-5 lg:row-start-3 lg:flex`}
         >
           {agent ?? <AgentCard />}
-          {account ?? <AccountRow />}
-          {/* The shell is the only chrome the app has; there is no top bar to
-              put the theme control in. Settings carries a second copy for the
-              widths where this column is not on screen. */}
-          <ThemeToggle className="justify-center" />
+          {/* The theme control and sign-out live inside the menu. The shell is
+              the only chrome the app has, and Settings carries a second copy
+              of both for the widths where this column is not on screen. */}
+          {account ?? <AccountMenu />}
         </aside>
       </div>
 

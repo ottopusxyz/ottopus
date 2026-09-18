@@ -17,6 +17,7 @@ import {
 } from '@/components/motion'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ProofMark } from '@/components/wallets'
+import { AccountMenuDemo } from './account-menu-demo'
 import { DialogDemo } from './dialog-demo'
 import { WalletsDemo } from './wallets-demo'
 import { LoaderDemo } from './loader-demo'
@@ -512,6 +513,18 @@ export default function Styleguide() {
             Overlay above 640px, bottom sheet below it — full width, grab handle, primary action
             last and thumb-reachable. The focus trap, Escape and the inert background are the
             browser&rsquo;s, from a native dialog. Push the sheet down to dismiss it.
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Account menu">
+        <div className="flex flex-col gap-3">
+          <AccountMenuDemo />
+          <p className="text-[13px] text-[var(--ot-text-3)]">
+            The bottom of the sidebar. One row opens the identity, Settings, the docs, the theme
+            control and sign-out above itself. A native popover, so light dismiss, Escape and
+            focus returning to the row are the browser&rsquo;s; a disclosure rather than an ARIA
+            menu, because a list of links wants Tab, not arrow keys. A scroll closes it.
           </p>
         </div>
       </Section>

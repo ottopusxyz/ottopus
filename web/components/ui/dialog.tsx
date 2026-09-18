@@ -22,6 +22,13 @@ const DISMISS_AFTER_PX = 90
  */
 export const EXIT_MS = 260
 
+/**
+ * Below this a dialog is a bottom sheet. The design's breakpoint, matching
+ * dialog.css to the hundredth so a caller that switches to a dialog "on a
+ * phone" gets the sheet every time, never the overlay in a phone's width.
+ */
+export const SHEET_MEDIA = '(max-width: 639.98px)'
+
 export type DialogTone = 'default' | 'destructive'
 
 export interface DialogProps {

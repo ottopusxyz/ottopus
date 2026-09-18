@@ -162,6 +162,21 @@ describe('the dialog exit duration is not a guess', () => {
     expect(declared).toBe(token)
     expect(dialogCss).toContain('var(--ot-dur-base)')
   })
+
+  /**
+   * A caller that switches to a dialog "on a phone" reads SHEET_MEDIA, and the
+   * sheet itself is dialog.css's media query. If they disagree there is a band
+   * of widths where the switch happens and the overlay shows up instead.
+   */
+  it('exports the sheet breakpoint as the same query dialog.css uses', () => {
+    const source = readFileSync(new URL('../ui/dialog.tsx', import.meta.url), 'utf8')
+    const declared = /SHEET_MEDIA = '([^']+)'/.exec(source)?.[1]
+    const sheet = /@media\s*\(([^)]*max-width[^)]*)\)\s*\{[^}]*\.ot-dialog\s*\{[^}]*margin: auto auto 0/.exec(dialogCss)?.[1]
+
+    expect(declared).toBeDefined()
+    expect(sheet).toBeDefined()
+    expect(declared).toBe(`(${sheet})`)
+  })
 })
 
 describe('bubbles', () => {

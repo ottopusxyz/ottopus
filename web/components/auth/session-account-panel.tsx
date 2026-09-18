@@ -4,8 +4,9 @@ import { usePrivy } from '@privy-io/react-auth'
 import type { ReactNode } from 'react'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui'
+import { cn } from '@/lib/cn'
 import { usePrivyAvailable } from './privy-provider'
-import { useIdentity } from './session-account-row'
+import { useIdentity } from './session-account-menu'
 
 /**
  * Settings' account card.
@@ -82,11 +83,19 @@ function LivePanel() {
             <span aria-hidden className="h-8 w-8 flex-none rounded-full bg-[var(--ot-plan)]" />
             <div className="flex min-w-0 flex-col gap-[2px]">
               <span className="text-[12px] text-[var(--ot-text-3)]">Signed in as</span>
-              {/* Mono and breakable: this is often an address, and an address
-                  that overflows its card is one you cannot check. */}
-              <span className="font-mono text-[13px] break-all">
-                {identity ?? 'Not signed in'}
+              {/* Breakable: this may be an address, and an address that
+                  overflows its card is one you cannot check. */}
+              <span
+                className={cn(
+                  'text-[13px] font-semibold break-all',
+                  identity?.mono && 'font-mono font-medium',
+                )}
+              >
+                {identity?.label ?? 'Not signed in'}
               </span>
+              {identity?.detail ? (
+                <span className="text-[12px] break-all text-[var(--ot-text-2)]">{identity.detail}</span>
+              ) : null}
             </div>
           </div>
           {identity ? (

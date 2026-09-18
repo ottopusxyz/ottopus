@@ -10,7 +10,7 @@ import { ConnectAgentDialog } from './connect-agent-dialog'
 import { useAgents } from './use-agents'
 
 /**
- * Fills the shell's agent slot, the way SessionAccountRow fills the account one.
+ * Fills the shell's agent slot, the way SessionAccountMenu fills the account one.
  *
  * The shell keeps no knowledge of grants — it decides where the card sits, and
  * this decides what it says. Without that seam the sidebar would have to import

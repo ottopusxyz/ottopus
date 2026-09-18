@@ -46,3 +46,54 @@
     padding-bottom: calc(var(--ot-bottom-nav) + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* --- The account menu -------------------------------------------------------
+   A native popover, so it sits in the top layer: the UA gives it position:fixed
+   with inset:0 and margin:auto, which centres it in the viewport. The component
+   sets left and bottom from the trigger's rectangle when it opens, so inset is
+   released here and the rest of the UA sheet — border, padding, Canvas
+   colours — is replaced with ours.
+
+   The transition needs the same two things dialog.css needs: @starting-style,
+   because a popover is display:none until it opens, and allow-discrete, so the
+   exit can play before display flips back. Without them it appears from
+   nothing and vanishes without leaving. */
+.ot-account-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  width: 248px;
+  border: 1px solid var(--ot-border);
+  border-radius: 14px;
+  background: var(--ot-card);
+  color: var(--ot-text);
+  box-shadow: var(--ot-shadow-card);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity var(--ot-dur-fast) var(--ot-ease-out),
+    transform var(--ot-dur-fast) var(--ot-ease-out),
+    display var(--ot-dur-fast) allow-discrete,
+    overlay var(--ot-dur-fast) allow-discrete;
+}
+
+.ot-account-menu:popover-open {
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .ot-account-menu:popover-open {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-account-menu {
+    transition: none;
+    transform: none;
+  }
+}

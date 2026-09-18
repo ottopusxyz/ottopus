@@ -16,10 +16,13 @@ import type { NavIconName } from './routes'
 const GLYPHS: Record<NavIconName, ReactNode> = {
   // Allocation, not a wallet: this page is the split across everything you
   // hold, and a wallet glyph would promise the wallets tab.
+  //
+  // The slice is filled. Drawn as two radii it was a circle with two hands in
+  // it — a clock, one tab away from Activity.
   portfolio: (
     <>
       <circle cx="12" cy="12" r="8.25" />
-      <path d="M12 3.75V12h8.25" />
+      <path d="M12 12V4.6A7.4 7.4 0 0 1 17.23 17.23Z" fill="currentColor" stroke="none" />
     </>
   ),
   // An inbox. Things arrive here and wait for you, which is the whole page.

@@ -111,7 +111,10 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
             <div role="cell" className="min-w-0 space-y-1">
               <Balance amount={token.amount} decimals={token.asset.decimals} symbol={symbol} label="Total balance" />
               <div className="lg:hidden">
-                <span className="block text-right text-[9px] text-[var(--ot-text-3)]">Spendable</span>
+                {/* 10px, the smallest size anything else in the app uses. At 9
+                    this was below the floor the rest of the design keeps to,
+                    and it is the label that tells you which number is which. */}
+                <span className="block text-right text-[10px] leading-[1.3] text-[var(--ot-text-3)]">Spendable</span>
                 <Balance amount={token.spendable} decimals={token.asset.decimals} symbol={symbol} label="Spendable balance" subdued />
               </div>
             </div>
