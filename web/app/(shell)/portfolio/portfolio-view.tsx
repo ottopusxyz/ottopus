@@ -255,7 +255,7 @@ export function Frame({
               <div className="relative flex min-h-0 flex-1">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   {balancesLoading ? <SkeletonShelf rows={3} avatar={36} className="m-4 sm:m-[22px]" /> : hasReading && selected ? (
-                    <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} />
+                    <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} wallets={wallets} walletIcons={walletIcons} />
                   ) : (
                     // S4's error state, not a sentence. The last line is the
                     // one that matters on a surface that moves money: naming

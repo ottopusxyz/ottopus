@@ -188,10 +188,14 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           .max(100)
           .optional()
           .describe('How many holdings to list, highest value first. Default 20.'),
+        walletId: z
+          .string()
+          .optional()
+          .describe('Only this wallet, by the id list_wallets gave. Default: every linked wallet.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ limit }) => {
+    async ({ limit, walletId }) => {
       if (!hasScope(ctx.scopes, 'wallets:read')) return denied('wallets:read')
       if (!deps.readPortfolio) {
         return failure(
@@ -199,8 +203,16 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
             'The wallets themselves are still listed by list_wallets.',
         )
       }
-      const arms = await deps.listWallets(ctx.userId)
-      if (arms.length === 0) return text(walletsText(arms), { total: 0, wallets: [], assets: [] })
+      const linked = await deps.listWallets(ctx.userId)
+      if (linked.length === 0) return text(walletsText(linked), { total: 0, wallets: [], assets: [] })
+
+      // Narrowed here rather than in the provider call alone: an id from another
+      // account, or a stale one, must read as "no such wallet", never as an
+      // empty portfolio that looks like an honest zero.
+      const arms = walletId ? linked.filter((arm) => arm.id === walletId) : linked
+      if (arms.length === 0) {
+        return failure(`No linked wallet has the id ${walletId}. list_wallets gives the current ids.`)
+      }
 
       const portfolio = await deps.readPortfolio(
         arms.map((arm) => ({ walletId: arm.id, namespace: arm.namespace, address: arm.address })),

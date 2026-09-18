@@ -64,7 +64,9 @@ const PORTFOLIO: Portfolio = {
       price: 1589.7,
       change1d: 12.4,
       share: 1,
-      holdings: [],
+      holdings: [
+        { walletId: 'w1', positionType: 'wallet', amount: '1258100000000000000', value: 2000, protocol: null, groupId: null },
+      ],
     },
   ],
 }
@@ -207,8 +209,30 @@ describe('get_portfolio', () => {
     const words = result.content[0]!.text
 
     expect(words.split('\n')[0]).toBe('Total $2,000.00 across 2 wallets, +$12.40 today.')
-    expect(words).toContain('- 1.2581 ETH on Ethereum — $2,000.00')
-    expect(result.structuredContent).toMatchObject({ total: 2000, omitted: 0 })
+    expect(words).toContain('- 1.2581 ETH on Ethereum in Main — $2,000.00')
+    expect(result.structuredContent).toMatchObject({
+      total: 2000,
+      omitted: 0,
+      assets: [{ symbol: 'ETH', wallets: [{ id: 'w1', name: 'Main', amount: '1.2581' }] }],
+    })
+  })
+
+  it('reads only the wallet asked for, and never another account’s id', async () => {
+    const seen: string[][] = []
+    const { client } = await connected(undefined, {
+      readPortfolio: async (arms) => {
+        seen.push(arms.map((arm) => arm.walletId))
+        return PORTFOLIO
+      },
+    })
+    await call(client, 'get_portfolio', { walletId: 'w2' })
+    expect(seen).toEqual([['w2']])
+
+    const stranger = await call(client, 'get_portfolio', { walletId: 'w-someone-else' })
+    expect(stranger.isError).toBe(true)
+    expect(stranger.content[0]!.text).toContain('No linked wallet has the id')
+    // The provider was not asked: an unknown id is an answer, not a read.
+    expect(seen).toHaveLength(1)
   })
 
   it('honours the limit and counts what it cut', async () => {

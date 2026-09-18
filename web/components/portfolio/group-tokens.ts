@@ -9,7 +9,8 @@ export interface TokenGroup {
   share: number
   priced: boolean
   networks: { chainId: string; amount: string; spendable: string; value: number; priced: boolean }[]
-  holdings: AssetRow['holdings']
+  /** Every arm's share, with the chain it sits on — the breakdown lists them per network. */
+  holdings: (AssetRow['holdings'][number] & { chainId: string })[]
 }
 
 /** UI aggregation only: executable positions retain their chain-specific CAIP IDs. */
@@ -41,7 +42,10 @@ export function groupTokens(rows: readonly AssetRow[]): TokenGroup[] {
       value: members.reduce((value, row) => value + row.value, 0),
       share: members.reduce((value, row) => value + row.share, 0),
       priced: priced(members),
-      holdings: members.flatMap((row) => row.holdings.map((holding) => ({ ...holding, amount: amountOf(row, 'amount').toString() }))),
+      holdings: members.flatMap((row) => row.holdings.map((holding) => ({
+        ...holding, chainId: row.chainId,
+        amount: (BigInt(holding.amount) * 10n ** BigInt(decimals - row.asset.decimals)).toString(),
+      }))),
       networks: networkIds.map((chainId) => {
         const items = members.filter((row) => row.chainId === chainId)
         return {

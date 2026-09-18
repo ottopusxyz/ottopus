@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Dialog } from '@/components/ui'
-import type { Portfolio, AssetRow } from '@/lib/api'
+import { armName } from '@/components/wallets/naming'
+import type { Arm, Portfolio, AssetRow } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatAmount, formatMoneyFlat, formatShare } from '@/lib/format'
 import { AssetIcon } from './asset-icon'
@@ -11,10 +12,15 @@ import { compactBalance, groupTokens, type TokenGroup } from './group-tokens'
 
 /**
  * The asset column carries an icon, a symbol, a network strip and sometimes a
- * "held as" line, so it gets close to twice the width of a number. Share is the
- * narrowest: it is never longer than "100.0%".
+ * "held as" line, so it gets close to twice the width of a number. Balance is
+ * next widest because it carries the wallet marks beside the figure. Share is
+ * the narrowest: it is never longer than "100.0%".
+ *
+ * No spendable column. It was a second number a glance could not tell from
+ * the first; the breakdown has it, per network, where the difference means
+ * something.
  */
-const COLUMNS = 'grid-cols-[minmax(0,1.25fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
+const COLUMNS = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.75fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
 
 /** One padding value for the header and every row, or the columns drift apart. */
 const GUTTER = 'gap-2.5 px-2.5 sm:gap-5 sm:px-3.5'
@@ -23,7 +29,72 @@ export interface TokenTableProps {
   rows: readonly AssetRow[]
   chains: Portfolio['chains']
   currency?: string
+  /** The arms, so a holding's walletId becomes a name and a mark. */
+  wallets?: readonly Arm[]
+  /** Wallet logos by lowercased address, from the connected browser wallets. */
+  walletIcons?: ReadonlyMap<string, string>
 }
+
+/** What a row knows about a wallet: enough to name it and draw it. */
+interface WalletRef {
+  id: string
+  name: string
+  icon: string | null
+}
+
+/**
+ * The wallets holding some part of a token, most first, summed across position
+ * types — a wallet with 1 ETH loose and 0.5 staked holds 1.5 here.
+ */
+function holdersOf(
+  holdings: readonly { walletId: string; amount: string }[],
+  lookup: ReadonlyMap<string, WalletRef>,
+): (WalletRef & { amount: bigint })[] {
+  const sums = new Map<string, bigint>()
+  for (const holding of holdings) {
+    sums.set(holding.walletId, (sums.get(holding.walletId) ?? 0n) + BigInt(holding.amount))
+  }
+  return [...sums]
+    .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
+    .map(([id, amount]) => ({
+      ...(lookup.get(id) ?? { id, name: 'Unlinked wallet', icon: null }),
+      amount,
+    }))
+}
+
+/**
+ * Who holds it, beside the balance: the wallets' own marks, overlapping the
+ * way the network strip does. The names ride on the title and for a screen
+ * reader; the words are in the breakdown, where there is room for them.
+ */
+function WalletMarks({ holders }: { holders: readonly WalletRef[] }) {
+  if (holders.length === 0) return null
+  const names = holders.map((wallet) => wallet.name)
+  const extra = holders.length - 3
+  return (
+    <span
+      title={names.join(', ')}
+      aria-label={`Held in ${names.join(', ')}`}
+      className="isolate flex shrink-0 items-center -space-x-1"
+    >
+      {holders.slice(0, 3).map((wallet, index) => (
+        <span key={wallet.id} className="relative" style={{ zIndex: 3 - index }}>
+          <AssetIcon url={wallet.icon} name={wallet.name} size={16} className="ring-2 ring-[var(--ot-card)]" />
+        </span>
+      ))}
+      {extra > 0 ? (
+        <span className="relative z-0 ml-1 pl-1.5 text-[10px] font-medium text-[var(--ot-text-3)]">+{extra}</span>
+      ) : null}
+    </span>
+  )
+}
+
+/** Six places, grouped — what a person reads. The exact figure rides on the title. */
+const pretty = (amount: string, decimals: number) =>
+  formatAmount(amount, decimals, { maxFractionDigits: 6 })
+
+/** Keeps a click on a number's tooltip from also opening the row. */
+const stop = (event: { stopPropagation(): void }) => event.stopPropagation()
 
 function heldAs(row: TokenGroup): string | null {
   const away = row.holdings.filter((holding) => holding.positionType !== 'wallet')
@@ -37,22 +108,29 @@ function heldAs(row: TokenGroup): string | null {
 const exactAmount = (amount: string, decimals: number) =>
   formatAmount(amount, decimals, { maxFractionDigits: decimals })
 
-function Balance({ amount, decimals, symbol, label, subdued = false }: {
-  amount: string; decimals: number; symbol: string; label: string; subdued?: boolean
+function Balance({ amount, decimals, symbol, label }: {
+  amount: string; decimals: number; symbol: string; label: string
 }) {
   const exact = exactAmount(amount, decimals)
   const compact = compactBalance(amount, decimals) || formatAmount(amount, decimals, { maxFractionDigits: 4 })
   return (
-    <DetailPopover label={`${label}: ${exact} ${symbol}`} className="block w-full text-right"
+    <DetailPopover label={`${label}: ${exact} ${symbol}`} className="block min-w-0 text-right"
       title={label} detail={<p className="break-all font-mono leading-relaxed">{exact} {symbol}</p>}>
-      <span className={cn('block truncate font-mono text-[12px] tabular-nums sm:text-[13px]', subdued ? 'text-[var(--ot-text-2)]' : 'font-medium')}>{compact}</span>
+      <span className="block truncate font-mono text-[12px] font-medium tabular-nums sm:text-[13px]">{compact}</span>
     </DetailPopover>
   )
 }
 
-export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) {
+export function TokenTable({ rows, chains, currency = 'usd', wallets = [], walletIcons }: TokenTableProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const networks = useMemo(() => new Map(chains.map((chain) => [chain.chainId, chain])), [chains])
+  const walletRefs = useMemo(
+    () => new Map<string, WalletRef>(wallets.map((arm) => [
+      arm.id,
+      { id: arm.id, name: armName(arm), icon: walletIcons?.get(arm.address.toLowerCase()) ?? null },
+    ])),
+    [wallets, walletIcons],
+  )
   const tokens = useMemo(() => groupTokens(rows), [rows])
   const selected = tokens.find((token) => token.id === selectedId)
   const selectedSymbol = selected?.asset.symbol || selected?.asset.name || 'Token'
@@ -67,7 +145,6 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
       <div role="row" className={`ot-scroll-gutter grid ${COLUMNS} ${GUTTER} shrink-0 pt-3 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase`}>
         <span role="columnheader">Asset</span>
         <span role="columnheader" className="text-right">Balance</span>
-        <span role="columnheader" className="hidden text-right lg:block">Spendable</span>
         <span role="columnheader" className="hidden text-right lg:block">Share</span>
         <span role="columnheader" className="text-right">Value</span>
       </div>
@@ -77,23 +154,30 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
         const held = heldAs(token)
         const symbol = token.asset.symbol || token.asset.name
         return (
-          <div role="row" key={token.id} className={`ot-token-row grid ${COLUMNS} ${GUTTER} items-center py-2.5 transition-colors`}>
+          // The row is the target — the strip of network marks was too small a
+          // thing to be the only way in. It keeps its button for the keyboard
+          // and for the label a screen reader needs; a click there stops short
+          // of the row so the dialog is not asked to open twice.
+          <div role="row" key={token.id} onClick={() => setSelectedId(token.id)}
+            className={`ot-token-row grid ${COLUMNS} ${GUTTER} cursor-pointer items-center py-2.5 transition-colors`}>
             <div role="cell" className="flex min-w-0 items-start gap-2.5 sm:gap-3">
               <AssetIcon url={token.asset.iconUrl} name={symbol} size={36} />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span title={token.asset.name} className="truncate text-[13px] font-semibold sm:text-[14px]">{symbol}</span>
                   {!token.asset.verified ? (
+                    <span onClick={stop} className="contents">
                     <DetailPopover label="Unverified token" className="shrink-0 text-[var(--ot-text-3)] hover:text-[var(--ot-warn-text)]"
                       title="Unverified token"
                       detail={<p className="leading-relaxed text-[var(--ot-text-2)]">The data provider has not verified this token’s identity.</p>}>
                       <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5"><path d="m8 1.5 6 3v4c0 3-6 6-6 6s-6-3-6-6v-4l6-3Z" fill="none" stroke="currentColor" strokeWidth="1.2" /><path d="M8 5v3.5M8 11h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                     </DetailPopover>
+                    </span>
                   ) : null}
                 </div>
                 <button type="button" aria-haspopup="dialog"
                   aria-label={`View ${symbol} breakdown across ${token.networks.length} network${token.networks.length === 1 ? '' : 's'}`}
-                  onClick={() => setSelectedId(token.id)}
+                  onClick={(event) => { stop(event); setSelectedId(token.id) }}
                   className="-ml-1 flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-full px-1 py-0.5 text-[10px] text-[var(--ot-text-3)] transition-colors hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ot-plan)]">
                   <span aria-hidden className="isolate flex -space-x-1">
                     {token.networks.slice(0, 4).map((balance, index) => {
@@ -108,19 +192,12 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
                 {held ? <span title={held} className="truncate text-[10px] text-[var(--ot-text-3)]">{held}</span> : null}
               </div>
             </div>
-            <div role="cell" className="min-w-0 space-y-1">
+            <div role="cell" onClick={stop} className="flex min-w-0 items-center justify-end gap-2">
+              <WalletMarks holders={holdersOf(token.holdings, walletRefs)} />
               <Balance amount={token.amount} decimals={token.asset.decimals} symbol={symbol} label="Total balance" />
-              <div className="lg:hidden">
-                {/* 10px, the smallest size anything else in the app uses. At 9
-                    this was below the floor the rest of the design keeps to,
-                    and it is the label that tells you which number is which. */}
-                <span className="block text-right text-[10px] leading-[1.3] text-[var(--ot-text-3)]">Spendable</span>
-                <Balance amount={token.spendable} decimals={token.asset.decimals} symbol={symbol} label="Spendable balance" subdued />
-              </div>
             </div>
-            <div role="cell" className="hidden min-w-0 lg:block"><Balance amount={token.spendable} decimals={token.asset.decimals} symbol={symbol} label="Spendable balance" subdued /></div>
             <span role="cell" className="hidden text-right text-[12px] text-[var(--ot-text-2)] lg:block">{formatShare(token.share)}</span>
-            <div role="cell" className="min-w-0">
+            <div role="cell" onClick={stop} className="min-w-0">
               <DetailPopover label={token.priced ? `Value: ${formatMoneyFlat(token.value, currency)}` : 'Price unavailable'} className="block w-full text-right"
                 title={token.priced ? 'Value' : undefined}
                 detail={<p className="break-all font-mono">{token.priced ? formatMoneyFlat(token.value, currency) : 'Price unavailable'}</p>}>
@@ -172,10 +249,27 @@ export function TokenTable({ rows, chains, currency = 'usd' }: TokenTableProps) 
               </header>
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5 text-[12px]">
                 <dt className="text-[var(--ot-text-3)]">Balance</dt>
-                <dd className="min-w-0 text-right break-all font-mono">{exactAmount(balance.amount, selected.asset.decimals)} {selectedSymbol}</dd>
+                <dd title={`${exactAmount(balance.amount, selected.asset.decimals)} ${selectedSymbol}`} className="min-w-0 truncate text-right font-mono font-medium">
+                  {pretty(balance.amount, selected.asset.decimals)} {selectedSymbol}
+                </dd>
                 <dt className="text-[var(--ot-text-3)]">Spendable</dt>
-                <dd className="min-w-0 text-right break-all font-mono text-[var(--ot-text-2)]">{exactAmount(balance.spendable, selected.asset.decimals)} {selectedSymbol}</dd>
+                <dd title={`${exactAmount(balance.spendable, selected.asset.decimals)} ${selectedSymbol}`} className="min-w-0 truncate text-right font-mono text-[var(--ot-text-2)]">
+                  {pretty(balance.spendable, selected.asset.decimals)} {selectedSymbol}
+                </dd>
               </dl>
+              {/* Which wallets, on this network. The section's balance is their
+                  sum, and the one a transfer would come from is one of these. */}
+              <ul className="mt-2.5 flex list-none flex-col gap-1.5 border-t border-[var(--ot-border)] p-0 pt-2.5">
+                {holdersOf(selected.holdings.filter((holding) => holding.chainId === balance.chainId), walletRefs).map((wallet) => (
+                  <li key={wallet.id} className="flex items-center gap-2 text-[12px]">
+                    <AssetIcon url={wallet.icon} name={wallet.name} size={18} />
+                    <span className="min-w-0 flex-1 truncate">{wallet.name}</span>
+                    <span title={`${exactAmount(wallet.amount.toString(), selected.asset.decimals)} ${selectedSymbol}`} className="shrink-0 font-mono text-[var(--ot-text-2)]">
+                      {pretty(wallet.amount.toString(), selected.asset.decimals)} {selectedSymbol}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )
         })}

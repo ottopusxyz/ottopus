@@ -98,7 +98,11 @@ const portfolio: Portfolio = {
       price: 1589.7,
       change1d: -8,
       share: 0.7,
-      holdings: [],
+      holdings: [
+        { walletId: 'w1', positionType: 'wallet', amount: '900000000000000000', value: 1430, protocol: null, groupId: null },
+        { walletId: 'w1', positionType: 'staked', amount: '100000000000000000', value: 159, protocol: 'Lido', groupId: null },
+        { walletId: 'w2', positionType: 'wallet', amount: '258100000000000000', value: 411, protocol: null, groupId: null },
+      ],
     },
     {
       assetId: 'eip155:8453/erc20:0x1',
@@ -110,7 +114,9 @@ const portfolio: Portfolio = {
       price: 1,
       change1d: 0,
       share: 0.3,
-      holdings: [],
+      holdings: [
+        { walletId: 'w1', positionType: 'wallet', amount: '816910000', value: 816.91, protocol: null, groupId: null },
+      ],
     },
     {
       assetId: 'eip155:8453/erc20:0x2',
@@ -134,8 +140,8 @@ describe('a portfolio in words', () => {
     const summary = summarisePortfolio(portfolio, arms, 2)
     const words = portfolioText(summary)
     expect(words.split('\n')[0]).toBe('Total $2,816.91 across 2 wallets, −$8.26 today.')
-    expect(words).toContain('- 1.2581 ETH on Ethereum — $2,000.00')
-    expect(words).toContain('- 816.91 USDC on Base — $816.91')
+    expect(words).toContain('- 1.2581 ETH on Ethereum across 2 wallets — $2,000.00')
+    expect(words).toContain('- 816.91 USDC on Base in Main — $816.91')
     expect(words).toContain('…and 1 smaller.')
     expect(words).not.toContain('DUST')
   })
@@ -143,6 +149,28 @@ describe('a portfolio in words', () => {
   it('names the wallets it could not read, so the total is not mistaken for the whole', () => {
     const words = portfolioText(summarisePortfolio(portfolio, arms, 20))
     expect(words).toContain('1 of 2 could not be read (Cold) and are left out of the total.')
+  })
+
+  it('says which wallets hold each asset, and how much, most first', () => {
+    const [eth, usdc] = summarisePortfolio(portfolio, arms, 2).assets
+    // Loose plus staked in the same wallet is one entry: what the wallet holds.
+    expect(eth!.wallets).toEqual([
+      { id: 'w1', name: 'Main', amount: '1' },
+      { id: 'w2', name: 'Cold', amount: '0.2581' },
+    ])
+    expect(usdc!.wallets).toEqual([{ id: 'w1', name: 'Main', amount: '816.91' }])
+  })
+
+  it('tells two unlabelled wallets apart by their address', () => {
+    const unlabelled = [
+      arm({ id: 'w1', label: null, walletType: 'watch_only', address: '0x1111000000000000000000000000000000001111' }),
+      arm({ id: 'w2', label: null, walletType: 'watch_only', address: '0x2222000000000000000000000000000000002222' }),
+    ]
+    const [eth] = summarisePortfolio(portfolio, unlabelled, 1).assets
+    expect(eth!.wallets.map((w) => w.name)).toEqual([
+      'Watch Only 0x1111…1111',
+      'Watch Only 0x2222…2222',
+    ])
   })
 
   it('names wallets by their label, and counts what it cut', () => {

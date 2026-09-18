@@ -47,6 +47,15 @@ export function canSign(arm: Pick<Arm, 'isWatchOnly' | 'provedAt'>): boolean {
   return !arm.isWatchOnly && arm.provedAt !== null
 }
 
+/**
+ * A wallet's name where several may appear side by side. A label is unique
+ * enough on its own; a fallback like "Watch Only" is not — two pasted
+ * addresses would both be called that — so the fallback carries the address.
+ */
+export function holderName(arm: Pick<Arm, 'label' | 'walletType' | 'address'>): string {
+  return arm.label ? arm.label : `${walletName(arm)} ${truncateAddress(arm.address)}`
+}
+
 export function describeWallet(arm: Arm): string {
   const signing = arm.isWatchOnly
     ? 'watch only, cannot sign'
@@ -136,6 +145,12 @@ export interface PortfolioSummary {
     amount: string
     spendable: string
     value: number
+    /**
+     * Which wallets hold it, and how much each. The row above is the sum; this
+     * is what an agent needs to answer "which of my wallets has USDC on Base"
+     * before it asks for a transfer from one of them.
+     */
+    wallets: { id: string; name: string; amount: string }[]
   }[]
   /** Rows past the limit, so the agent knows the list is cut. */
   omitted: number
@@ -180,9 +195,45 @@ export function summarisePortfolio(
       amount: humanAmount(row.amount, row.asset.decimals),
       spendable: humanAmount(row.spendable, row.asset.decimals),
       value: row.value,
+      wallets: holdersOf(row.holdings, row.asset.decimals, (id) => {
+        const known = byId.get(id)
+        return known ? holderName(known) : truncateAddress(id)
+      }),
     })),
     omitted: Math.max(0, sorted.length - shown.length),
   }
+}
+
+/**
+ * One entry per wallet holding an asset, amounts summed across position types
+ * — a wallet with 1 ETH loose and 0.5 staked holds 1.5, and the agent can ask
+ * list_wallets or the row's spendable figure for the difference.
+ */
+export function holdersOf(
+  holdings: readonly { walletId: string; amount: string }[],
+  decimals: number,
+  nameOf: (walletId: string) => string,
+): { id: string; name: string; amount: string }[] {
+  const sums = new Map<string, bigint>()
+  for (const holding of holdings) {
+    let units = 0n
+    try {
+      units = BigInt(holding.amount)
+    } catch {
+      continue
+    }
+    sums.set(holding.walletId, (sums.get(holding.walletId) ?? 0n) + units)
+  }
+  return [...sums]
+    .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
+    .map(([id, units]) => ({ id, name: nameOf(id), amount: humanAmount(units.toString(), decimals) }))
+}
+
+/** "in Main" for one wallet, "across 2 wallets" for more, nothing for none. */
+export function heldByText(wallets: readonly { name: string }[]): string {
+  if (wallets.length === 0) return ''
+  if (wallets.length === 1) return ` in ${wallets[0]!.name}`
+  return ` across ${wallets.length} wallets`
 }
 
 export function portfolioText(summary: PortfolioSummary): string {
@@ -201,7 +252,8 @@ export function portfolioText(summary: PortfolioSummary): string {
       : [
           'Holdings, highest value first:',
           ...summary.assets.map(
-            (row) => `- ${row.amount} ${row.symbol} on ${row.chain} — ${usd(row.value)}`,
+            (row) =>
+              `- ${row.amount} ${row.symbol} on ${row.chain}${heldByText(row.wallets)} — ${usd(row.value)}`,
           ),
           ...(summary.omitted > 0 ? [`…and ${summary.omitted} smaller.`] : []),
         ].join('\n')
