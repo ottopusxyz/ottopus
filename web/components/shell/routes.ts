@@ -49,6 +49,8 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   '/signin':
     'Sign-in. A signed-out visitor has no nav, and this is where shell routes send them.',
   '/styleguide': 'The design system, for us. App chrome around it would be confusing.',
+  '/review':
+    'A review link opens on a phone, from a chat, to decide one thing. The card is the page; nav around it would say this is a place to browse.',
   '/oauth':
     'OAuth consent. A redirect target an agent sent someone to, not a page they browsed to — ' +
     'app chrome would invite wandering off mid-decision, and this is a grant screen.',

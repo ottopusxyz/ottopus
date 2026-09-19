@@ -9,6 +9,7 @@
 @import "./styles/scroll.css";
 @import "./styles/loaders.css";
 @import "./styles/portfolio.css";
+@import "./styles/review.css";
 
 /* Divergences from the design project live here, never in the ported files, so
    re-syncing tokens.css cannot silently drop them.

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { accountIdSchema, chainIdSchema, chainOf, parseAccountId, parseChainId, sameChain } from './caip.js'
+import { accountIdSchema, assetIdSchema, chainIdSchema, chainOf, parseAccountId, parseChainId, sameChain } from './caip.js'
 import { intentSchema, sourceChainOf } from './intent.js'
 
 /**
@@ -112,6 +112,15 @@ export const humanPlanSchema = z.object({
   steps: z.array(z.string()),
   feesUsd: z.string(),
   warnings: z.array(warningSchema),
+  /**
+   * What to call each asset the plan moves. Display data, hashed with the
+   * rest: a page that read "500 USDC" over calls moving 500 of something else
+   * would be the summary lying, and the hash is what stops the summary lying.
+   * Optional because plans stored before it existed have none.
+   */
+  assets: z
+    .array(z.strictObject({ id: assetIdSchema, symbol: z.string().min(1), decimals: z.number().int().min(0).max(36) }))
+    .optional(),
 })
 
 /**

@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
+import { readPortfolio } from '../connectors/portfolio/index.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
 import { planRoutes } from './plans.js'
@@ -120,8 +121,16 @@ if (ready) {
   /** The agents holding a grant, and the control that ends one. */
   apiApp.route('/agents', agentRoutes(db, session))
 
+  const provider = portfolioProvider
+
   /** Plans waiting on the person, the plan behind a review link, and the web's transitions. */
-  apiApp.route('/plans', planRoutes(db, session, config.webUrl))
+  apiApp.route(
+    '/plans',
+    planRoutes(db, session, {
+      webUrl: config.webUrl,
+      readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+    }),
+  )
 
   /**
    * Balances are a separate readiness question from sign-in.

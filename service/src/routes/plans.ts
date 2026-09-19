@@ -1,6 +1,9 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { z } from 'zod'
+import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
 import { isPending } from '../core/index.js'
+import { visualsFor } from '../plans/visuals.js'
+import { type WalletDb, listWallets } from '../wallets/index.js'
 import {
   type PlanDb,
   PlanError,
@@ -59,9 +62,32 @@ const eventSchema = z.discriminatedUnion('status', [
 
 const isUuid = (id: string) => z.uuid().safeParse(id).success
 
-export function planRoutes(db: PlanDb, session: MiddlewareHandler, webUrl: string): Hono {
+export interface PlanRouteDeps {
+  webUrl: string
+  /** Null when no balance provider is configured; the page then draws no icons. */
+  readPortfolio: ((arms: readonly ArmRef[]) => Promise<Portfolio>) | null
+}
+
+export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRouteDeps): Hono {
   const app = new Hono()
   app.use('*', session)
+  const { webUrl } = deps
+
+  /**
+   * Icons and wallet clients for the page, looked up beside the plan and never
+   * inside it. A provider outage costs the icons, not the review.
+   */
+  const visuals = async (userId: string, plan: Parameters<typeof visualsFor>[0]) => {
+    try {
+      const arms = await listWallets(db as unknown as WalletDb, userId)
+      const portfolio = deps.readPortfolio
+        ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
+        : null
+      return visualsFor(plan, arms, portfolio)
+    } catch {
+      return visualsFor(plan, [], null)
+    }
+  }
 
   /**
    * Only the pending list is served today. Activity (#26) will want history,
@@ -89,6 +115,7 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, webUrl: strin
       walletId: record.walletId,
       statusAt: record.statusAt,
       link: { expiresAt: record.linkExpiresAt },
+      visuals: await visuals(c.get('userId'), record.plan),
     })
   })
 

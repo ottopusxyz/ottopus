@@ -404,6 +404,7 @@ describe('prepare_transfer', () => {
       },
     ])
     expect(plan.decodedActions[0]).toMatchObject({ function: 'transfer(address,uint256)', verified: true, source: 'abi' })
+    expect(plan.humanPlan.assets).toEqual([{ id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 }])
     expect(plan.resolution.candidatesConsidered.map((c) => c.reason)).toEqual(['is watch-only and cannot sign'])
   })
 

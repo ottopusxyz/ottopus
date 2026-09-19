@@ -1,0 +1,29 @@
+/* P4 · Review. The one ripple that is not a loader: it plays once, on
+   settlement, and then it is over. Restrained on purpose — not confetti. */
+.ot-settle-ripple {
+  animation: ot-settle 1.1s var(--ot-ease-out) 1 forwards;
+}
+@keyframes ot-settle {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ot-settle-ripple {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* The expander opens in place, never a dialog. */
+.ot-review-details[open] > summary .ot-review-caret {
+  transform: rotate(180deg);
+}
+.ot-review-caret {
+  transition: transform var(--ot-dur-fast) var(--ot-ease-out);
+}

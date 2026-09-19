@@ -27,7 +27,26 @@ const signedInAs = (userId: string): MiddlewareHandler => {
   }
 }
 
-const app = (userId: string) => planRoutes(db, signedInAs(userId), 'https://ottopus.test/')
+const readPortfolio = async () =>
+  ({
+    chains: [{ chainId: 'eip155:8453', name: 'Base', iconUrl: 'https://cdn/base.png', value: 1, share: 1 }],
+    assets: [
+      {
+        assetId: 'eip155:8453/slip44:60',
+        chainId: 'eip155:8453',
+        asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: 'https://cdn/eth.png', verified: true },
+        amount: '1',
+        value: 1,
+        price: 1,
+        change1d: 0,
+        share: 1,
+        holdings: [],
+      },
+    ],
+  }) as never
+
+const app = (userId: string, portfolio: typeof readPortfolio | null = readPortfolio) =>
+  planRoutes(db, signedInAs(userId), { webUrl: 'https://ottopus.test/', readPortfolio: portfolio })
 
 const post = (userId: string, path: string, body: unknown) =>
   app(userId).request(path, {
@@ -83,10 +102,33 @@ describe('GET /:token', () => {
 
     const res = await app(alice).request(`/${token}`)
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { plan: { id: string; planHash: string }; link: { expiresAt: string } }
+    const body = (await res.json()) as {
+      plan: { id: string; planHash: string }
+      link: { expiresAt: string }
+      visuals: { assets: Record<string, unknown>; chains: Record<string, unknown> }
+    }
     expect(body.plan.id).toBe(plan.id)
     expect(body.plan.planHash).toBe(plan.planHash)
     expect(body.link.expiresAt).toBeDefined()
+    // Beside the plan, never inside it: the hash is over body.plan alone.
+    expect(body.visuals.chains['eip155:8453']).toEqual({ name: 'Base', iconUrl: 'https://cdn/base.png' })
+    expect(body.visuals.assets['eip155:8453/slip44:60']).toMatchObject({ symbol: 'ETH', iconUrl: 'https://cdn/eth.png' })
+  })
+
+  it('still answers the plan when the balance provider is down or absent', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const { token } = await link(plan.id)
+    const down = async () => {
+      throw new Error('zerion 503')
+    }
+    for (const portfolio of [null, down as never]) {
+      const res = await app(alice, portfolio).request(`/${token}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { plan: { id: string }; visuals: { assets: object; chains: object } }
+      expect(body.plan.id).toBe(plan.id)
+      expect(body.visuals).toEqual({ assets: {}, chains: {}, wallets: {} })
+    }
   })
 
   /**

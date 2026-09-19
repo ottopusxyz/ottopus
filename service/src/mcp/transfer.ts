@@ -257,6 +257,7 @@ export async function prepareTransfer(
       // Gas is estimated by simulation (#23); until then the page says so.
       feesUsd: 'unknown',
       warnings: [],
+      assets: [{ id: intent.asset, symbol: asset.symbol, decimals: asset.decimals }],
     },
     status: 'awaiting_review',
     expiresAt,

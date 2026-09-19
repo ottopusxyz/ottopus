@@ -390,3 +390,148 @@ export function establishSession(credentials: Credentials): Promise<{ user: Sess
 }
 
 export const API_BASE = BASE
+
+/**
+ * Plans, as the review page and Requests read them.
+ *
+ * The service verified everything here before it was stored, and the browser
+ * renders it as given: it never recomputes or checks planHash, never decodes
+ * calldata itself. What it does is show, gate, and forward a signature.
+ */
+export type PlanStatusName =
+  | 'draft'
+  | 'awaiting_review'
+  | 'awaiting_signature'
+  | 'submitted'
+  | 'confirmed'
+  | 'failed'
+  | 'expired'
+  | 'blocked'
+  | 'superseded'
+  | 'cancelled'
+
+export interface PlanCall {
+  to: string
+  value: string
+  data: string
+  chainId: string
+}
+
+export interface DecodedAction {
+  target: string
+  isContract: boolean
+  source: 'native' | 'abi' | 'sourcify' | '4byte' | 'unknown'
+  verified: boolean
+  contractName?: string
+  function: string
+  args: { name: string; type: string; value: string }[]
+  value: string
+  approval?: { spender: string; amount: string }
+}
+
+export interface PlanWarning {
+  severity: 'info' | 'caution' | 'block'
+  code: string
+  message: string
+  saferAlternative?: string
+}
+
+export interface TransferIntent {
+  kind: 'transfer'
+  asset: string
+  amount: string
+  to: string
+  toName?: string
+  fromAccount?: string
+  note?: string
+}
+
+/** Other kinds arrive with later milestones; the page shows what it knows and never guesses. */
+export type PlanIntent = TransferIntent | { kind: 'swap' | 'bridge' | 'supply'; [key: string]: unknown }
+
+export interface Plan {
+  id: string
+  version: number
+  userId: string
+  createdVia: 'agent' | 'web'
+  intent: PlanIntent
+  provenance: 'route_provider' | 'agent_crafted'
+  resolution: {
+    account: { caip10: string; label?: string }
+    candidatesConsidered: { account: string; label?: string; reason: string }[]
+    reason: string
+  }
+  outcome:
+    | { type: 'calls'; calls: PlanCall[] }
+    | { type: 'signature'; eip712: unknown }
+    | { type: 'permission'; request: unknown }
+  quote: { provider: string; expiresAt: string; expectedOut?: string; minOut?: string }
+  humanPlan: {
+    summary: string
+    steps: string[]
+    feesUsd: string
+    warnings: PlanWarning[]
+    /** What to call each asset the plan moves. Absent on plans stored before it existed. */
+    assets?: { id: string; symbol: string; decimals: number }[]
+  }
+  status: PlanStatusName
+  expiresAt: string
+  planHash: string
+  decodedActions: DecodedAction[]
+  simulation: unknown | null
+}
+
+export interface ReviewRead {
+  plan: Plan
+  walletId: string | null
+  statusAt: string
+  link: { expiresAt: string }
+}
+
+/** The plan behind a review link. A dead or foreign token is a 404, and says nothing more. */
+export function readReview(credentials: Credentials, token: string): Promise<ReviewRead> {
+  return call<ReviewRead>(`/plans/${encodeURIComponent(token)}`, credentials)
+}
+
+/** The transitions a browser may write. Anything else is the service's to decide. */
+export type WebTransition =
+  | { status: 'awaiting_review' | 'awaiting_signature' | 'confirmed' | 'cancelled' }
+  | { status: 'submitted'; detail: { txHash: string } }
+  | { status: 'failed'; detail?: { reason: string } }
+
+export function movePlan(
+  credentials: Credentials,
+  planId: string,
+  version: number,
+  transition: WebTransition,
+): Promise<{ status: PlanStatusName }> {
+  return call<{ status: PlanStatusName }>(`/plans/${encodeURIComponent(planId)}/events`, credentials, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, ...transition }),
+  })
+}
+
+export interface PlanSummary {
+  id: string
+  version: number
+  status: PlanStatusName
+  summary: string
+  reason: string
+  account: { caip10: string; label?: string }
+  createdVia: 'agent' | 'web'
+  expiresAt: string
+  createdAt: string
+}
+
+export function listPendingPlans(credentials: Credentials): Promise<{ plans: PlanSummary[]; count: number }> {
+  return call('/plans?pending=1', credentials)
+}
+
+/** A fresh link to my own pending plan, for a Requests row. */
+export function linkToPlan(
+  credentials: Credentials,
+  planId: string,
+): Promise<{ token: string; url: string; expiresAt: string }> {
+  return call(`/plans/${encodeURIComponent(planId)}/link`, credentials, { method: 'POST' })
+}
