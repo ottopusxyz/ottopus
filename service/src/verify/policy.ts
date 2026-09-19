@@ -4,16 +4,18 @@ import {
   type DecodedAction,
   type Intent,
   type Simulation,
-  type SwapIntent,
+  type TradeIntent,
   type TransferIntent,
   type Warning,
   accountOn,
   chainName,
+  crossesChains,
   isNativeAsset,
   parseAccountId,
   parseAssetId,
   parseChainId,
   sameChain,
+  sourceAssetOf,
   sourceChainOf,
 } from '../core/index.js'
 import { KNOWN_ABI, KNOWN_BY_SELECTOR } from './abi.js'
@@ -50,7 +52,14 @@ export interface VerifyInput {
    * The route's own promise, from the quote. A swap is reviewed on its floor,
    * so the policy checks the floor is coherent before a page can show it.
    */
-  quote?: { expectedOut?: string | undefined; minOut?: string | undefined } | undefined
+  quote?:
+    | {
+        expectedOut?: string | undefined
+        minOut?: string | undefined
+        /** Native value the route declared it needs alongside a token input. */
+        nativeFee?: string | undefined | null
+      }
+    | undefined
 }
 
 export type Verdict =
@@ -108,6 +117,17 @@ function approvalIn(call: Call): { spender: string; amount: bigint | 'unlimited'
     default:
       return null
   }
+}
+
+/**
+ * How much goes in, when the intent fixes it. Null for a trade quoted by its
+ * output, and for anything with no fixed input to measure against.
+ */
+function amountInOf(intent: Intent): bigint | null {
+  if (intent.kind === 'swap' || intent.kind === 'bridge') {
+    return intent.amountIn === undefined ? null : BigInt(intent.amountIn)
+  }
+  return BigInt(intent.amount)
 }
 
 /** The calls and their decodings must pair up, or nothing below means anything. */
@@ -209,12 +229,35 @@ const approvals: Rule = ({ calls, decodedActions, allowedSpenders = [] }) => {
  * token transfer carrying ETH is ETH leaving the wallet that nobody asked
  * to send.
  */
-const nativeValue: Rule = ({ intent, calls }) => {
-  const sourceAsset = intent.kind === 'swap' ? intent.from : intent.asset
-  if (isNativeAsset(sourceAsset)) return []
-  return calls
-    .filter((c) => c.value !== '0')
-    .map((c) => ({ block: `${c.value} wei of native value to ${short(c.to)}, which the intent did not ask for` }))
+const nativeValue: Rule = ({ intent, calls, quote }) => {
+  if (isNativeAsset(sourceAssetOf(intent))) return []
+  const declared = quote?.nativeFee ? BigInt(quote.nativeFee) : 0n
+  const findings: Finding[] = []
+  let allowance = declared
+  for (const call of calls) {
+    if (call.value === '0') continue
+    const value = BigInt(call.value)
+    // Spend the declaration once. A route that declared a fee does not get
+    // to charge it on every call in the batch.
+    if (value <= allowance) {
+      allowance -= value
+      findings.push({
+        warn: {
+          severity: 'caution' as const,
+          code: 'route_native_fee',
+          message: `this route also sends ${call.value} wei of ${chainName(call.chainId)}'s own currency as its fee`,
+        },
+      })
+      continue
+    }
+    findings.push({
+      block:
+        declared === 0n
+          ? `${call.value} wei of native value to ${short(call.to)}, which the intent did not ask for`
+          : `${call.value} wei of native value to ${short(call.to)}, above the ${declared} the route declared`,
+    })
+  }
+  return findings
 }
 
 /**
@@ -248,10 +291,10 @@ const simulationOutcome: Rule = ({ simulation }) => {
  */
 const simulationMatchesIntent: Rule = ({ intent, simulation }) => {
   if (!simulation || !simulation.success || simulation.assetChanges.length === 0) return []
-  const sourceAsset = (intent.kind === 'swap' ? intent.from : intent.asset).toLowerCase()
-  // A swap quoted by amountOut has no fixed input, so there is no promise to
+  const sourceAsset = sourceAssetOf(intent).toLowerCase()
+  // A trade quoted by amountOut has no fixed input, so there is no promise to
   // measure against; the other-asset rule below still applies.
-  const promised = intent.kind === 'swap' ? (intent.amountIn ? BigInt(intent.amountIn) : null) : BigInt(intent.amount)
+  const promised = amountInOf(intent)
   const findings: Finding[] = []
   const mine = simulation.assetChanges.find((c) => c.assetId.toLowerCase() === sourceAsset)
 
@@ -384,26 +427,26 @@ const transferRules: Rule = (input) => {
  * simulation's job, and the rule above already blocks an asset leaving that
  * the intent never named.
  */
-const swapRules: Rule = (input) => {
-  const intent = input.intent as SwapIntent
+const tradeRules: Rule = (input) => {
+  const intent = input.intent as TradeIntent
   const { calls, decodedActions } = input
   const findings: Finding[] = []
 
   if (calls.length === 0 || calls.length > 2) {
-    return [{ block: `a swap is one router call, with an approval at most; this plan has ${calls.length}` }]
+    return [{ block: `a trade is one router call, with an approval at most; this plan has ${calls.length}` }]
   }
   const router = calls[calls.length - 1]!
   const routerAction = decodedActions[calls.length - 1]
   const nativeIn = isNativeAsset(intent.from)
 
   if (routerAction && !routerAction.isContract) {
-    findings.push({ block: `the swap targets ${short(router.to)}, which has no code on ${chainName(router.chainId)}` })
+    findings.push({ block: `the trade targets ${short(router.to)}, which has no code on ${chainName(router.chainId)}` })
   }
 
   // The approval, if the plan carries one, read off the calldata.
   const approval = calls.length === 2 ? approvalIn(calls[0]!) : null
   if (calls.length === 2 && !approval) {
-    findings.push({ block: 'the first of two calls in a swap must be the approval; this one is not' })
+    findings.push({ block: 'the first of two calls in a trade must be the approval; this one is not' })
   }
 
   if (nativeIn) {
@@ -411,16 +454,16 @@ const swapRules: Rule = (input) => {
       findings.push({ block: 'the input is the chain’s own currency, which cannot be approved and needs no allowance' })
     }
     if (intent.amountIn !== undefined && router.value !== intent.amountIn) {
-      findings.push({ block: `the swap sends ${router.value} wei, but the intent says ${intent.amountIn}` })
+      findings.push({ block: `the call sends ${router.value} wei, but the intent says ${intent.amountIn}` })
     }
   } else if (approval) {
     // Exact, and for the contract we are about to call. An allowance to
     // somewhere other than the target is the shape a drain takes.
     if (approval.amount === 'unlimited') {
-      findings.push({ block: `an unlimited approval to ${short(approval.spender)}; a swap approves exactly what it swaps` })
+      findings.push({ block: `an unlimited approval to ${short(approval.spender)}; a trade approves exactly what it spends` })
     } else if (intent.amountIn !== undefined && approval.amount !== BigInt(intent.amountIn)) {
       findings.push({
-        block: `the plan approves ${approval.amount} but the intent swaps ${intent.amountIn}; a swap approves exactly what it swaps`,
+        block: `the plan approves ${approval.amount} but the intent spends ${intent.amountIn}; a trade approves exactly what it spends`,
       })
     }
     if (parseAccountId(approval.spender).address !== parseAccountId(router.to).address) {
@@ -430,24 +473,32 @@ const swapRules: Rule = (input) => {
     }
     const token = parseAssetId(intent.from).assetReference
     if (parseAccountId(calls[0]!.to).address !== token) {
-      findings.push({ block: `the approval is on ${short(calls[0]!.to)}, not on the token being swapped` })
+      findings.push({ block: `the approval is on ${short(calls[0]!.to)}, not on the token being spent` })
     }
   }
 
   // The floor is what the review page promises, so it has to be real.
   const { expectedOut, minOut } = input.quote ?? {}
   if (minOut === undefined) {
-    findings.push({ block: 'the quote gives no minimum received; a swap cannot be reviewed without a floor' })
+    findings.push({ block: 'the quote gives no minimum received; a trade cannot be reviewed without a floor' })
   } else if (BigInt(minOut) <= 0n) {
     findings.push({ block: 'the quote’s minimum received is zero; that is not a floor' })
   } else if (expectedOut !== undefined && BigInt(minOut) > BigInt(expectedOut)) {
     findings.push({ block: `the quote promises at least ${minOut} but expects only ${expectedOut}` })
   }
 
-  // What the run observed arriving, when one has run. The only check that
-  // can tell a good floor from a kept one.
+  /**
+   * What the run observed arriving, when one has run. The only check that can
+   * tell a promised floor from a kept one.
+   *
+   * It stands down for a bridge. The output lands on another chain, minutes
+   * later, so a source-chain simulation cannot see it and an absent arrival
+   * proves nothing — blocking on it would refuse every bridge. Explicit
+   * rather than incidental: the rule is skipped because it cannot apply, not
+   * because nobody thought about it.
+   */
   const sim = input.simulation
-  if (sim?.success && minOut !== undefined) {
+  if (sim?.success && minOut !== undefined && !crossesChains(intent)) {
     const arrived = sim.assetChanges.find((c) => c.assetId.toLowerCase() === intent.to.toLowerCase())
     if (arrived && BigInt(arrived.diff) < BigInt(minOut)) {
       findings.push({
@@ -473,10 +524,12 @@ const GLOBAL: readonly Rule[] = [
 
 const BY_KIND: Readonly<Record<Intent['kind'], readonly Rule[]>> = {
   transfer: [transferRules],
-  swap: [swapRules],
-  // Bridge and supply land with #80 and #79. Until then a plan of those kinds
-  // fails closed rather than passing on global rules alone.
-  bridge: [() => [{ block: 'bridge plans cannot be verified yet' }]],
+  // One rule set. Everything a swap must satisfy a bridge must too; what
+  // differs is only what a source-chain simulation can see.
+  swap: [tradeRules],
+  bridge: [tradeRules],
+  // Supply lands with #79. Until then it fails closed rather than passing on
+  // the global rules alone.
   supply: [() => [{ block: 'supply plans cannot be verified yet' }]],
 }
 

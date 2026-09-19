@@ -186,12 +186,12 @@ describe('the tool surface', () => {
       'get_plan',
       'get_portfolio',
       'list_wallets',
-      'prepare_swap',
+      'prepare_trade',
       'prepare_transfer',
       'whoami',
     ])
     for (const tool of tools) {
-      const readOnly = !['prepare_transfer', 'prepare_swap', 'cancel_plan'].includes(tool.name)
+      const readOnly = !['prepare_transfer', 'prepare_trade', 'cancel_plan'].includes(tool.name)
       expect(tool.annotations?.readOnlyHint, `${tool.name} read-only=${readOnly}`).toBe(readOnly)
       expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }
@@ -652,6 +652,27 @@ describe('get_plan', () => {
     expect(result.content[0]!.text).toContain('Confirmed on Base: Send 1000 wei to vitalik.eth went through.')
     expect(result.content[0]!.text).toContain(`Explorer: https://basescan.org/tx/${TX}`)
 
+    const crossing = onRecord({
+      status: 'confirmed',
+      statusDetail: { txHash: TX },
+      plan: planFor(USER_ID, {
+        status: 'confirmed',
+        intent: { kind: 'bridge', from: `${BASE}/erc20:${USDC}`, to: 'eip155:1/slip44:60', amountIn: '1000' },
+        resolution: {
+          account: { caip10: `${BASE}:0x0000000000000000000000000000000000000001` },
+          candidatesConsidered: [],
+          reason: 'only funded account',
+        },
+        outcome: { type: 'calls', calls: [{ to: `${BASE}:${USDC}`, value: '0', data: '0xdeadbeef', chainId: BASE }] },
+      }),
+    })
+    ;({ client } = await connected(undefined, { findPlan: async () => crossing }, { grantId: 'grant-1' }))
+    result = await call(client, 'get_plan', { planId: crossing.plan.id })
+    // Source confirmed is not arrival, and the one place that must not be fudged.
+    expect(result.content[0]!.text).toContain('the funds have left')
+    expect(result.content[0]!.text).toContain('arrive on Ethereum')
+    expect(result.content[0]!.text).not.toContain('went through')
+
     const failed = onRecord({ status: 'failed', statusDetail: { txHash: TX, reason: 'reverted' } })
     ;({ client } = await connected(undefined, { findPlan: async () => failed }, { grantId: 'grant-1' }))
     result = await call(client, 'get_plan', { planId: failed.plan.id })
@@ -953,6 +974,7 @@ function stubRouter(over: Partial<RouteQuote> = {}, fail?: RouteError): RouteCon
         approval: { spender: `${BASE}:${ROUTER}`, asset: request.fromAsset, amount: '500000000' },
         feesUsd: '0.31',
         expiresAt: '2026-09-10T12:03:00.000Z',
+        etaSeconds: 42,
         steps: ['Swap on Aerodrome'],
         raw: {},
         ...over,
@@ -961,7 +983,7 @@ function stubRouter(over: Partial<RouteQuote> = {}, fail?: RouteError): RouteCon
   }
 }
 
-describe('prepare_swap', () => {
+describe('prepare_trade', () => {
   const holdings: Portfolio = {
     ...PORTFOLIO,
     chains: [{ chainId: BASE, name: 'Base', value: 2000, share: 1 }],
@@ -992,7 +1014,7 @@ describe('prepare_swap', () => {
   }
   const send = (client: Client, args: Record<string, unknown> = {}) =>
     client.callTool({
-      name: 'prepare_swap',
+      name: 'prepare_trade',
       arguments: { from: `${BASE}/erc20:${USDC}`, to: `${BASE}/slip44:60`, amountIn: '500000000', ...args },
     })
 
@@ -1074,7 +1096,7 @@ describe('prepare_swap', () => {
     expect(sink.created[0]!.plan.status).toBe('blocked')
   })
 
-  it('blocks a route that asks for more than it swaps', async () => {
+  it('blocks a route that asks for more than it spends', async () => {
     const sink = planSink()
     const greedy = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [ROUTER, maxUint256] })
     const { client } = await connected(undefined, {
@@ -1089,15 +1111,47 @@ describe('prepare_swap', () => {
     }, { grantId: 'grant-1' })
     const res = (await send(client)) as { isError?: boolean; content: { text: string }[] }
     expect(res.isError).toBe(true)
-    expect(res.content[0]!.text).toContain('approves exactly what it swaps')
+    expect(res.content[0]!.text).toContain('approves exactly what it spends')
     expect(sink.created[0]!.plan.status).toBe('blocked')
   })
 
-  it('refuses a cross-chain pair, because that is a bridge', async () => {
-    const { client } = await connected(undefined, { readPortfolio: async () => holdings, router: stubRouter() })
-    const res = (await send(client, { to: 'eip155:1/slip44:60' })) as { isError?: boolean; content: { text: string }[] }
-    expect(res.isError).toBe(true)
-    expect(res.content[0]!.text).toContain('swapping across chains is a bridge')
+  /**
+   * The point of one tool: the agent gives two assets and never has to know
+   * which of our words applies. A cross-chain pair used to be refused by
+   * naming a tool that did not exist.
+   */
+  it('takes a cross-chain pair as a bridge, and says which it built', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      router: stubRouter(),
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+    const res = (await send(client, { to: 'eip155:1/slip44:60' })) as {
+      isError?: boolean
+      content: { text: string }[]
+      structuredContent: Record<string, unknown>
+    }
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.structuredContent).toMatchObject({ trade: 'bridge' })
+    expect(res.content[0]!.text).toContain('Bridge 500 USDC on Base for about 0.12 ETH on Ethereum from Main')
+    expect(res.content[0]!.text).toContain('the source transaction confirms first and the funds arrive after that')
+    expect(sink.created[0]!.plan.humanPlan.steps).toContain(
+      "stub estimates about 42 seconds to arrive. That is the bridge's estimate, not Ottopus's.",
+    )
+    expect(sink.created[0]!.plan.intent.kind).toBe('bridge')
+  })
+
+  it('calls a same-chain pair a swap', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      router: stubRouter(),
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+    const res = (await send(client)) as { structuredContent: Record<string, unknown> }
+    expect(res.structuredContent).toMatchObject({ trade: 'swap' })
+    expect(sink.created[0]!.plan.intent.kind).toBe('swap')
   })
 
   it('refuses without plans:write', async () => {

@@ -1,6 +1,6 @@
 import { parseAccountId, parseAssetId } from './caip.js'
 import { chainName } from './chains.js'
-import type { SwapIntent, TransferIntent } from './intent.js'
+import type { TradeIntent, TransferIntent } from './intent.js'
 import type { PlanDraft } from './plan.js'
 
 /**
@@ -217,8 +217,8 @@ export function resolveTransferWallet({ intent, candidates, asset, native }: Sco
   })
 }
 
-export interface SwapScoreInput {
-  intent: SwapIntent
+export interface TradeScoreInput {
+  intent: TradeIntent
   candidates: readonly WalletCandidate[]
   /** Words for the asset going in. */
   asset: AssetWords
@@ -226,14 +226,14 @@ export interface SwapScoreInput {
 }
 
 /**
- * The same choice for a swap's input side.
+ * The same choice for the input side of a swap or a bridge.
  *
  * A route's price does not depend on which wallet signs it, so there is
  * nothing extra to score here: whoever can afford the input and pay gas is
  * eligible, and the same weights break the tie. What differs is the sentence,
- * because "enough to send" is the wrong verb for a swap.
+ * because "enough to send" is the wrong verb for a trade.
  */
-export function resolveSwapWallet({ intent, candidates, asset, native }: SwapScoreInput): ScoreOutcome {
+export function resolveTradeWallet({ intent, candidates, asset, native }: TradeScoreInput): ScoreOutcome {
   return chooseWallet({
     candidates,
     asset,
@@ -241,7 +241,7 @@ export function resolveSwapWallet({ intent, candidates, asset, native }: SwapSco
     // Quoted by its output, the input amount is not known yet.
     amount: intent.amountIn ?? null,
     chain: chainName(parseAssetId(intent.from)),
-    verb: 'swap',
+    verb: 'spend',
     fromAccount: intent.fromAccount ?? null,
   })
 }
@@ -252,7 +252,7 @@ interface ChoiceInput {
   native: boolean
   amount: string | null
   chain: string
-  verb: 'send' | 'swap'
+  verb: 'send' | 'spend'
   fromAccount: string | null
 }
 

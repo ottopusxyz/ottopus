@@ -3,6 +3,8 @@ import {
   type PlanStatus,
   type Warning,
   chainName,
+  crossesChains,
+  destinationChainOf,
   explorerTxUrl,
   isTerminal,
   sourceChainOf,
@@ -97,6 +99,22 @@ export function outcomeWords(record: PlanRecord): string {
     case 'submitted':
       return `Signed and sent to ${chain}; waiting for the chain to confirm it.${txWords}`
     case 'confirmed':
+      /**
+       * "Confirmed" is the truth for one chain and half the truth for two.
+       *
+       * The receipt job watches the source transaction, so on a crossing plan
+       * this fires the moment the money leaves — which is the most anxious
+       * point in the whole flow, and the one place a page or an agent must
+       * not say "went through". Watching the destination is its own job and
+       * does not exist yet; until it does, saying so is the honest answer.
+       */
+      if (crossesChains(plan.intent)) {
+        return (
+          `The source transaction confirmed on ${chain}, so the funds have left. They arrive on ` +
+          `${chainName(destinationChainOf(plan.intent))} after the bridge settles, which Ottopus does not yet watch — ` +
+          `check the destination wallet or the explorer.${txWords}`
+        )
+      }
       return `Confirmed on ${chain}: ${plan.humanPlan.summary} went through.${txWords}`
     case 'failed': {
       const reason = record.statusDetail?.reason

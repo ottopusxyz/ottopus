@@ -118,23 +118,45 @@ export const swapIntentSchema = z
     { message: `${SAME_CHAIN} — swapping across chains is a bridge` },
   )
 
-/** Stretch capabilities. Defined now so the plan format does not change later. */
+/**
+ * A bridge: the same question a swap asks, with the two assets on different
+ * chains.
+ *
+ * Shaped exactly like a swap on purpose. It used to be `{asset, amount,
+ * toChain}`, which could only move the same asset to another chain — so
+ * "USDC on Base for ETH on mainnet", the thing people actually ask for, was
+ * not expressible at all. With `from` and `to` it is, and the destination
+ * chain is read off `to` rather than repeated in a field that could disagree
+ * with it.
+ *
+ * The kind stays separate from `swap` even though the fields match, because
+ * what differs is everything after the plan: a bridge is two chains, a wait,
+ * and a source transaction confirming while the money is still in transit.
+ * The review and the state machine need to know that, and the kind is the
+ * cheapest place to carry it.
+ */
 export const bridgeIntentSchema = z
   .object({
     ...base,
     kind: z.literal('bridge'),
-    asset: assetIdSchema,
-    amount: amountSchema,
-    toChain: chainIdSchema,
+    from: assetIdSchema,
+    to: assetIdSchema,
+    /** Exactly one side is fixed; the other is what the route determines. */
+    amountIn: amountSchema.optional(),
+    amountOut: amountSchema.optional(),
+    slippageBps: slippageBpsSchema.optional(),
+  })
+  .refine((v) => (v.amountIn === undefined) !== (v.amountOut === undefined), {
+    message: 'give exactly one of amountIn or amountOut',
   })
   .refine(
     (v) =>
       v.fromAccount === undefined ||
-      sameChain(chainOf(parseAssetId(v.asset)), chainOf(parseAccountId(v.fromAccount))),
-    { message: 'the source account must be on the same chain as the asset' },
+      sameChain(chainOf(parseAssetId(v.from)), chainOf(parseAccountId(v.fromAccount))),
+    { message: 'the source account must be on the same chain as the asset going in' },
   )
-  .refine((v) => !sameChain(chainOf(parseAssetId(v.asset)), parseChainId(v.toChain)), {
-    message: 'a bridge must cross chains — source and destination are the same',
+  .refine((v) => !sameChain(chainOf(parseAssetId(v.from)), chainOf(parseAssetId(v.to))), {
+    message: 'a bridge must cross chains — source and destination are the same, which is a swap',
   })
 
 export const supplyIntentSchema = z
@@ -162,6 +184,12 @@ export const intentSchema = z.union([
 export type TransferIntent = z.infer<typeof transferIntentSchema>
 export type SwapIntent = z.infer<typeof swapIntentSchema>
 export type BridgeIntent = z.infer<typeof bridgeIntentSchema>
+/**
+ * A swap or a bridge: identical fields, and the same question to a router.
+ * Named so the policy and the tool can write one rule set for both and let
+ * the chain comparison decide what differs.
+ */
+export type TradeIntent = SwapIntent | BridgeIntent
 export type SupplyIntent = z.infer<typeof supplyIntentSchema>
 export type Intent = z.infer<typeof intentSchema>
 
@@ -176,5 +204,30 @@ export type Intent = z.infer<typeof intentSchema>
  * other than what was asked for.
  */
 export function sourceChainOf(intent: Intent): ChainId {
-  return chainOf(parseAssetId(intent.kind === 'swap' ? intent.from : intent.asset))
+  return chainOf(parseAssetId(sourceAssetOf(intent)))
+}
+
+/** The asset that leaves. `from` for a trade, `asset` for everything else. */
+export function sourceAssetOf(intent: Intent): string {
+  return 'from' in intent ? intent.from : intent.asset
+}
+
+/**
+ * Where the value ends up. The same chain as the source for everything except
+ * a bridge, which is the whole point of a bridge.
+ *
+ * Read off the destination asset rather than a field of its own, so there is
+ * no way for the two to disagree.
+ */
+export function destinationChainOf(intent: Intent): ChainId {
+  // Keyed on the kind, not on whether a `to` exists: a transfer has one too,
+  // and it is a CAIP-10 account rather than a CAIP-19 asset. Reading it as an
+  // asset threw on every transfer.
+  const trade = intent.kind === 'swap' || intent.kind === 'bridge'
+  return chainOf(parseAssetId(trade ? intent.to : sourceAssetOf(intent)))
+}
+
+/** True when the value has to cross a chain boundary to arrive. */
+export function crossesChains(intent: Intent): boolean {
+  return !sameChain(sourceChainOf(intent), destinationChainOf(intent))
 }

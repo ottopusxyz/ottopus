@@ -50,7 +50,7 @@ async function verify(
   calls: Call[],
   allowedSpenders?: string[],
   simulation?: Simulation | null,
-  quote?: { expectedOut?: string; minOut?: string },
+  quote?: { expectedOut?: string; minOut?: string; nativeFee?: string | null },
 ) {
   const decodedActions = await decodeCalls(calls, lookups)
   return verifyPlan({
@@ -242,13 +242,9 @@ describe('global rules', () => {
   })
 
   it('fails closed for kinds it has no rules for yet', () => {
-    for (const intent of [
-      { kind: 'bridge', asset: `${CHAIN}/slip44:60`, amount: '1', toChain: 'eip155:1' },
-      { kind: 'supply', asset: `${CHAIN}/erc20:${USDC}`, amount: '1', protocol: 'aave-v3' },
-    ] as Intent[]) {
-      const verdict = verifyPlan({ intent, calls: [], decodedActions: [] })
-      expect(!verdict.ok && verdict.reasons).toEqual([`${intent.kind} plans cannot be verified yet`])
-    }
+    const intent = { kind: 'supply', asset: `${CHAIN}/erc20:${USDC}`, amount: '1', protocol: 'aave-v3' } as Intent
+    const verdict = verifyPlan({ intent, calls: [], decodedActions: [] })
+    expect(!verdict.ok && verdict.reasons).toEqual(['supply plans cannot be verified yet'])
   })
 })
 
@@ -374,14 +370,14 @@ describe('a swap', () => {
   it('blocks approving more than it swaps', async () => {
     const verdict = await ok(tokenIn, [call(USDC, approve(ROUTER, 600_000_000n)), swapCall()])
     expect(verdict.ok === false && verdict.reasons).toContain(
-      'the plan approves 600000000 but the intent swaps 500000000; a swap approves exactly what it swaps',
+      'the plan approves 600000000 but the intent spends 500000000; a trade approves exactly what it spends',
     )
   })
 
   it('blocks an unlimited approval even to the right router', async () => {
     const verdict = await ok(tokenIn, [call(USDC, approve(ROUTER, maxUint256)), swapCall()])
     expect(verdict.ok).toBe(false)
-    expect((verdict.ok === false && verdict.reasons).toString()).toContain('a swap approves exactly what it swaps')
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('a trade approves exactly what it spends')
   })
 
   /** The shape a drain takes: approve one address, call another. */
@@ -395,14 +391,14 @@ describe('a swap', () => {
   it('blocks an approval on a token other than the one being swapped', async () => {
     const verdict = await ok(tokenIn, [call(MALLORY, approve(ROUTER, 500_000_000n)), swapCall()])
     expect(verdict.ok === false && verdict.reasons).toContain(
-      'the approval is on 0x9999…9999, not on the token being swapped',
+      'the approval is on 0x9999…9999, not on the token being spent',
     )
   })
 
   it('blocks a third call', async () => {
     const verdict = await ok(tokenIn, [call(USDC, approve(ROUTER, 500_000_000n)), swapCall(), swapCall()])
     expect(verdict.ok === false && verdict.reasons).toContain(
-      'a swap is one router call, with an approval at most; this plan has 3',
+      'a trade is one router call, with an approval at most; this plan has 3',
     )
   })
 
@@ -413,14 +409,14 @@ describe('a swap', () => {
 
   it('blocks native value that does not match the intent', async () => {
     const verdict = await ok(nativeIn, [swapCall('999')])
-    expect(verdict.ok === false && verdict.reasons).toContain('the swap sends 999 wei, but the intent says 1000')
+    expect(verdict.ok === false && verdict.reasons).toContain('the call sends 999 wei, but the intent says 1000')
   })
 
   describe('the floor the page promises', () => {
     it('is required', async () => {
       const verdict = await verify(nativeIn, [swapCall('1000')], [ROUTER_ID], undefined, {})
       expect(verdict.ok === false && verdict.reasons).toContain(
-        'the quote gives no minimum received; a swap cannot be reviewed without a floor',
+        'the quote gives no minimum received; a trade cannot be reviewed without a floor',
       )
     })
 
@@ -455,5 +451,127 @@ describe('a swap', () => {
     expect(verdict.ok === false && verdict.reasons).toContain(
       'the simulation received 990000, below the 995000 the quote promised',
     )
+  })
+})
+
+describe('a bridge', () => {
+  const ROUTER_ID = `${CHAIN}:${ROUTER}`
+  const crossing: Intent = {
+    kind: 'bridge',
+    from: `${CHAIN}/erc20:${USDC}`,
+    to: 'eip155:1/slip44:60',
+    amountIn: '500000000',
+  }
+  const approve = (spender: string, amount: bigint) =>
+    encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [spender, amount] })
+  const calls = () => [call(USDC, approve(ROUTER, 500_000_000n)), call(ROUTER, '0xdeadbeef')]
+  const floor = { expectedOut: '27639745518623', minOut: '27501546791030' }
+
+  it('passes the same checks a swap does', async () => {
+    const verdict = await verify(crossing, calls(), [ROUTER_ID], undefined, floor)
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+  })
+
+  it('is held to the same exact approval', async () => {
+    const verdict = await verify(
+      crossing,
+      [call(USDC, approve(ROUTER, maxUint256)), call(ROUTER, '0xdeadbeef')],
+      [ROUTER_ID],
+      undefined,
+      floor,
+    )
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('a trade approves exactly what it spends')
+  })
+
+  /**
+   * The one rule that cannot apply. The output arrives on another chain
+   * minutes later, so a source-chain run seeing nothing arrive proves
+   * nothing — blocking on it would refuse every bridge.
+   */
+  it('is not blocked for an arrival its own chain could never observe', async () => {
+    const sim: Simulation = {
+      provider: 'eth_simulateV1',
+      chainId: CHAIN,
+      blockNumber: '1',
+      success: true,
+      // The input left; nothing came back, because it comes back elsewhere.
+      assetChanges: [delta(`${CHAIN}/erc20:${USDC}`, '-500000000', 'USDC', 6)],
+      gasUsed: '210000',
+      gasUsd: '0.04',
+      resultHash: 'd'.repeat(64),
+      ranAt: '2026-09-10T12:00:00.000Z',
+    }
+    const verdict = await verify(crossing, calls(), [ROUTER_ID], sim, floor)
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+  })
+
+  /** The same shortfall on one chain still blocks, so the guard is about crossing. */
+  it('still blocks a same-chain trade that received less than promised', async () => {
+    const sameChain: Intent = { ...crossing, kind: 'swap', to: `${CHAIN}/slip44:60` }
+    const sim: Simulation = {
+      provider: 'eth_simulateV1',
+      chainId: CHAIN,
+      blockNumber: '1',
+      success: true,
+      assetChanges: [
+        delta(`${CHAIN}/erc20:${USDC}`, '-500000000', 'USDC', 6),
+        delta(`${CHAIN}/slip44:60`, '1', 'ETH', 18),
+      ],
+      gasUsed: '210000',
+      gasUsd: '0.04',
+      resultHash: 'e'.repeat(64),
+      ranAt: '2026-09-10T12:00:00.000Z',
+    }
+    const verdict = await verify(sameChain, calls(), [ROUTER_ID], sim, floor)
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('below the')
+  })
+})
+
+describe('native value a route declares', () => {
+  const ROUTER_ID = `${CHAIN}:${ROUTER}`
+  const crossing: Intent = { kind: 'bridge', from: `${CHAIN}/erc20:${USDC}`, to: 'eip155:1/slip44:60', amountIn: '500000000' }
+  const approve = (amount: bigint) => encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [ROUTER, amount] })
+  const withFee = (wei: string) => [call(USDC, approve(500_000_000n)), call(ROUTER, '0xdeadbeef', wei)]
+  const floor = { expectedOut: '27639745518623', minOut: '27501546791030' }
+
+  /**
+   * Found live: a USDC bridge from Base to Arbitrum carried 0.00004 ETH for
+   * the relayer, and the policy blocked it as value nobody asked for. It was
+   * right to be suspicious and wrong to be certain — so the route declares
+   * the fee and gets held to the declaration.
+   */
+  it('passes a fee the route declared, and says so on the plan', async () => {
+    const verdict = await verify(crossing, withFee('40106615832154'), [ROUTER_ID], undefined, {
+      ...floor,
+      nativeFee: '40106615832154',
+    })
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+    expect(verdict.warnings.map((w) => w.code)).toContain('route_native_fee')
+  })
+
+  it('blocks value above what was declared', async () => {
+    const verdict = await verify(crossing, withFee('40106615832155'), [ROUTER_ID], undefined, {
+      ...floor,
+      nativeFee: '40106615832154',
+    })
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('above the 40106615832154 the route declared')
+  })
+
+  it('blocks value nothing declared at all', async () => {
+    const verdict = await verify(crossing, withFee('1'), [ROUTER_ID], undefined, floor)
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('which the intent did not ask for')
+  })
+
+  /** A declaration is spent once, not charged per call. */
+  it('does not let one declared fee cover two calls', async () => {
+    const calls = [call(USDC, approve(500_000_000n), '5'), call(ROUTER, '0xdeadbeef', '5')]
+    const verdict = await verify(crossing, calls, [ROUTER_ID], undefined, { ...floor, nativeFee: '5' })
+    expect((verdict.ok === false && verdict.reasons).toString()).toContain('above the 5 the route declared')
+  })
+
+  it('still lets a native-input trade send its own value freely', async () => {
+    const native: Intent = { kind: 'swap', from: `${CHAIN}/slip44:60`, to: `${CHAIN}/erc20:${USDC}`, amountIn: '1000' }
+    const verdict = await verify(native, [call(ROUTER, '0xdeadbeef', '1000')], [ROUTER_ID], undefined, floor)
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
   })
 })

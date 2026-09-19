@@ -4,7 +4,7 @@ import type { SessionUser } from '../auth/session.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
-import { type SwapDeps, prepareSwap, swapText } from './swap.js'
+import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
 
 /**
@@ -287,20 +287,23 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
    * not match its router call never gets a link.
    */
   server.registerTool(
-    'prepare_swap',
+    'prepare_trade',
     {
-      title: 'Prepare a swap',
+      title: 'Prepare a swap or a bridge',
       description:
-        'Build a plan to swap one token for another on the same chain. Picks the wallet with a stated ' +
-        'reason unless one is given, asks the routing provider for a route, checks the calls it returns, ' +
-        'and returns a review link with the minimum received and the fees on it. Approvals are exact, ' +
-        'never unlimited. The person opens the link and signs in their own wallet; nothing moves until ' +
-        'they do. Amounts are in base units. For a swap across chains, that is a bridge, not this tool.',
+        'Build a plan to turn one asset into another. Same chain is a swap, different chains a bridge — ' +
+        'give the two assets and Ottopus works out which. Picks the wallet with a stated reason unless ' +
+        'one is given, asks the routing provider for a route, checks the calls it returns, and returns a ' +
+        'review link with the minimum received and the fees on it. Approvals are exact, never unlimited. ' +
+        'The person opens the link and signs in their own wallet; nothing moves until they do. Amounts ' +
+        'are in base units.',
       inputSchema: {
         from: z
           .string()
           .describe('CAIP-19 asset to spend, exactly as get_portfolio lists it under assetId. Never guess a token contract from its symbol.'),
-        to: z.string().describe('CAIP-19 asset to receive, on the same chain as `from`.'),
+        to: z
+          .string()
+          .describe('CAIP-19 asset to receive. On the same chain as `from` for a swap, on another for a bridge.'),
         amountIn: z
           .string()
           .regex(/^[0-9]+$/)
@@ -318,15 +321,15 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           .max(5000)
           .optional()
           .describe('Tolerance in basis points; 50 is 0.5%. The provider’s default when omitted.'),
-        fromAccount: z.string().optional().describe('CAIP-10 of a linked wallet to swap from. Omit to let Ottopus recommend one.'),
+        fromAccount: z.string().optional().describe('CAIP-10 of a linked wallet to spend from. Omit to let Ottopus recommend one.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (input) => {
       if (!hasScope(ctx.scopes, 'plans:write')) return denied('plans:write')
-      const outcome = await prepareSwap({ userId: ctx.userId, grantId: ctx.grantId }, deps, input)
-      const body = swapText(outcome)
+      const outcome = await prepareTrade({ userId: ctx.userId, grantId: ctx.grantId }, deps, input)
+      const body = tradeText(outcome)
       if (outcome.kind === 'invalid' || outcome.kind === 'no_wallet' || outcome.kind === 'no_route') {
         return failure(body)
       }

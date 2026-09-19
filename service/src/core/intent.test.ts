@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { amountSchema, bridgeIntentSchema, swapIntentSchema, transferIntentSchema } from './intent.js'
+import {
+  amountSchema,
+  bridgeIntentSchema,
+  crossesChains,
+  destinationChainOf,
+  sourceChainOf,
+  swapIntentSchema,
+  transferIntentSchema,
+} from './intent.js'
 
 describe('amounts', () => {
   it('takes base units as a string', () => {
@@ -120,25 +128,72 @@ describe('every identifier in an intent must be on one chain', () => {
 })
 
 describe('bridge intent', () => {
-  it('rejects a bridge that does not cross chains', () => {
+  it('rejects a bridge that does not cross chains, and names what that is', () => {
     expect(() =>
       bridgeIntentSchema.parse({
         kind: 'bridge',
-        asset: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
-        amount: '1',
-        toChain: 'eip155:8453',
+        from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        to: 'eip155:8453/slip44:60',
+        amountIn: '1',
       }),
     ).toThrow(/must cross chains/)
   })
 
-  it('accepts a real bridge', () => {
+  /**
+   * The case the old shape could not express. A bridge used to be `{asset,
+   * amount, toChain}`, which only moved the same asset elsewhere — so "USDC
+   * on Base for ETH on BNB Chain", the thing people ask for, had nowhere to
+   * live.
+   */
+  it('accepts a different asset on the other side', () => {
     const ok = bridgeIntentSchema.parse({
       kind: 'bridge',
+      from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      to: 'eip155:56/slip44:714',
+      amountIn: '1',
+    })
+    expect(ok).toMatchObject({ from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', to: 'eip155:56/slip44:714', amountIn: '1' })
+  })
+
+  it('insists on exactly one side being fixed, like a swap', () => {
+    const both = { kind: 'bridge', from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', to: 'eip155:56/slip44:714' }
+    expect(() => bridgeIntentSchema.parse({ ...both, amountIn: '1', amountOut: '2' })).toThrow(/exactly one/)
+    expect(() => bridgeIntentSchema.parse(both)).toThrow(/exactly one/)
+  })
+
+  it('reads the destination chain off the asset, and knows it is crossing', () => {
+    const bridge = bridgeIntentSchema.parse({
+      kind: 'bridge',
+      from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      to: 'eip155:56/slip44:714',
+      amountIn: '1',
+    })
+    expect(sourceChainOf(bridge)).toEqual({ namespace: 'eip155', reference: '8453' })
+    expect(destinationChainOf(bridge)).toEqual({ namespace: 'eip155', reference: '56' })
+    expect(crossesChains(bridge)).toBe(true)
+  })
+
+  /** A transfer's `to` is an account, not an asset; reading it as one threw. */
+  it('reads a transfer’s destination from its asset, never from its recipient', () => {
+    const transfer = transferIntentSchema.parse({
+      kind: 'transfer',
       asset: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
       amount: '1',
-      toChain: 'eip155:56',
+      to: 'eip155:8453:0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
     })
-    expect(ok.toChain).toBe('eip155:56')
+    expect(destinationChainOf(transfer)).toEqual({ namespace: 'eip155', reference: '8453' })
+    expect(crossesChains(transfer)).toBe(false)
+  })
+
+  it('says a swap and a transfer stay on one chain', () => {
+    const swap = swapIntentSchema.parse({
+      kind: 'swap',
+      from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      to: 'eip155:8453/slip44:60',
+      amountIn: '1',
+    })
+    expect(crossesChains(swap)).toBe(false)
+    expect(destinationChainOf(swap)).toEqual(sourceChainOf(swap))
   })
 })
 

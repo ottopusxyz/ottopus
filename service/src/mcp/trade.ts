@@ -3,7 +3,7 @@ import type { Portfolio } from '../connectors/portfolio/index.js'
 import { RouteError, type RouteConnector, type RouteQuote } from '../connectors/route/index.js'
 import {
   type PlanDraft,
-  type SwapIntent,
+  type TradeIntent,
   type WalletCandidate,
   type Warning,
   accountOn,
@@ -14,7 +14,10 @@ import {
   parseAccountId,
   parseAssetId,
   planDraftSchema,
-  resolveSwapWallet,
+  bridgeIntentSchema,
+  crossesChains,
+  destinationChainOf,
+  resolveTradeWallet,
   sourceChainOf,
   swapIntentSchema,
 } from '../core/index.js'
@@ -25,8 +28,15 @@ import { humanAmount, truncateAddress } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
 /**
- * prepare_swap, end to end: intent, wallet, route, decode, verify, hash,
- * store, link.
+ * prepare_trade, end to end: intent, wallet, route, decode, verify, hash,
+ * store, link. One tool for a swap and a bridge.
+ *
+ * One tool because the split leaked our vocabulary to the agent. Ask for ETH
+ * on Arbitrum using Base USDC and there is no honest answer to "is that a
+ * swap or a bridge" — it is both — and the old `prepare_swap` refused the
+ * pair by naming a tool that did not exist. Here the chains are compared and
+ * the intent kind follows, so the agent describes what it wants and Ottopus
+ * decides what that is.
  *
  * The shape is deliberately the transfer pipeline with one step inserted. A
  * transfer builds its own single call because there is nothing to decide; a
@@ -39,15 +49,15 @@ import type { PrepareContext, PrepareDeps } from './transfer.js'
  * otherwise would leave somebody signing a floor nobody still offers.
  */
 
-/** A swap's own ceiling, when a quote lives longer than we want a link to. */
-export const SWAP_PLAN_TTL_MS = 5 * 60_000
+/** A trade's own ceiling, when a quote lives longer than we want a link to. */
+export const TRADE_PLAN_TTL_MS = 5 * 60_000
 
 export interface SwapDeps extends PrepareDeps {
   /** Null on a deployment with no routing provider configured. */
   router: RouteConnector | null
 }
 
-export interface PrepareSwapInput {
+export interface PrepareTradeInput {
   from: string
   to: string
   amountIn?: string | undefined
@@ -57,7 +67,7 @@ export interface PrepareSwapInput {
   note?: string | undefined
 }
 
-export type SwapOutcome =
+export type TradeOutcome =
   | { kind: 'invalid'; reasons: string[] }
   | { kind: 'no_wallet'; reasons: string[] }
   | { kind: 'no_route'; reasons: string[] }
@@ -66,10 +76,14 @@ export type SwapOutcome =
       kind: 'ready'
       planId: string
       status: 'awaiting_review'
+      /** Which shape it turned out to be, since the caller did not have to say. */
+      trade: 'swap' | 'bridge'
       summary: string
       recommendedAccount: string
       reason: string
       route: string
+      /** The provider's estimate of how long it takes, in seconds. */
+      etaSeconds: number | null
       expectedOut: string
       minOut: string
       slippageBps: number | null
@@ -106,7 +120,7 @@ function holdingOf(portfolio: Portfolio | null, assetId: string, walletId: strin
 
 function candidatesFrom(
   arms: readonly Arm[],
-  intent: SwapIntent,
+  intent: TradeIntent,
   portfolio: Portfolio | null,
   gasAsset: string,
 ): WalletCandidate[] {
@@ -123,29 +137,43 @@ function candidatesFrom(
     }))
 }
 
-export function swapSummary(
-  intent: SwapIntent,
+export function tradeSummary(
+  intent: TradeIntent,
   quote: RouteQuote,
   from: AssetWords,
   to: AssetWords,
   signer: { label?: string | undefined; caip10: string },
 ): string {
-  const paid = intent.amountIn
-    ? `${humanAmount(intent.amountIn, from.decimals)} ${from.symbol}`
-    : `${from.symbol}`
+  const paid = intent.amountIn ? `${humanAmount(intent.amountIn, from.decimals)} ${from.symbol}` : from.symbol
   const got = `${humanAmount(quote.expectedOut, to.decimals)} ${to.symbol}`
   const who = signer.label ?? truncateAddress(parseAccountId(signer.caip10).address)
-  return `Swap ${paid} for about ${got} from ${who} on ${chainName(sourceChainOf(intent))}`
+  const source = chainName(sourceChainOf(intent))
+  if (!crossesChains(intent)) return `Swap ${paid} for about ${got} from ${who} on ${source}`
+  // Both chains named, because which one it lands on is the whole point.
+  return `Bridge ${paid} on ${source} for about ${got} on ${chainName(destinationChainOf(intent))} from ${who}`
 }
 
-export async function prepareSwap(
+export async function prepareTrade(
   ctx: PrepareContext,
   deps: SwapDeps,
-  input: PrepareSwapInput,
+  input: PrepareTradeInput,
   now: Date = new Date(),
-): Promise<SwapOutcome> {
-  const parsed = swapIntentSchema.safeParse({
-    kind: 'swap',
+): Promise<TradeOutcome> {
+  // The chains decide what this is. Read before the intent is parsed, because
+  // which schema parses it depends on the answer.
+  let crossing: boolean
+  try {
+    const a = parseAssetId(input.from)
+    const b = parseAssetId(input.to)
+    crossing = a.namespace !== b.namespace || a.reference !== b.reference
+  } catch {
+    return {
+      kind: 'invalid',
+      reasons: ['from and to must both be CAIP-19 asset ids, exactly as get_portfolio lists them under assetId'],
+    }
+  }
+  const parsed = (crossing ? bridgeIntentSchema : swapIntentSchema).safeParse({
+    kind: crossing ? 'bridge' : 'swap',
     from: input.from,
     to: input.to,
     ...(input.amountIn ? { amountIn: input.amountIn } : {}),
@@ -167,7 +195,7 @@ export async function prepareSwap(
     return {
       kind: 'invalid',
       reasons: [
-        `${chainName(chain)} (${chainId}) is not supported for swaps yet: Ottopus cannot name its native currency, ` +
+        `${chainName(chain)} (${chainId}) is not supported for trades yet: Ottopus cannot name its native currency, ` +
           'so it cannot check for gas.',
       ],
     }
@@ -175,8 +203,20 @@ export async function prepareSwap(
   if (!deps.router) {
     return { kind: 'no_route', reasons: ['no routing provider is configured on this deployment, so no swap can be quoted'] }
   }
-  if (!deps.router.serves(chainId, chainId)) {
-    return { kind: 'no_route', reasons: [`${deps.router.name} does not route swaps on ${chainName(chain)}`] }
+  const destination = destinationChainOf(intent)
+  const destinationId = `${destination.namespace}:${destination.reference}`
+  if (!findChain(destination)) {
+    return { kind: 'invalid', reasons: [`chain ${destinationId} is not one Ottopus knows`] }
+  }
+  if (!deps.router.serves(chainId, destinationId)) {
+    return {
+      kind: 'no_route',
+      reasons: [
+        crossing
+          ? `${deps.router.name} does not route from ${chainName(chain)} to ${chainName(destination)}`
+          : `${deps.router.name} does not route swaps on ${chainName(chain)}`,
+      ],
+    }
   }
 
   const arms = await deps.listWallets(ctx.userId)
@@ -190,7 +230,7 @@ export async function prepareSwap(
   const fromWords = wordsFor(intent.from, portfolio)
   const toWords = wordsFor(intent.to, portfolio)
   const native = isNativeAsset(intent.from)
-  const chosen = resolveSwapWallet({
+  const chosen = resolveTradeWallet({
     intent,
     candidates: candidatesFrom(arms, intent, portfolio, gasAsset),
     asset: fromWords,
@@ -215,11 +255,22 @@ export async function prepareSwap(
 
   // The plan cannot outlive the price it quotes, and need not live as long.
   const quoteExpiry = Date.parse(quote.expiresAt)
-  const ceiling = now.getTime() + SWAP_PLAN_TTL_MS
+  const ceiling = now.getTime() + TRADE_PLAN_TTL_MS
   const expiresAt = new Date(Math.min(Number.isFinite(quoteExpiry) ? quoteExpiry : ceiling, ceiling)).toISOString()
 
-  const summary = swapSummary(intent, quote, fromWords, toWords, chosen.resolution.account)
-  const floor = `At least ${humanAmount(quote.minOut, toWords.decimals)} ${toWords.symbol}, or it reverts`
+  const summary = tradeSummary(intent, quote, fromWords, toWords, chosen.resolution.account)
+  const floor = crossing
+    ? `At least ${humanAmount(quote.minOut, toWords.decimals)} ${toWords.symbol} arriving on ${chainName(destination)}`
+    : `At least ${humanAmount(quote.minOut, toWords.decimals)} ${toWords.symbol}, or it reverts`
+  // Arrival is the bridge's promise. Saying whose estimate it is matters more
+  // than the number: Ottopus cannot make it true and does not watch it yet.
+  const arrival = crossing
+    ? [
+        quote.etaSeconds === null
+          ? `${quote.provider} does not estimate how long the crossing takes. Arrival is the bridge's promise, not Ottopus's.`
+          : `${quote.provider} estimates ${durationWords(quote.etaSeconds)} to arrive. That is the bridge's estimate, not Ottopus's.`,
+      ]
+    : []
   const draft: PlanDraft = planDraftSchema.parse({
     id: randomUUID(),
     version: 1,
@@ -237,7 +288,7 @@ export async function prepareSwap(
     },
     humanPlan: {
       summary,
-      steps: [...quote.steps, floor, ...(intent.note ? [`Note from the request: ${intent.note}`] : [])],
+      steps: [...quote.steps, floor, ...arrival, ...(intent.note ? [`Note from the request: ${intent.note}`] : [])],
       feesUsd: quote.feesUsd ?? 'unknown',
       warnings: [],
       assets: [
@@ -257,7 +308,7 @@ export async function prepareSwap(
     // Exactly one spender may be approved: the one the route asked for. The
     // policy blocks any other, and checks it is the contract being called.
     allowedSpenders: quote.approval ? [quote.approval.spender] : [],
-    quote: { expectedOut: quote.expectedOut, minOut: quote.minOut },
+    quote: { expectedOut: quote.expectedOut, minOut: quote.minOut, nativeFee: quote.nativeFee },
   })
   const warnings = blockWarnings(verdict)
   const plan = assemblePlan(
@@ -274,12 +325,14 @@ export async function prepareSwap(
     kind: 'ready',
     planId: record.plan.id,
     status: 'awaiting_review',
+    trade: crossing ? 'bridge' : 'swap',
     summary,
     recommendedAccount: chosen.resolution.account.label
       ? `${chosen.resolution.account.label} (${truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)})`
       : truncateAddress(parseAccountId(chosen.resolution.account.caip10).address),
     reason: chosen.resolution.reason,
     route: quote.steps.join(' → '),
+    etaSeconds: quote.etaSeconds,
     expectedOut: quote.expectedOut,
     minOut: quote.minOut,
     slippageBps: intent.slippageBps ?? null,
@@ -291,26 +344,37 @@ export async function prepareSwap(
   }
 }
 
+/** Seconds as something a person reads. Rounded: nobody needs 187 seconds. */
+export function durationWords(seconds: number): string {
+  if (seconds < 90) return `about ${Math.max(1, Math.round(seconds))} seconds`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 90) return `about ${minutes} minutes`
+  return `about ${Math.round(minutes / 60)} hours`
+}
+
 /** The words the agent reads out. The structured copy carries the same facts. */
-export function swapText(outcome: SwapOutcome): string {
+export function tradeText(outcome: TradeOutcome): string {
   switch (outcome.kind) {
     case 'invalid':
-      return `That is not a swap Ottopus can build:\n${outcome.reasons.map((r) => `- ${r}`).join('\n')}`
+      return `That is not a trade Ottopus can build:\n${outcome.reasons.map((r) => `- ${r}`).join('\n')}`
     case 'no_wallet':
-      return `No linked wallet can make this swap:\n${outcome.reasons.map((r) => `- ${r}`).join('\n')}`
+      return `No linked wallet can make this trade:\n${outcome.reasons.map((r) => `- ${r}`).join('\n')}`
     case 'no_route':
       return `No route was found:\n${outcome.reasons.map((r) => `- ${r}`).join('\n')}`
     case 'blocked':
       return [
         `Ottopus refused to build "${outcome.summary}":`,
         ...outcome.reasons.map((r) => `- ${r}`),
-        'The refusal is recorded in Activity. Nothing was swapped.',
+        'The refusal is recorded in Activity. Nothing was traded.',
       ].join('\n')
     case 'ready':
       return [
         `Plan ready: ${outcome.summary}.`,
         outcome.reason,
         `Route: ${outcome.route}.`,
+        ...(outcome.trade === 'bridge'
+          ? ['This crosses chains: the source transaction confirms first and the funds arrive after that.']
+          : []),
         ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
         `Review and sign: ${outcome.reviewUrl}`,
         `The quote holds until ${outcome.expiresAt}. Nothing moves until the person signs in their own wallet.`,

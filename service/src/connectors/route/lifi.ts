@@ -73,6 +73,7 @@ interface LifiQuote {
     toAmount?: string
     toAmountMin?: string
     approvalAddress?: string
+    executionDuration?: number
     feeCosts?: { amountUSD?: string }[]
     gasCosts?: { amountUSD?: string }[]
   }
@@ -175,12 +176,18 @@ export function lifiConnector(options: LifiOptions = {}): RouteConnector {
           chainId: fromChain,
         })
       }
+      const value = BigInt(tx.value ?? '0').toString()
       calls.push({
         to: accountOn(chain, tx.to),
-        value: BigInt(tx.value ?? '0').toString(),
+        value,
         data: tx.data.toLowerCase(),
         chainId: fromChain,
       })
+
+      // Native value on a token route is the bridge's fee, and it has to be
+      // declared to survive the policy. Seen live: a USDC bridge from Base to
+      // Arbitrum carried 0.00004 ETH.
+      const nativeFee = !isNativeAsset(request.fromAsset) && value !== '0' ? value : null
 
       return {
         provider: LIFI_PROVIDER,
@@ -188,8 +195,10 @@ export function lifiConnector(options: LifiOptions = {}): RouteConnector {
         expectedOut: estimate.toAmount,
         minOut: estimate.toAmountMin,
         approval,
+        nativeFee,
         feesUsd: totalUsd([...(estimate.feeCosts ?? []), ...(estimate.gasCosts ?? [])]),
         expiresAt: new Date(now().getTime() + ttl).toISOString(),
+        etaSeconds: typeof estimate.executionDuration === 'number' ? Math.round(estimate.executionDuration) : null,
         steps: stepWords(body, fromChain, `${to.namespace}:${to.reference}`),
         raw: body,
       }

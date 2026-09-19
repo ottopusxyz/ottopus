@@ -23,6 +23,7 @@ const quote = (over: Record<string, unknown> = {}) => ({
     toAmount: '120000000000000000',
     toAmountMin: '119400000000000000',
     approvalAddress: ROUTER,
+    executionDuration: 187,
     feeCosts: [{ amountUSD: '0.15' }],
     gasCosts: [{ amountUSD: '0.16' }],
   },
@@ -106,6 +107,27 @@ describe('the route provider', () => {
     expect(route.calls[1]).toMatchObject({ to: `${BASE}:${ROUTER}`, data: '0xabcdef', value: '0', chainId: BASE })
   })
 
+  /** Seen live on a Base to Arbitrum bridge: the relayer wants paying in ETH. */
+  it('declares native value on a token route as the route’s fee', async () => {
+    const { connector } = server(quote({ transactionRequest: { to: ROUTER, data: '0xabc0', value: '40106615832154', chainId: 8453 } }))
+    const route = await connector.route(swap)
+    expect(route.nativeFee).toBe('40106615832154')
+    expect(route.calls[1]!.value).toBe('40106615832154')
+  })
+
+  it('declares no fee when a token route sends no value', async () => {
+    const { connector } = server(quote())
+    expect((await connector.route(swap)).nativeFee).toBeNull()
+  })
+
+  /** A native input's value is the trade itself, not a fee on top of it. */
+  it('declares no fee when the input is the chain’s own currency', async () => {
+    const { connector } = server(quote({ transactionRequest: { to: ROUTER, data: '0xabc0', value: '1000', chainId: 8453 } }))
+    const route = await connector.route({ ...swap, fromAsset: `${BASE}/slip44:60`, toAsset: `${BASE}/erc20:${USDC}` })
+    expect(route.nativeFee).toBeNull()
+    expect(route.calls[0]!.value).toBe('1000')
+  })
+
   it('needs no approval when the input is the chain’s own currency', async () => {
     const { connector } = server(quote())
     const route = await connector.route({ ...swap, fromAsset: `${BASE}/slip44:60`, toAsset: `${BASE}/erc20:${USDC}` })
@@ -138,6 +160,13 @@ describe('the route provider', () => {
     )
     const route = await connector.route(swap)
     expect(route.steps).toEqual(['Swap on SushiSwap Aggregator'])
+  })
+
+  it('carries the provider’s own estimate of how long it takes', async () => {
+    const { connector } = server(quote())
+    expect((await connector.route(swap)).etaSeconds).toBe(187)
+    const silent = server(quote({ estimate: { toAmount: '1', toAmountMin: '1' } }))
+    expect((await silent.connector.route(swap)).etaSeconds).toBeNull()
   })
 
   it('gives the quote a clock of its own, since the provider gives none', async () => {

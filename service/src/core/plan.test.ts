@@ -202,9 +202,9 @@ describe('the plan is bound to its intent', () => {
       ...base,
       intent: {
         kind: 'bridge' as const,
-        asset: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
-        amount: '1',
-        toChain: 'eip155:56',
+        from: 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        to: 'eip155:56/slip44:714',
+        amountIn: '1',
       },
       resolution: {
         account: { caip10: 'eip155:8453:0x0000000000000000000000000000000000000001' },

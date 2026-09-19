@@ -69,10 +69,28 @@ export interface RouteQuote {
   minOut: string
   /** Null when the input is the chain's own currency and no allowance is needed. */
   approval: RouteApproval | null
+  /**
+   * Native value the route needs alongside a token input, in wei, when it
+   * needs any.
+   *
+   * Bridges do: the relayer has to be paid and the destination gas has to
+   * come from somewhere, so a USDC bridge sends ETH too. That is native
+   * value leaving a wallet for something the intent never mentioned, which
+   * is exactly the shape the policy blocks — so the route has to declare it,
+   * and verify holds the calls to the declaration. Same arrangement as the
+   * approval: the provider says what it needs, and we check it took no more.
+   */
+  nativeFee: string | null
   /** Everything the route costs beyond gas, in USD, when the provider says. */
   feesUsd: string | null
   /** When the quote goes stale. Drives the plan's own expiry. */
   expiresAt: string
+  /**
+   * How long the route expects to take, in seconds, when it says. Meaningful
+   * for a bridge and near zero for a swap. It is the provider's estimate and
+   * the review page says so: arrival is the bridge's promise, not ours.
+   */
+  etaSeconds: number | null
   /** The route in words, one per hop: "Swap on Aerodrome", "Bridge with Across". */
   steps: string[]
   /** The provider's own body, for the audit row. Never rendered, never trusted. */
