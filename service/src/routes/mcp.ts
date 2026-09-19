@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { findUserById } from '../auth/session.js'
-import { createPlan, issueReviewLink } from '../plans/index.js'
+import { createPlan, findPlan, issueReviewLink, transition } from '../plans/index.js'
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import type { ToolDeps } from '../mcp/server.js'
@@ -85,6 +85,8 @@ if (!config.databaseUrl) {
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
       issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),
+    findPlan: (userId, planId) => findPlan(db, userId, planId),
+    transition: (input) => transition(db, input),
   }
 
   /**

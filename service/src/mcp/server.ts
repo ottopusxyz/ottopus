@@ -6,6 +6,7 @@ import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes
 import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
 import type { Lookups } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
+import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
 import { prepareText, prepareTransfer } from './transfer.js'
 
@@ -41,7 +42,7 @@ export interface ToolContext {
  * that knows how a userId becomes a row. `readPortfolio` is null when no
  * balance provider is configured, so the tool can say so instead of failing.
  */
-export interface ToolDeps {
+export interface ToolDeps extends StatusDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
   listWallets(userId: string): Promise<Arm[]>
@@ -67,6 +68,7 @@ const INSTRUCTIONS = [
   'Ottopus prepares wallet transactions for human review. It never signs and never broadcasts.',
   'Every prepare_* tool returns a plan and a review URL. The user opens that link, checks the',
   'decoded calls and the simulation, and signs in their own wallet. Nothing you do here moves funds.',
+  'get_plan reports what became of a plan; cancel_plan withdraws one that has not been signed.',
 ].join(' ')
 
 type ToolResult = {
@@ -279,6 +281,56 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       }
       const { kind: _kind, linkExpiresAt: _link, ...structured } = outcome
       return text(body, structured)
+    },
+  )
+
+  /**
+   * The two tools that follow a plan after it is built. Both answer in words
+   * and status, never in calls: an agent learns whether the person signed and
+   * what happened on chain, and nothing it could act on by itself.
+   */
+  server.registerTool(
+    'get_plan',
+    {
+      title: 'Get a plan',
+      description:
+        'Where a plan this agent prepared has got to: whether the person has signed, the transaction ' +
+        'hash once it is sent, and the outcome in words once the chain has decided. Poll it after ' +
+        'prepare_* to report back. Never returns the calls themselves. Read-only.',
+      inputSchema: {
+        planId: z.string().describe('The planId a prepare_* tool returned.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ planId }) => {
+      if (!hasScope(ctx.scopes, 'plans:read')) return denied('plans:read')
+      const outcome = await getPlan({ userId: ctx.userId, grantId: ctx.grantId }, deps, planId)
+      if (outcome.kind === 'not_found') return failure(getPlanText(outcome))
+      return text(getPlanText(outcome), { ...outcome.view })
+    },
+  )
+
+  server.registerTool(
+    'cancel_plan',
+    {
+      title: 'Cancel a plan',
+      description:
+        'Withdraw a plan this agent prepared, so the review link no longer signs. Only possible before ' +
+        'the person signs and sends it; afterwards the tool says so, because a sent transaction cannot ' +
+        'be taken back from here.',
+      inputSchema: {
+        planId: z.string().describe('The planId a prepare_* tool returned.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ planId }) => {
+      if (!hasScope(ctx.scopes, 'plans:write')) return denied('plans:write')
+      const outcome = await cancelPlan({ userId: ctx.userId, grantId: ctx.grantId }, deps, planId)
+      if (outcome.kind === 'not_found') return failure(cancelText(outcome))
+      const structured = { ...outcome.view, cancelled: outcome.kind === 'cancelled' }
+      return outcome.kind === 'cancelled'
+        ? text(cancelText(outcome), structured)
+        : { ...text(cancelText(outcome), structured), isError: true }
     },
   )
 

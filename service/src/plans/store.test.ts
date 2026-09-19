@@ -12,6 +12,7 @@ import {
   findPlan,
   listPending,
   listPlans,
+  listSubmitted,
   summarise,
   mintReviewToken,
   resolveReviewToken,
@@ -326,5 +327,45 @@ describe('listPlans', () => {
       blockedReason: null,
     })
     expect(JSON.stringify(summary)).not.toContain('"calls"')
+  })
+})
+
+describe('the receipt job’s reads', () => {
+  it('lists every user’s plans whose latest event is submitted, and nothing else', async () => {
+    const mine = planFor(alice)
+    const theirs = planFor(bob)
+    const done = planFor(alice)
+    const waiting = planFor(alice)
+    for (const plan of [mine, theirs, done, waiting]) await createPlan(db, { plan })
+    for (const [userId, plan] of [[alice, mine], [bob, theirs], [alice, done]] as const) {
+      await transition(db, { userId, planId: plan.id, version: 1, to: 'awaiting_signature' })
+      await transition(db, { userId, planId: plan.id, version: 1, to: 'submitted', detail: { txHash: TX } })
+    }
+    await transition(db, { userId: alice, planId: done.id, version: 1, to: 'confirmed' })
+
+    const submitted = await listSubmitted(db)
+    expect(submitted.map((r) => r.plan.id).sort()).toEqual([mine.id, theirs.id].sort())
+    for (const record of submitted) {
+      expect(record.plan.status).toBe('submitted')
+      expect(record.statusDetail).toEqual({ txHash: TX })
+    }
+  })
+
+  it('carries the transaction hash onto confirmed and failed when the writer omits it', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted', detail: { txHash: TX } })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'confirmed' })
+    const record = await findPlan(db, alice, plan.id)
+    expect(record?.plan.status).toBe('confirmed')
+    expect(record?.statusDetail).toEqual({ txHash: TX })
+
+    const other = planFor(alice)
+    await createPlan(db, { plan: other })
+    await transition(db, { userId: alice, planId: other.id, version: 1, to: 'awaiting_signature' })
+    await transition(db, { userId: alice, planId: other.id, version: 1, to: 'submitted', detail: { txHash: TX } })
+    await transition(db, { userId: alice, planId: other.id, version: 1, to: 'failed', detail: { reason: 'reverted' } })
+    expect((await findPlan(db, alice, other.id))?.statusDetail).toEqual({ reason: 'reverted', txHash: TX })
   })
 })

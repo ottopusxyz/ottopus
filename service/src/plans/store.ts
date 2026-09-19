@@ -237,9 +237,53 @@ export async function transition(
     if (to === 'submitted' && !TX_HASH.test(String(detail?.txHash ?? ''))) {
       throw new PlanError('missing_tx_hash', 'submitted requires detail.txHash')
     }
-    await tx.insert(planEvents).values({ planId, planVersion: version, status: to, detail: detail ?? null })
+    // The hash lives on the latest event, and confirmed and failed are the
+    // events after submitted. A writer that omits it — the browser does —
+    // must not make the plan forget which transaction it became.
+    const carried = from === 'submitted' && (to === 'confirmed' || to === 'failed') ? latest.detail : null
+    const hash = (carried as Record<string, unknown> | null)?.txHash
+    const written = detail?.txHash === undefined && typeof hash === 'string' ? { ...detail, txHash: hash } : detail
+    await tx.insert(planEvents).values({ planId, planVersion: version, status: to, detail: written ?? null })
     return to
   })
+}
+
+/**
+ * Every plan, any user's, whose latest event is `submitted`: what the receipt
+ * job watches. Reads start from the submitted events — each version has at
+ * most one, and there are few — rather than from every plan of every user.
+ */
+export async function listSubmitted(db: PlanDb): Promise<PlanRecord[]> {
+  const submitted = await db
+    .select({ planId: planEvents.planId })
+    .from(planEvents)
+    .where(eq(planEvents.status, 'submitted'))
+  if (submitted.length === 0) return []
+  const ids = [...new Set(submitted.map((e) => e.planId))]
+  const latest = await db
+    .selectDistinctOn([planEvents.planId, planEvents.planVersion], {
+      planId: planEvents.planId,
+      planVersion: planEvents.planVersion,
+      status: planEvents.status,
+      createdAt: planEvents.createdAt,
+      detail: planEvents.detail,
+    })
+    .from(planEvents)
+    .where(inArray(planEvents.planId, ids))
+    .orderBy(planEvents.planId, planEvents.planVersion, desc(planEvents.seq))
+  const still = latest.filter((e) => e.status === 'submitted')
+  if (still.length === 0) return []
+  const byVersion = new Map(still.map((e) => [`${e.planId}:${e.planVersion}`, e]))
+  const rows = await db
+    .select()
+    .from(plans)
+    .where(inArray(plans.id, [...new Set(still.map((e) => e.planId))]))
+  const records: PlanRecord[] = []
+  for (const row of rows) {
+    const event = byVersion.get(`${row.id}:${row.version}`)
+    if (event) records.push(toRecord(row, event))
+  }
+  return records
 }
 
 /** The plan, at a version or at its latest. Null if it is not this user's. */

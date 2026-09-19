@@ -11,6 +11,7 @@ export {
   findPlan,
   listPending,
   listPlans,
+  listSubmitted,
   byAttentionThenNewest,
   mintReviewToken,
   resolveReviewToken,

@@ -2,7 +2,9 @@ import { serve } from '@hono/node-server'
 import { config } from './config.js'
 import { handler } from './app.js'
 import { getDb } from './db/client.js'
+import { ReceiptWatcher, httpReceiptReader } from './jobs/receipts.js'
 import { purgeExpired } from './oauth/index.js'
+import { listSubmitted, transition } from './plans/index.js'
 
 const log = (msg: string, extra: Record<string, unknown> = {}) => {
   // stdout only — every platform captures it, and file logging works nowhere.
@@ -34,6 +36,7 @@ const server = serve({ fetch: handler, port: config.port, hostname: config.host 
  * everything it deletes was already refused by the queries above.
  */
 const PURGE_EVERY_MS = 60 * 60 * 1000
+const RECEIPT_EVERY_MS = 10_000
 
 if (config.databaseUrl) {
   const db = getDb(config.databaseUrl)
@@ -43,6 +46,35 @@ if (config.databaseUrl) {
     )
   sweep()
   setInterval(sweep, PURGE_EVERY_MS).unref()
+
+  /**
+   * Submitted plans reach confirmed or failed here when nobody is holding the
+   * review page open. One tick every ten seconds reads only the plans that
+   * are due; each plan backs off on its own, so a stuck transaction is a
+   * read every few minutes, not every tick. Ticks never overlap: a slow chain
+   * delays the next tick rather than stacking a second one on top.
+   */
+  const watcher = new ReceiptWatcher({
+    listSubmitted: () => listSubmitted(db),
+    transition: (input) => transition(db, input),
+    reader: httpReceiptReader({ rpcUrlTemplate: config.rpcUrlTemplate }),
+    log: (msg, extra) => log(msg, extra),
+  })
+  let watching = false
+  const watch = async () => {
+    if (watching) return
+    watching = true
+    try {
+      const report = await watcher.tick()
+      if (report.checked > 0) log('receipts', { ...report })
+    } catch (err) {
+      console.error(JSON.stringify({ level: 'error', msg: 'receipt tick failed', err: String(err) }))
+    } finally {
+      watching = false
+    }
+  }
+  void watch()
+  setInterval(() => void watch(), RECEIPT_EVERY_MS).unref()
 }
 
 /**

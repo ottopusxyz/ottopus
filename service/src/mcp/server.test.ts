@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { encodeFunctionData } from 'viem'
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
+import { PlanError } from '../plans/index.js'
+import { planFor } from '../plans/fixtures.js'
 import { KNOWN_ABI, type Lookups } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
@@ -101,7 +103,7 @@ function planSink() {
     created,
     createPlan: async (input: CreatePlanInput): Promise<PlanRecord> => {
       created.push(input)
-      return { plan: input.plan, walletId: input.walletId ?? null, grantId: input.grantId ?? null, createdAt: 'now', statusAt: 'now' }
+      return { plan: input.plan, walletId: input.walletId ?? null, grantId: input.grantId ?? null, createdAt: 'now', statusAt: 'now', statusDetail: null }
     },
   }
 }
@@ -118,6 +120,8 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
     url: `https://ottopus.test/review/tok-${planId.slice(0, 4)}-v${version}`,
     expiresAt: '2026-09-09T10:15:00Z',
   }),
+  findPlan: async () => null,
+  transition: async (input) => input.to,
   ...over,
 })
 
@@ -169,12 +173,19 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers three read tools and one that prepares, and says which is which', async () => {
+  it('offers four read tools and two that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['get_portfolio', 'list_wallets', 'prepare_transfer', 'whoami'])
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      'cancel_plan',
+      'get_plan',
+      'get_portfolio',
+      'list_wallets',
+      'prepare_transfer',
+      'whoami',
+    ])
     for (const tool of tools) {
-      const readOnly = tool.name !== 'prepare_transfer'
+      const readOnly = !['prepare_transfer', 'cancel_plan'].includes(tool.name)
       expect(tool.annotations?.readOnlyHint, `${tool.name} read-only=${readOnly}`).toBe(readOnly)
       expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }
@@ -563,5 +574,173 @@ describe('prepare_transfer', () => {
     const res = (await send(client, {})) as { isError?: boolean; content: { text: string }[] }
     expect(res.isError).toBe(true)
     expect(res.content[0]!.text).toMatch(/balances are not available/)
+  })
+})
+
+/**
+ * A plan on record, as the store would hand it back. The grant is the knob:
+ * it decides whether the agent asking may know the plan exists.
+ */
+function onRecord(over: Partial<PlanRecord> & { status?: PlanRecord['plan']['status'] } = {}): PlanRecord {
+  const { status, ...rest } = over
+  return {
+    plan: planFor(USER_ID, status ? { status } : {}),
+    walletId: 'w1',
+    grantId: 'grant-1',
+    createdAt: '2026-09-09T10:00:00Z',
+    statusAt: '2026-09-09T10:01:00Z',
+    statusDetail: null,
+    ...rest,
+  }
+}
+
+const TX = '0x' + 'ab'.repeat(32)
+
+describe('get_plan', () => {
+  it('reports status and outcome for a plan this grant made, and never the calls', async () => {
+    const record = onRecord()
+    const { client } = await connected(undefined, { findPlan: async () => record }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    const words = result.content[0]!.text
+
+    expect(result.isError).toBeUndefined()
+    expect(words).toContain('Send 1000 wei to vitalik.eth.')
+    expect(words).toContain('Status: awaiting_review. Waiting for the person to open the review link')
+    expect(words).toContain('only funded account')
+    expect(result.structuredContent).toMatchObject({
+      planId: record.plan.id,
+      version: 1,
+      status: 'awaiting_review',
+      chain: { id: 'eip155:8453', name: 'Base' },
+      txHash: null,
+      explorerUrl: null,
+    })
+    // The whole answer, searched for anything a wallet could execute.
+    const everything = JSON.stringify(result)
+    for (const secret of ['calls', 'decodedActions', 'evidence', 'planHash', '"data"', 'value']) {
+      expect(everything, `${secret} must stay on the review page`).not.toContain(secret)
+    }
+  })
+
+  it('is not found for another grant, nor for a plan built on the web', async () => {
+    for (const grantId of ['grant-2', null]) {
+      const record = onRecord({ grantId })
+      const { client } = await connected(undefined, { findPlan: async () => record }, { grantId: 'grant-1' })
+      const result = await call(client, 'get_plan', { planId: record.plan.id })
+      expect(result.isError, `grant ${grantId}`).toBe(true)
+      expect(result.content[0]!.text).toContain('only see plans this connection built')
+      expect(result.structuredContent).toBeUndefined()
+    }
+  })
+
+  it('carries the transaction hash once submitted, and the outcome in words once confirmed', async () => {
+    const submitted = onRecord({ status: 'submitted', statusDetail: { txHash: TX } })
+    let { client } = await connected(undefined, { findPlan: async () => submitted }, { grantId: 'grant-1' })
+    let result = await call(client, 'get_plan', { planId: submitted.plan.id })
+    expect(result.content[0]!.text).toContain(`Signed and sent to Base; waiting for the chain to confirm it. Transaction ${TX}.`)
+    expect(result.structuredContent).toMatchObject({ status: 'submitted', txHash: TX, explorerUrl: `https://basescan.org/tx/${TX}` })
+
+    const confirmed = onRecord({ status: 'confirmed', statusDetail: { txHash: TX } })
+    ;({ client } = await connected(undefined, { findPlan: async () => confirmed }, { grantId: 'grant-1' }))
+    result = await call(client, 'get_plan', { planId: confirmed.plan.id })
+    expect(result.content[0]!.text).toContain('Confirmed on Base: Send 1000 wei to vitalik.eth went through.')
+    expect(result.content[0]!.text).toContain(`Explorer: https://basescan.org/tx/${TX}`)
+
+    const failed = onRecord({ status: 'failed', statusDetail: { txHash: TX, reason: 'reverted' } })
+    ;({ client } = await connected(undefined, { findPlan: async () => failed }, { grantId: 'grant-1' }))
+    result = await call(client, 'get_plan', { planId: failed.plan.id })
+    expect(result.content[0]!.text).toContain('The transaction failed on Base (reverted). The transfer did not happen')
+  })
+
+  it('refuses a malformed id without asking the store', async () => {
+    let asked = 0
+    const { client } = await connected(undefined, {
+      findPlan: async () => {
+        asked += 1
+        return onRecord()
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: 'not-a-uuid' })
+    expect(result.isError).toBe(true)
+    expect(asked).toBe(0)
+  })
+
+  it('refuses without plans:read', async () => {
+    const { client } = await connected(['wallets:read', 'plans:write'], { findPlan: async () => onRecord() }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: onRecord().plan.id })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('plans:read')
+  })
+})
+
+describe('cancel_plan', () => {
+  it('cancels an unsigned plan through the store, as this user', async () => {
+    const record = onRecord()
+    const moves: unknown[] = []
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      transition: async (input) => {
+        moves.push(input)
+        return input.to
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'cancel_plan', { planId: record.plan.id })
+
+    expect(result.isError).toBeUndefined()
+    expect(moves).toEqual([{ userId: USER_ID, planId: record.plan.id, version: 1, to: 'cancelled' }])
+    expect(result.content[0]!.text).toContain('Cancelled: Send 1000 wei to vitalik.eth. Nothing was sent')
+    expect(result.structuredContent).toMatchObject({ planId: record.plan.id, status: 'cancelled', cancelled: true })
+    expect(JSON.stringify(result)).not.toContain('calls')
+  })
+
+  it('is refused after submission, and says so rather than failing silently', async () => {
+    const record = onRecord({ status: 'submitted', statusDetail: { txHash: TX } })
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      transition: async () => {
+        throw new PlanError('illegal_transition', 'submitted -> cancelled is not allowed')
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'cancel_plan', { planId: record.plan.id })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('Too late to cancel: Send 1000 wei to vitalik.eth was already signed and sent to Base.')
+    expect(result.content[0]!.text).toContain(`Transaction ${TX}`)
+    expect(result.structuredContent).toMatchObject({ status: 'submitted', cancelled: false, txHash: TX })
+  })
+
+  it('says there is nothing to cancel once a plan has ended', async () => {
+    const record = onRecord({ status: 'cancelled' })
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      transition: async () => {
+        throw new PlanError('illegal_transition', 'cancelled -> cancelled is not allowed')
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'cancel_plan', { planId: record.plan.id })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('Nothing to cancel: Send 1000 wei to vitalik.eth is already cancelled.')
+  })
+
+  it('cannot cancel another grant’s plan, and never reaches the store trying', async () => {
+    let moved = 0
+    const { client } = await connected(undefined, {
+      findPlan: async () => onRecord({ grantId: 'grant-2' }),
+      transition: async (input) => {
+        moved += 1
+        return input.to
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'cancel_plan', { planId: onRecord().plan.id })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('only see plans this connection built')
+    expect(moved).toBe(0)
+  })
+
+  it('refuses without plans:write', async () => {
+    const { client } = await connected(['wallets:read', 'plans:read'], { findPlan: async () => onRecord() }, { grantId: 'grant-1' })
+    const result = await call(client, 'cancel_plan', { planId: onRecord().plan.id })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('plans:write')
   })
 })
