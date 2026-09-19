@@ -157,6 +157,48 @@ describe('decodeCall', () => {
     expect(action.isContract).toBe(false)
   })
 
+  /**
+   * The case that made every swap read "could not be decoded": LI.FI's router
+   * is an EIP-2535 diamond, Sourcify verifies the proxy, and the proxy's ABI
+   * carries no functions at all — while 4byte knows the selector perfectly
+   * well. A verified ABI that cannot speak for any function is not evidence
+   * about this call.
+   */
+  it('asks 4byte about a verified proxy whose ABI has no functions', async () => {
+    const data = encodeFunctionData({ abi: CUSTOM_ABI, functionName: 'stake', args: [7n, EOA] })
+    const lookups = fake({
+      async sourcify() {
+        // A diamond façade: events and a fallback, and nothing callable.
+        return {
+          abi: [{ type: 'fallback', stateMutability: 'payable' }, { type: 'event', name: 'DiamondCut', inputs: [] }] as unknown as Abi,
+          name: 'LiFiDiamond',
+          match: 'match',
+        }
+      },
+      async fourByte() {
+        return ['stake(uint256,address)']
+      },
+    })
+    const action = await decodeCall(call(WEIRD, data), lookups)
+    expect(action).toMatchObject({
+      source: '4byte',
+      // Still a verified contract; only the name came from elsewhere.
+      verified: true,
+      contractName: 'LiFiDiamond',
+      function: 'stake(uint256,address)',
+    })
+  })
+
+  it('still says unknown for a proxy whose selector nobody knows', async () => {
+    const lookups = fake({
+      async sourcify() {
+        return { abi: [{ type: 'fallback', stateMutability: 'payable' }] as unknown as Abi, name: 'LiFiDiamond', match: 'match' }
+      },
+    })
+    const action = await decodeCall(call(WEIRD, '0xdeadbeef'), lookups)
+    expect(action).toMatchObject({ source: 'unknown', function: 'unknown', verified: true, contractName: 'LiFiDiamond' })
+  })
+
   it('does not ask 4byte about a verified contract whose ABI lacks the selector', async () => {
     let asked = false
     const lookups = fake({

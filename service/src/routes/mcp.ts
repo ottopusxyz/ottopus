@@ -5,6 +5,7 @@ import { findUserById } from '../auth/session.js'
 import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
+import { lifiConnector } from '../connectors/route/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
@@ -94,6 +95,10 @@ if (!config.databaseUrl) {
      * turns it back on, and the pipeline is still tested that way.
      */
     simulator: null,
+    router: lifiConnector({
+      apiKey: config.lifiApiKey,
+      ...(config.lifiApiUrl ? { baseUrl: config.lifiApiUrl } : {}),
+    }),
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
       issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),

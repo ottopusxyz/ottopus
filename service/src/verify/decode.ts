@@ -131,10 +131,24 @@ export async function decodeCall(call: Call, lookups: Lookups): Promise<DecodedA
   if (source) {
     const decoded = tryDecode(source.abi, data)
     if (decoded) return finish('sourcify', decoded)
-    // Verified source with no such function: the call hits a fallback, or
-    // nothing. A 4byte name here would be a collision dressed as a decoding,
-    // and worse than "unknown" because it looks like an answer.
-    return { ...base, ...named, source: 'unknown', verified, function: 'unknown', args: [] }
+    /**
+     * Verified source that has functions, but not this one: the call hits a
+     * fallback, or nothing. A 4byte name here would be a collision dressed
+     * as a decoding, and worse than "unknown" because it looks like an
+     * answer. So stop.
+     *
+     * Unless the verified ABI has no functions at all, which is a proxy
+     * façade rather than a contract that lacks the selector. EIP-2535
+     * diamonds keep every callable function in facets, and LI.FI's router is
+     * one: Sourcify verifies `LiFiDiamond`, whose ABI carries fourteen
+     * entries and zero functions, while 4byte knows the selector perfectly
+     * well. Stopping there made every swap read "could not be decoded" on
+     * the review page, which is the one page where the function's name is
+     * the thing being checked.
+     */
+    if (hasFunctions(source.abi)) {
+      return { ...base, ...named, source: 'unknown', verified, function: 'unknown', args: [] }
+    }
   }
 
   for (const signature of await lookups.fourByte(selector)) {
@@ -148,6 +162,17 @@ export async function decodeCall(call: Call, lookups: Lookups): Promise<DecodedA
   }
 
   return { ...base, ...named, source: 'unknown', verified, function: 'unknown', args: [] }
+}
+
+/**
+ * Whether a verified ABI actually describes any callable function.
+ *
+ * A proxy's does not. That is the difference between "this contract has no
+ * such function" and "this contract's ABI cannot speak for its functions",
+ * and only the first is evidence about the call.
+ */
+function hasFunctions(abi: Abi): boolean {
+  return abi.some((entry) => entry.type === 'function')
 }
 
 /** One action per call, in order. The policy layer relies on that pairing. */

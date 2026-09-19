@@ -79,6 +79,12 @@ export interface Config {
   /** Overridable so a test or a mock can stand in for the real API. */
   zerionApiUrl: string | undefined
   /**
+   * Optional. The route provider works unauthenticated at a low rate limit;
+   * a free key raises it. Server-only, like every other key here.
+   */
+  lifiApiKey: string | undefined
+  lifiApiUrl: string | undefined
+  /**
    * One RPC provider for every chain: a URL with `{network}` (Alchemy's name)
    * or `{chainId}` (the EVM id) in it, substituted per chain. Unset means
    * viem's public endpoints, which are fine for a laptop and rate-limited for
@@ -248,6 +254,8 @@ export function loadConfig(): Config {
     webOrigins,
     zerionApiKey: readOptional('ZERION_API_KEY'),
     zerionApiUrl: readOptional('ZERION_API_URL'),
+    lifiApiKey: readOptional('LIFI_API_KEY'),
+    lifiApiUrl: readOptional('LIFI_API_URL'),
     rpcUrlTemplate: readRpcTemplate('RPC_URL_TEMPLATE'),
   }
 }
