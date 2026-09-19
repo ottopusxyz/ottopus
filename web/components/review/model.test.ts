@@ -10,7 +10,7 @@ import {
   changeSource,
   keyFacts,
   liveRefusal,
-  progressOf,
+  executability,
   recipientOf,
   simulationNote,
   verificationSummary,
@@ -274,19 +274,32 @@ describe('a run the browser did while the page was open', () => {
   })
 })
 
-describe('the progress bar', () => {
-  /** Three stops, because to a person "awaiting review" and "awaiting signature" are one moment. */
-  it('walks Review, Sent, Confirmed', () => {
-    expect(progressOf('awaiting_review')).toEqual({ at: 0, stopped: false })
-    expect(progressOf('awaiting_signature')).toEqual({ at: 0, stopped: false })
-    expect(progressOf('submitted')).toEqual({ at: 1, stopped: false })
-    expect(progressOf('confirmed')).toEqual({ at: 2, stopped: false })
+describe('the mark on the card', () => {
+  const sim = (success: boolean) => ({
+    provider: 'eth_simulateV1 · public RPC',
+    chainId: BASE,
+    blockNumber: '51200000',
+    success,
+    assetChanges: [],
+    gasUsed: '21000',
+    gasUsd: 'unknown',
+    resultHash: '',
+    ranAt: '2026-09-10T12:00:00.000Z',
+    ...(success ? {} : { failedCall: 1, revertReason: 'ERC20: transfer amount exceeds balance' }),
   })
 
-  it('stops where it stopped: a revert got as far as sent, a cancel did not', () => {
-    expect(progressOf('failed')).toEqual({ at: 1, stopped: true })
-    for (const status of ['cancelled', 'expired', 'blocked', 'superseded'] as const) {
-      expect(progressOf(status), status).toEqual({ at: 0, stopped: true })
-    }
+  /** Two words, not a paragraph. The reason lives in Advanced review. */
+  it('reads executable when a run succeeded and may fail when it did not', () => {
+    expect(executability(plan, sim(true))).toEqual({ ok: true, label: 'Executable' })
+    expect(executability(plan, sim(false))).toEqual({ ok: false, label: 'May fail' })
+  })
+
+  it('says nothing at all when nothing has run', () => {
+    expect(executability(plan, null)).toBeNull()
+    expect(executability(plan)).toBeNull()
+  })
+
+  it('falls back to the stored run when the browser has none', () => {
+    expect(executability({ ...plan, simulation: sim(false) }, null)).toEqual({ ok: false, label: 'May fail' })
   })
 })

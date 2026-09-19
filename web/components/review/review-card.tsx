@@ -11,17 +11,14 @@ import { cn } from '@/lib/cn'
 import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
 import {
   SOURCE_LABEL,
-  STAGES,
   approvals,
   assetChanges,
   assetWords,
   bannerWarnings,
   chainOfPlan,
   changeSource,
-  effectiveStatus,
+  executability,
   keyFacts,
-  liveRefusal,
-  progressOf,
   recipientOf,
 } from './model'
 import type { LiveSimulation } from './use-simulation'
@@ -82,20 +79,16 @@ export function ReviewCard({
   const rows = keyFacts(plan)
   const grants = approvals(plan)
   const warnings = bannerWarnings(plan)
-  const refusal = liveRefusal(liveRun)
-  const progress = progressOf(effectiveStatus(plan))
+  const verdict = executability(plan, liveRun)
 
   return (
     <article className="flex flex-col overflow-hidden rounded-[26px] border border-[var(--ot-border-strong)] bg-[var(--ot-card)] shadow-[var(--ot-shadow-card)] sm:rounded-[16px] sm:border-[var(--ot-border)]">
-      <header className="flex flex-col gap-2.5 px-[18px] pt-4 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[15px] font-semibold">Review</span>
-          <span className="flex items-center gap-2.5">
-            <span className="font-mono text-[11.5px] text-[var(--ot-text-3)]">{reference}</span>
-            <span className="font-mono text-[12.5px] font-semibold tabular-nums">{clock}</span>
-          </span>
-        </div>
-        <StageBar at={progress.at} stopped={progress.stopped} />
+      <header className="flex items-center justify-between gap-3 px-[18px] pt-4 pb-2.5">
+        <span className="text-[15px] font-semibold">Review</span>
+        <span className="flex items-center gap-2.5">
+          <span className="font-mono text-[11.5px] text-[var(--ot-text-3)]">{reference}</span>
+          <span className="font-mono text-[12.5px] font-semibold tabular-nums">{clock}</span>
+        </span>
       </header>
 
       <div className="flex flex-col gap-[3px] px-[18px] pb-3.5">
@@ -107,12 +100,6 @@ export function ReviewCard({
 
       {/* Amount, recipient and signer: one block, because to a person it is one thought. */}
       <section className="flex flex-col gap-2.5 bg-[var(--ot-water-1)] px-[18px] py-3.5">
-        {refusal ? (
-          <p className="m-0 rounded-[10px] bg-[var(--ot-block-soft)] px-2.5 py-2 text-[12px] leading-[1.45] font-medium text-[var(--ot-block-text)]">
-            {refusal} Nothing has been signed.
-          </p>
-        ) : null}
-
         <div className="flex flex-col gap-3">
           {changes.map((change) => (
             <div key={`${change.direction}-${change.assetId}`} className="flex items-center gap-[11px]">
@@ -154,13 +141,23 @@ export function ReviewCard({
           ) : null}
         </div>
 
-        {/* Who signs, where, and how fresh the rows above are. One line, three facts. */}
+        {/*
+          Whether it runs, who signs, where, and how fresh the reading is.
+          The verdict is a mark and two words: a person deciding needs to know
+          that something is wrong, not what — the reason is in Advanced review.
+        */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--ot-text-2)]">
           <span className="flex items-center gap-1.5">
             <Tile mark={signerMark} fallback="◈" tone="bg-[var(--ot-navy-soft)] text-[var(--ot-text)]" />
             <span className="font-semibold">{signerName}</span>
           </span>
           <Dot />
+          {/*
+            The verdict sits with the network, not on its own: whether these
+            calls execute is a fact about this chain at this block, and
+            reading them apart invites "executable" to be heard as a property
+            of the plan itself.
+          */}
           <span className="flex items-center gap-1.5">
             <Tile
               mark={chainVisual?.iconUrl ?? null}
@@ -168,6 +165,19 @@ export function ReviewCard({
               tone="bg-[var(--ot-surface-3)] text-[var(--ot-text-2)]"
             />
             <span>{chainName(chain)}</span>
+            {verdict ? (
+              <span
+                className={cn(
+                  'flex items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-semibold',
+                  verdict.ok
+                    ? 'bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]'
+                    : 'bg-[var(--ot-block-bg)] text-[var(--ot-block-text)]',
+                )}
+              >
+                <span aria-hidden>{verdict.ok ? '✓' : '✕'}</span>
+                {verdict.label}
+              </span>
+            ) : null}
           </span>
           <Dot />
           <span className="text-[var(--ot-text-3)]">
@@ -240,45 +250,6 @@ const Dot = () => (
     ·
   </span>
 )
-
-/**
- * Where the plan has got to, in three stops.
- *
- * At the top rather than the bottom because once it is signed this is the
- * only thing the person is watching, and a card that made them scroll to
- * learn what happened was hiding the answer behind the question.
- */
-function StageBar({ at, stopped }: { at: number; stopped: boolean }) {
-  return (
-    <ol className="m-0 flex list-none items-center gap-1.5 p-0" aria-label="Progress">
-      {STAGES.map((stage, i) => {
-        const done = i <= at
-        const current = i === at
-        return (
-          <li key={stage} className="flex flex-1 items-center gap-1.5">
-            <span
-              aria-current={current ? 'step' : undefined}
-              className={cn(
-                'h-[3px] flex-1 rounded-full transition-colors',
-                done && !stopped && 'bg-[var(--ot-plan)]',
-                done && stopped && 'bg-[var(--ot-text-3)]',
-                !done && 'bg-[var(--ot-border)]',
-              )}
-            />
-            <span
-              className={cn(
-                'text-[10.5px] whitespace-nowrap',
-                current ? 'font-semibold text-[var(--ot-text-2)]' : 'text-[var(--ot-text-3)]',
-              )}
-            >
-              {stage}
-            </span>
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
 
 function approvalAmount(plan: Plan, amount: string): string {
   const asset = plan.intent.kind === 'transfer' ? assetWords(plan, plan.intent.asset) : null

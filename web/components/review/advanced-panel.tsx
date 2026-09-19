@@ -6,6 +6,7 @@ import { chainName, explorerAddressUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import {
   chainOfPlan,
+  liveRefusal,
   decodedRows,
   preparedBy,
   recipientOf,
@@ -53,6 +54,8 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
   const note = simulationNote(plan, run)
   const recipient = recipientOf(plan)
   const running = live?.kind === 'running'
+  // The card carries a mark; the sentence behind it belongs here.
+  const refusal = liveRefusal(run ?? plan.simulation)
 
   return (
     <section
@@ -83,6 +86,11 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
           ) : null
         }
       >
+        {refusal ? (
+          <p className="m-0 rounded-[10px] bg-[var(--ot-block-bg)] px-2.5 py-2 text-[11.5px] leading-[1.45] font-medium text-[var(--ot-block-text)]">
+            {refusal} Nothing has been signed.
+          </p>
+        ) : null}
         <Rows
           rows={[
             // Which run the rows above came from is on the card already; a

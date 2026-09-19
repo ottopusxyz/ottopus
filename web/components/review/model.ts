@@ -147,6 +147,26 @@ export function simulationNote(plan: Plan, live?: Simulation | null): string | n
 }
 
 /**
+ * Will it execute? One mark, for the card.
+ *
+ * The card used to carry the whole revert sentence, which is a paragraph of
+ * chain vocabulary in the middle of a decision a person makes in seconds.
+ * They need to know that something is wrong, not what; the reason is in the
+ * advanced panel, where somebody who wants it will look. Null when nothing
+ * has run, because "no simulation" is not a verdict either way.
+ */
+export interface Executability {
+  ok: boolean
+  label: string
+}
+
+export function executability(plan: Plan, live?: Simulation | null): Executability | null {
+  const sim = live ?? plan.simulation
+  if (!sim) return null
+  return sim.success ? { ok: true, label: 'Executable' } : { ok: false, label: 'May fail' }
+}
+
+/**
  * The banner a fresh simulation earns when it disagrees with the plan.
  *
  * The plan was built against a block that has since passed. A browser run
@@ -238,42 +258,6 @@ export function countdown(expiresAt: string, now = Date.now()): string {
 /** Who prepared it, for the details. */
 export function preparedBy(plan: Plan): string {
   return plan.createdVia === 'agent' ? 'An agent, over MCP' : 'You, in Ottopus'
-}
-
-/**
- * Where the plan has got to, for the bar at the top of the card.
- *
- * Three stops, not five. A person opening a review link is answering one
- * question and then watching one thing happen; "awaiting_signature" and
- * "awaiting_review" are the same moment to them, and the wallet is what
- * tells them about signing. Fewer stops also means the bar fits on one line
- * beside the countdown, which is what keeps the outcome above the fold.
- */
-export const STAGES = ['Review', 'Sent', 'Confirmed'] as const
-export type Stage = (typeof STAGES)[number]
-
-export interface Progress {
-  /** How many stops are behind us, 0-based. */
-  at: number
-  /** Stopped here for good — cancelled, expired, reverted. The bar greys out ahead. */
-  stopped: boolean
-}
-
-export function progressOf(status: PlanStatusName): Progress {
-  switch (status) {
-    case 'draft':
-    case 'awaiting_review':
-    case 'awaiting_signature':
-      return { at: 0, stopped: false }
-    case 'submitted':
-      return { at: 1, stopped: false }
-    case 'confirmed':
-      return { at: 2, stopped: false }
-    case 'failed':
-      return { at: 1, stopped: true }
-    default:
-      return { at: 0, stopped: true }
-  }
 }
 
 /**

@@ -12,7 +12,7 @@ import { decoderUrl } from '@/lib/simulators'
 import { AdvancedPanel } from './advanced-panel'
 import { canSign, chainOfPlan, countdown, effectiveStatus } from './model'
 import { ReviewCard } from './review-card'
-import { ReviewSkeleton } from './review-skeleton'
+import { AdvancedSkeleton, ReviewSkeleton } from './review-skeleton'
 import { SignPanel } from './sign-panel'
 import { useReview } from './use-review'
 import { useSimulation } from './use-simulation'
@@ -54,9 +54,17 @@ function Review({ token }: { token: string }) {
   const simulation = useSimulation(plan, chainId, native)
 
   if (state.status === 'loading') {
+    // `wide` so the loader stands exactly where the card will: a skeleton that
+    // matches the card's shape but not its position still hands the reader a
+    // jump the moment the plan lands.
     return (
-      <Ground>
-        <ReviewSkeleton />
+      <Ground wide>
+        <div className="relative mx-auto w-full max-w-[440px]">
+          <ReviewSkeleton />
+          <aside className="absolute top-0 left-full ml-4 hidden w-[280px] min-[1032px]:block">
+            <AdvancedSkeleton />
+          </aside>
+        </div>
       </Ground>
     )
   }
