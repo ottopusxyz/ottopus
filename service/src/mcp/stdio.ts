@@ -4,7 +4,9 @@ import { config } from '../config.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { getDb } from '../db/client.js'
 import { SCOPES } from '../oauth/scopes.js'
+import { createPlan, issueReviewLink } from '../plans/index.js'
 import { portfolioProvider } from '../routes/portfolio-provider.js'
+import { httpLookups } from '../verify/index.js'
 import { listWallets } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
 
@@ -45,6 +47,10 @@ async function main(): Promise<void> {
     findAgent: async () => ({ clientName: 'This local agent' }),
     listWallets: (id) => listWallets(db, id),
     readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+    lookups: httpLookups({ rpcUrlTemplate: config.rpcUrlTemplate }),
+    createPlan: (input) => createPlan(db, input),
+    issueReviewLink: (planId, version, planExpiresAt) =>
+      issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),
   }
 
   const server = buildServer(
@@ -53,6 +59,7 @@ async function main(): Promise<void> {
       clientId: 'stdio',
       // No grant to narrow, because there was no consent screen to narrow it.
       scopes: [...SCOPES],
+      grantId: null,
     },
     deps,
   )

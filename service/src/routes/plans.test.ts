@@ -6,6 +6,7 @@ import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
 import { inMinutes, planFor } from '../plans/fixtures.js'
+import { supersedePlan } from '../plans/review-link.js'
 import { createPlan, mintReviewToken, transition } from '../plans/store.js'
 import { planRoutes } from './plans.js'
 
@@ -26,7 +27,7 @@ const signedInAs = (userId: string): MiddlewareHandler => {
   }
 }
 
-const app = (userId: string) => planRoutes(db, signedInAs(userId))
+const app = (userId: string) => planRoutes(db, signedInAs(userId), 'https://ottopus.test/')
 
 const post = (userId: string, path: string, body: unknown) =>
   app(userId).request(path, {
@@ -88,13 +89,24 @@ describe('GET /:token', () => {
     expect(body.link.expiresAt).toBeDefined()
   })
 
-  it('is one 404 for a bad token, and for someone else’s link', async () => {
+  /**
+   * #37's four: tampered, expired, superseded, someone else's. All the same
+   * 404, because the page must not hint at what a dead link used to open.
+   */
+  it('is one 404 for a tampered, expired or superseded token, and for someone else’s link', async () => {
     const plan = planFor(alice)
     await createPlan(db, { plan })
     const { token } = await link(plan.id)
+    const expired = await mintReviewToken(db, { planId: plan.id, version: 1, expiresAt: new Date(inMinutes(-1)) })
 
     expect((await app(alice).request('/nope')).status).toBe(404)
+    expect((await app(alice).request(`/${token.slice(0, -1)}x`)).status).toBe(404)
+    expect((await app(alice).request(`/${expired.token}`)).status).toBe(404)
     expect((await app(bob).request(`/${token}`)).status).toBe(404)
+
+    await createPlan(db, { plan: planFor(alice, { id: plan.id, version: 2 }) })
+    await supersedePlan(db, { userId: alice, planId: plan.id, version: 1 })
+    expect((await app(alice).request(`/${token}`)).status).toBe(404)
   })
 })
 
@@ -157,12 +169,13 @@ describe('POST /:id/events', () => {
 })
 
 describe('POST /:id/link', () => {
-  it('mints a link to my own pending plan', async () => {
+  it('mints a link to my own pending plan, as a full URL', async () => {
     const plan = planFor(alice)
     await createPlan(db, { plan })
     const res = await post(alice, `/${plan.id}/link`, {})
     expect(res.status).toBe(201)
-    const { token } = (await res.json()) as { token: string }
+    const { token, url } = (await res.json()) as { token: string; url: string }
+    expect(url).toBe(`https://ottopus.test/review/${token}`)
     expect((await app(alice).request(`/${token}`)).status).toBe(200)
   })
 

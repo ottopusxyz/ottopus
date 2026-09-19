@@ -1,7 +1,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
+import { encodeFunctionData } from 'viem'
 import type { Portfolio } from '../connectors/portfolio/index.js'
+import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
+import { KNOWN_ABI, type Lookups } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
 
@@ -70,17 +73,61 @@ const PORTFOLIO: Portfolio = {
   protocols: [],
 }
 
+/** A real uuid: the plan schema insists, and so does the database. */
+const USER_ID = '0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b'
+const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+const BASE = 'eip155:8453'
+
+/** The decoder's reads, answered from memory: USDC is a verified contract, everything else a wallet. */
+const lookups: Lookups = {
+  async getCode(_chain, address) {
+    return address.toLowerCase() === USDC ? '0x6080' : '0x'
+  },
+  async sourcify(_chain, address) {
+    return address.toLowerCase() === USDC ? { abi: KNOWN_ABI, name: 'FiatTokenV2_2', match: 'exact_match' } : null
+  },
+  async fourByte() {
+    return []
+  },
+}
+
+/** A store in memory: keeps what createPlan was handed, hands back a record. */
+function planSink() {
+  const created: CreatePlanInput[] = []
+  return {
+    created,
+    createPlan: async (input: CreatePlanInput): Promise<PlanRecord> => {
+      created.push(input)
+      return { plan: input.plan, walletId: input.walletId ?? null, grantId: input.grantId ?? null, createdAt: 'now', statusAt: 'now' }
+    },
+  }
+}
+
 const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   findUser: async (id) => ({ id, privyDid: 'did:privy:1', email: 'koshik@example.com', name: 'Koshik Raj' }),
   findAgent: async () => ({ clientName: 'Claude' }),
   listWallets: async () => WALLETS,
   readPortfolio: async () => PORTFOLIO,
+  lookups,
+  createPlan: planSink().createPlan,
+  issueReviewLink: async (planId, version) => ({
+    token: 'tok',
+    url: `https://ottopus.test/review/tok-${planId.slice(0, 4)}-v${version}`,
+    expiresAt: '2026-09-09T10:15:00Z',
+  }),
   ...over,
 })
 
-async function connected(scopes = ['wallets:read', 'plans:read', 'plans:write'], over: Partial<ToolDeps> = {}) {
+async function connected(
+  scopes = ['wallets:read', 'plans:read', 'plans:write'],
+  over: Partial<ToolDeps> = {},
+  ctx: { grantId?: string | null } = {},
+) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
-  const server = buildServer({ userId: 'user-1', clientId: 'otc_test', scopes }, deps(over))
+  const server = buildServer(
+    { userId: USER_ID, clientId: 'otc_test', scopes, grantId: ctx.grantId ?? null },
+    deps(over),
+  )
   const client = new Client({ name: 'test', version: '0' })
   await Promise.all([server.connect(serverSide), client.connect(clientSide)])
   return { client, server }
@@ -119,12 +166,14 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers the three read tools, every one marked read-only', async () => {
+  it('offers three read tools and one that prepares, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
-    expect(tools.map((tool) => tool.name).sort()).toEqual(['get_portfolio', 'list_wallets', 'whoami'])
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['get_portfolio', 'list_wallets', 'prepare_transfer', 'whoami'])
     for (const tool of tools) {
-      expect(tool.annotations?.readOnlyHint, `${tool.name} is read-only`).toBe(true)
+      const readOnly = tool.name !== 'prepare_transfer'
+      expect(tool.annotations?.readOnlyHint, `${tool.name} read-only=${readOnly}`).toBe(readOnly)
+      expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }
   })
 })
@@ -152,10 +201,10 @@ describe('whoami', () => {
   it('keeps the ids in the structured copy, off the page', async () => {
     const { client } = await connected()
     const result = await call(client, 'whoami')
-    expect(result.content[0]!.text).not.toContain('user-1')
+    expect(result.content[0]!.text).not.toContain(USER_ID)
     expect(result.content[0]!.text).not.toContain('otc_test')
     expect(result.structuredContent).toMatchObject({
-      user: { id: 'user-1', name: 'Koshik Raj', email: 'koshik@example.com' },
+      user: { id: USER_ID, name: 'Koshik Raj', email: 'koshik@example.com' },
       agent: { clientId: 'otc_test', name: 'Claude' },
     })
   })
@@ -274,5 +323,173 @@ describe('get_portfolio', () => {
     expect(called).toBe(0)
     expect(result.isError).toBeUndefined()
     expect(result.content[0]!.text).toContain('No wallets are linked yet')
+  })
+})
+
+describe('prepare_transfer', () => {
+  /** Balances on Base: Main holds USDC and ETH; the watch-only wallet holds USDC too. */
+  const baseHoldings: Portfolio = {
+    ...PORTFOLIO,
+    chains: [{ chainId: BASE, name: 'Base', value: 2000, share: 1 }],
+    assets: [
+      {
+        assetId: `${BASE}/erc20:${USDC}`,
+        chainId: BASE,
+        asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
+        amount: '1500000000',
+        value: 1500,
+        price: 1,
+        change1d: 0,
+        share: 0.75,
+        holdings: [
+          { walletId: 'w1', amount: '1000000000', value: 1000 },
+          { walletId: 'w2', amount: '500000000', value: 500 },
+        ],
+      },
+      {
+        assetId: `${BASE}/slip44:60`,
+        chainId: BASE,
+        asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
+        amount: '300000000000000000',
+        value: 500,
+        price: 1666,
+        change1d: 0,
+        share: 0.25,
+        holdings: [{ walletId: 'w1', amount: '300000000000000000', value: 500 }],
+      },
+    ],
+  }
+  const RECIPIENT = `${BASE}:0x1111111111111111111111111111111111111111`
+  const send = (client: Client, args: Record<string, unknown>) =>
+    client.callTool({
+      name: 'prepare_transfer',
+      arguments: { asset: `${BASE}/erc20:${USDC}`, amount: '500000000', to: RECIPIENT, ...args },
+    })
+
+  it('builds a USDC transfer from the recommended wallet and returns a link, never the calls', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan }, {
+      grantId: 'grant-1',
+    })
+    const res = (await send(client, {})) as { content: { text: string }[]; structuredContent: Record<string, unknown>; isError?: boolean }
+
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/^Plan ready: Send 500 USDC to 0x1111…1111 from Main on Base\./)
+    expect(res.content[0]!.text).toMatch(/Recommended Main \(…6045\) because it holds 1,000 USDC on Base/)
+    expect(res.content[0]!.text).toMatch(/Review and sign: https:\/\/ottopus\.test\/review\//)
+    expect(res.structuredContent).toMatchObject({
+      status: 'awaiting_review',
+      summary: 'Send 500 USDC to 0x1111…1111 from Main on Base',
+      recommendedAccount: 'Main (0xd8da…6045)',
+      warnings: [],
+    })
+    expect(JSON.stringify(res)).not.toContain('"calls"')
+    expect(JSON.stringify(res)).not.toContain('0xa9059cbb')
+
+    expect(sink.created).toHaveLength(1)
+    const { plan, walletId, grantId } = sink.created[0]!
+    expect(walletId).toBe('w1')
+    expect(grantId).toBe('grant-1')
+    expect(plan.status).toBe('awaiting_review')
+    expect(plan.planHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(plan.outcome.type === 'calls' && plan.outcome.calls).toEqual([
+      {
+        to: `${BASE}:${USDC}`,
+        value: '0',
+        data: encodeFunctionData({ abi: KNOWN_ABI, functionName: 'transfer', args: ['0x1111111111111111111111111111111111111111', 500_000_000n] }).toLowerCase(),
+        chainId: BASE,
+      },
+    ])
+    expect(plan.decodedActions[0]).toMatchObject({ function: 'transfer(address,uint256)', verified: true, source: 'abi' })
+    expect(plan.resolution.candidatesConsidered.map((c) => c.reason)).toEqual(['is watch-only and cannot sign'])
+  })
+
+  it('builds a native transfer as value with no calldata', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { asset: `${BASE}/slip44:60`, amount: '100000000000000000' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/Send 0\.1 ETH to 0x1111…1111 from Main on Base/)
+    const plan = sink.created[0]!.plan
+    expect(plan.outcome.type === 'calls' && plan.outcome.calls[0]).toEqual({ to: RECIPIENT, value: '100000000000000000', data: '0x', chainId: BASE })
+  })
+
+  it('honours a chosen wallet', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { fromAccount: `${BASE}:${WALLETS[0]!.address}` })) as { content: { text: string }[] }
+    expect(res.content[0]!.text).toMatch(/You chose Main \(…6045\)/)
+    expect(sink.created[0]!.walletId).toBe('w1')
+  })
+
+  it('refuses when no wallet can, names why, and creates no plan', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { amount: '5000000000' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/No linked wallet can make this transfer/)
+    expect(res.content[0]!.text).toMatch(/Main \(…6045\) holds only 1,000 USDC on Base, short of 5,000 USDC/)
+    expect(res.content[0]!.text).toMatch(/watch-only/)
+    expect(sink.created).toHaveLength(0)
+  })
+
+  it('refuses a chosen wallet that cannot, with the reason', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { fromAccount: `${BASE}:${WALLETS[1]!.address}` })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/is watch-only and cannot sign/)
+    expect(sink.created).toHaveLength(0)
+  })
+
+  /**
+   * Verify refusing what the tool itself built. Forced by telling the decoder
+   * the token has no code: the plan is stored as blocked with the reason, the
+   * agent gets the reason, and no link is minted.
+   */
+  it('stores a blocked plan with its reasons and mints no link', async () => {
+    const sink = planSink()
+    let linked = 0
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => baseHoldings,
+      createPlan: sink.createPlan,
+      lookups: { ...lookups, getCode: async () => '0x' },
+      issueReviewLink: async () => {
+        linked += 1
+        return { token: 't', url: 'u', expiresAt: 'e' }
+      },
+    })
+    const res = (await send(client, {})) as { isError?: boolean; content: { text: string }[]; structuredContent: Record<string, unknown> }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/Ottopus refused to build "Send 500 USDC/)
+    expect(res.content[0]!.text).toMatch(/has no code on Base/)
+    expect(res.structuredContent).toMatchObject({ status: 'blocked' })
+    expect(linked).toBe(0)
+    const plan = sink.created[0]!.plan
+    expect(plan.status).toBe('blocked')
+    expect(plan.humanPlan.warnings[0]).toMatchObject({ severity: 'block', code: 'verify_failed' })
+  })
+
+  it('rejects an intent it cannot parse before touching anything', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { createPlan: sink.createPlan })
+    const res = (await send(client, { to: 'eip155:1:0x1111111111111111111111111111111111111111' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/not a transfer Ottopus can build/)
+    expect(sink.created).toHaveLength(0)
+  })
+
+  it('refuses without plans:write, and says what to change', async () => {
+    const { client } = await connected(['wallets:read'])
+    const res = (await send(client, {})) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/plans:write/)
+  })
+
+  it('says plainly when there is no balance provider to choose a wallet with', async () => {
+    const { client } = await connected(undefined, { readPortfolio: null })
+    const res = (await send(client, {})) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/balances are not available/)
   })
 })

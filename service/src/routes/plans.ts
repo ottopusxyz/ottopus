@@ -6,8 +6,8 @@ import {
   PlanError,
   TX_HASH,
   findPlan,
+  issueReviewLink,
   listPending,
-  mintReviewToken,
   resolveReviewToken,
   summarise,
   transition,
@@ -57,15 +57,9 @@ const eventSchema = z.discriminatedUnion('status', [
   }),
 ])
 
-/**
- * How long a link minted from Requests lives. Short, because the person is
- * sitting in front of it; #37 owns the policy and may change this.
- */
-const LINK_TTL_MS = 15 * 60_000
-
 const isUuid = (id: string) => z.uuid().safeParse(id).success
 
-export function planRoutes(db: PlanDb, session: MiddlewareHandler): Hono {
+export function planRoutes(db: PlanDb, session: MiddlewareHandler, webUrl: string): Hono {
   const app = new Hono()
   app.use('*', session)
 
@@ -138,9 +132,11 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler): Hono {
     if (!record) return c.json({ error: 'not_found' }, 404)
     if (!isPending(record.plan.status)) return c.json({ error: 'not_pending', status: record.plan.status }, 409)
 
-    const planExpiry = new Date(record.plan.expiresAt).getTime()
-    const expiresAt = new Date(Math.min(Date.now() + LINK_TTL_MS, planExpiry))
-    const link = await mintReviewToken(db, { planId: record.plan.id, version: record.plan.version, expiresAt })
+    const link = await issueReviewLink(
+      db,
+      { planId: record.plan.id, version: record.plan.version, planExpiresAt: record.plan.expiresAt },
+      webUrl,
+    )
     return c.json(link, 201)
   })
 

@@ -5,6 +5,7 @@ import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
 import { inMinutes, planFor } from './fixtures.js'
+import { REVIEW_LINK_TTL_MS, issueReviewLink, supersedePlan } from './review-link.js'
 import {
   PlanError,
   createPlan,
@@ -241,5 +242,43 @@ describe('review tokens', () => {
 
     expect(await resolveReviewToken(db, alice, old.token)).toBeNull()
     expect((await resolveReviewToken(db, alice, fresh.token))?.plan.version).toBe(2)
+  })
+})
+
+describe('review link policy', () => {
+  it('issues a link no longer than its own clock, and never past the plan', async () => {
+    const soon = planFor(alice, { expiresAt: inMinutes(2) })
+    const later = planFor(alice, { expiresAt: inMinutes(60) })
+    await createPlan(db, { plan: soon })
+    await createPlan(db, { plan: later })
+    const now = new Date()
+
+    const short = await issueReviewLink(db, { planId: soon.id, version: 1, planExpiresAt: soon.expiresAt }, 'https://ottopus.test', now)
+    const long = await issueReviewLink(db, { planId: later.id, version: 1, planExpiresAt: later.expiresAt }, 'https://ottopus.test', now)
+    expect(short.expiresAt).toBe(soon.expiresAt)
+    expect(new Date(long.expiresAt).getTime()).toBe(now.getTime() + REVIEW_LINK_TTL_MS)
+    expect(long.url).toBe(`https://ottopus.test/review/${long.token}`)
+  })
+
+  it('superseding writes the event and kills every link to that version', async () => {
+    const v1 = planFor(alice)
+    await createPlan(db, { plan: v1 })
+    await createPlan(db, { plan: planFor(alice, { id: v1.id, version: 2 }) })
+    const a = await issueReviewLink(db, { planId: v1.id, version: 1, planExpiresAt: v1.expiresAt }, 'https://ottopus.test')
+    const b = await issueReviewLink(db, { planId: v1.id, version: 1, planExpiresAt: v1.expiresAt }, 'https://ottopus.test')
+
+    expect(await supersedePlan(db, { userId: alice, planId: v1.id, version: 1, detail: { trigger: 'quote_expired' } })).toBe('superseded')
+    expect(await resolveReviewToken(db, alice, a.token)).toBeNull()
+    expect(await resolveReviewToken(db, alice, b.token)).toBeNull()
+    expect((await findPlan(db, alice, v1.id, 1))?.plan.status).toBe('superseded')
+    expect((await findPlan(db, alice, v1.id))?.plan.version).toBe(2)
+  })
+
+  it('cannot supersede another user’s plan, and revokes nothing', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const link = await issueReviewLink(db, { planId: plan.id, version: 1, planExpiresAt: plan.expiresAt }, 'https://ottopus.test')
+    await expect(supersedePlan(db, { userId: bob, planId: plan.id, version: 1 })).rejects.toMatchObject({ code: 'not_found' })
+    expect(await resolveReviewToken(db, alice, link.token)).not.toBeNull()
   })
 })

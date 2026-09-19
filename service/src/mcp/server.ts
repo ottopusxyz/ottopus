@@ -3,8 +3,11 @@ import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
 import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
+import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
+import type { Lookups } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
+import { prepareText, prepareTransfer } from './transfer.js'
 
 /**
  * The tool surface.
@@ -26,6 +29,8 @@ export interface ToolContext {
   clientId: string
   /** What that grant actually carries. */
   scopes: readonly string[]
+  /** The grant row, so a plan records which agent made it. Null over stdio. */
+  grantId: string | null
 }
 
 /**
@@ -41,6 +46,10 @@ export interface ToolDeps {
   findAgent(clientId: string): Promise<{ clientName: string } | null>
   listWallets(userId: string): Promise<Arm[]>
   readPortfolio: ((arms: readonly ArmRef[]) => Promise<Portfolio>) | null
+  /** The decoder's reads: code, Sourcify, 4byte. */
+  lookups: Lookups
+  createPlan(input: CreatePlanInput): Promise<PlanRecord>
+  issueReviewLink(planId: string, version: number, planExpiresAt: string): Promise<ReviewLink>
 }
 
 export const SERVER_INFO = {
@@ -220,6 +229,51 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       )
       const summary = summarisePortfolio(portfolio, arms, limit ?? 20)
       return text(portfolioText(summary), { ...summary })
+    },
+  )
+
+  /**
+   * The first tool that builds a plan. It returns a summary, a reason and a
+   * review link, and never a transaction: the calls it built are stored,
+   * hashed and shown on the review page, and nothing about them comes back
+   * here where an agent could act on them.
+   */
+  server.registerTool(
+    'prepare_transfer',
+    {
+      title: 'Prepare a transfer',
+      description:
+        'Build a plan to send a token or the chain’s own currency from one of the person’s wallets. ' +
+        'Picks the wallet with a stated reason unless one is given, builds the single call, decodes ' +
+        'and checks it, and returns a review link. The person opens the link and signs in their own ' +
+        'wallet; nothing moves until they do. Amounts are in base units (wei, or 10^decimals for a token).',
+      inputSchema: {
+        asset: z
+          .string()
+          .describe('CAIP-19 asset id: eip155:8453/slip44:60 for ETH on Base, eip155:8453/erc20:0x… for a token.'),
+        amount: z.string().regex(/^[0-9]+$/).describe('Base units as a decimal string. 500 USDC is "500000000".'),
+        to: z.string().describe('CAIP-10 recipient, e.g. eip155:8453:0xd8da…'),
+        fromAccount: z
+          .string()
+          .optional()
+          .describe('CAIP-10 of a linked wallet to send from. Omit to let Ottopus recommend one.'),
+        note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (input) => {
+      if (!hasScope(ctx.scopes, 'plans:write')) return denied('plans:write')
+      const outcome = await prepareTransfer({ userId: ctx.userId, grantId: ctx.grantId }, deps, input)
+      const body = prepareText(outcome)
+      if (outcome.kind === 'invalid' || outcome.kind === 'no_wallet') return failure(body)
+      if (outcome.kind === 'blocked') {
+        return {
+          ...text(body, { planId: outcome.planId, status: 'blocked', summary: outcome.summary, reasons: outcome.reasons }),
+          isError: true,
+        }
+      }
+      const { kind: _kind, linkExpiresAt: _link, ...structured } = outcome
+      return text(body, structured)
     },
   )
 

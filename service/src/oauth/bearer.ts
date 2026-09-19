@@ -22,6 +22,8 @@ declare module 'hono' {
     grantScopes: Scope[]
     /** The agent's client id, for logs and for revocation in Settings. */
     grantClientId: string
+    /** The grant row, or null for a token minted with none. Plans record it. */
+    grantId: string | null
   }
 }
 
@@ -57,6 +59,7 @@ export function requireGrant(db: Db): MiddlewareHandler {
     c.set('userId', grant.userId)
     c.set('grantScopes', grant.scopes)
     c.set('grantClientId', grant.clientId)
+    c.set('grantId', grant.grantId ?? null)
     // Deliberately not awaited. Settings wants to say when an agent last did
     // something; nobody's tool call should wait on a cosmetic timestamp, and
     // the update is a no-op unless a minute has passed.

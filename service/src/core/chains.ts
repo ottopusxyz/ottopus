@@ -1,6 +1,6 @@
 import type { Chain } from 'viem'
 import * as viemChains from 'viem/chains'
-import { CaipError, type ChainId, formatChainId, parseChainId, toEvmChainId } from './caip.js'
+import { CaipError, type ChainId, formatChainId, nativeAssetOf, parseChainId, toEvmChainId } from './caip.js'
 
 /**
  * The chain registry. Ottopus supports most EVM chains, not a chosen two, and
@@ -188,6 +188,25 @@ export function explorerTxUrl(chain: ChainId | string, txHash: string): string |
 export function explorerAddressUrl(chain: ChainId | string, address: string): string | null {
   const base = findChain(chain)?.explorerUrl
   return base ? `${base}/address/${address}` : null
+}
+
+/**
+ * The chain's own currency as CAIP-19, for any chain a transfer could run on.
+ *
+ * The SLIP-44 table in caip.ts is authoritative where it has an entry. Beyond
+ * it, a chain viem says spends ETH is a rollup or fork spending ETH, and ETH
+ * is coin type 60 everywhere. A chain spending anything else needs its coin
+ * type looked up and added to the table — guessing would name the wrong
+ * currency — so it comes back null, and the caller says so.
+ */
+export function nativeAssetIdOf(chain: ChainId | string): string | null {
+  try {
+    return nativeAssetOf(chain)
+  } catch {
+    const info = findChain(chain)
+    if (info?.nativeCurrency.symbol === 'ETH') return `${info.id}/slip44:60`
+    return null
+  }
 }
 
 /** The viem chain object, for building a client. */

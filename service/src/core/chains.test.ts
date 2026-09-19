@@ -6,6 +6,7 @@ import {
   explorerAddressUrl,
   explorerTxUrl,
   findChain,
+  nativeAssetIdOf,
   providerServes,
   isSupportedChain,
   listChains,
@@ -109,5 +110,21 @@ describe('explorer links', () => {
 
   it('is null rather than a broken link for a chain with no explorer', () => {
     expect(explorerTxUrl('eip155:99999999999', '0xabc')).toBeNull()
+  })
+})
+
+describe('native asset beyond the coin-type table', () => {
+  it('is the table where the table has an answer', () => {
+    expect(nativeAssetIdOf('eip155:56')).toBe('eip155:56/slip44:714')
+  })
+
+  it('is ETH on a chain viem says spends ETH, such as Sepolia', () => {
+    expect(nativeAssetIdOf('eip155:11155111')).toBe('eip155:11155111/slip44:60')
+  })
+
+  it('refuses to guess a coin type for a chain spending something else', () => {
+    // Cronos spends CRO and is not in the table.
+    expect(nativeAssetIdOf('eip155:25')).toBeNull()
+    expect(nativeAssetIdOf('eip155:99999999999')).toBeNull()
   })
 })

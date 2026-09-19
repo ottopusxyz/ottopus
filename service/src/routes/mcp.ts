@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { findUserById } from '../auth/session.js'
+import { createPlan, issueReviewLink } from '../plans/index.js'
+import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
@@ -79,6 +81,10 @@ if (!config.databaseUrl) {
     findAgent: (clientId) => findClient(db, clientId),
     listWallets: (userId) => listWallets(db, userId),
     readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+    lookups: httpLookups({ rpcUrlTemplate: config.rpcUrlTemplate }),
+    createPlan: (input) => createPlan(db, input),
+    issueReviewLink: (planId, version, planExpiresAt) =>
+      issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),
   }
 
   /**
@@ -93,6 +99,7 @@ if (!config.databaseUrl) {
         userId: c.get('userId'),
         clientId: c.get('grantClientId'),
         scopes: c.get('grantScopes'),
+        grantId: c.get('grantId'),
       },
       deps,
     ),

@@ -121,7 +121,7 @@ if (ready) {
   apiApp.route('/agents', agentRoutes(db, session))
 
   /** Plans waiting on the person, the plan behind a review link, and the web's transitions. */
-  apiApp.route('/plans', planRoutes(db, session))
+  apiApp.route('/plans', planRoutes(db, session, config.webUrl))
 
   /**
    * Balances are a separate readiness question from sign-in.
