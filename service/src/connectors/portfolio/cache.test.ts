@@ -15,6 +15,13 @@ function position(amount = '1'): AccountPosition {
     price: 1,
     change1d: 0,
     protocol: null,
+    protocolModule: null,
+    positionName: null,
+    dappId: null,
+    dappIconUrl: null,
+    dappUrl: null,
+    poolAddress: null,
+    parentId: null,
     groupId: null,
   }
 }

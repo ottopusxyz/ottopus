@@ -177,8 +177,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
     {
       title: 'Get portfolio',
       description:
-        'Balances across every linked wallet: the total, each wallet, and the holdings that ' +
-        'matter, highest value first. Amounts are exact and values are in USD. Read-only, and ' +
+        'Balances across every linked wallet: the total, each wallet, the loose holdings that ' +
+        'matter highest value first, then what sits in protocols — deposited, borrowed, staked, ' +
+        'locked or claimable, per app. Amounts are exact and values are in USD. Read-only, and ' +
         'never a reason to move anything.',
       inputSchema: {
         limit: z

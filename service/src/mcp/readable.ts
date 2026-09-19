@@ -1,4 +1,4 @@
-import type { Portfolio } from '../connectors/portfolio/index.js'
+import type { Portfolio, ProtocolPositionType } from '../connectors/portfolio/index.js'
 import type { Arm } from '../wallets/index.js'
 
 /**
@@ -138,12 +138,15 @@ export interface PortfolioSummary {
     status: string
     total: number
   }[]
+  /**
+   * Loose balances only — every amount here is one a wallet could send today.
+   * What is deposited, staked or borrowed is under `protocols`, never here.
+   */
   assets: {
     symbol: string
     name: string
     chain: string
     amount: string
-    spendable: string
     value: number
     /**
      * Which wallets hold it, and how much each. The row above is the sum; this
@@ -154,6 +157,50 @@ export interface PortfolioSummary {
   }[]
   /** Rows past the limit, so the agent knows the list is cut. */
   omitted: number
+  /**
+   * One entry per app, each with the positions the app itself groups
+   * together — a lending market with its collateral and its debt. Values are
+   * net; each position says in words how it is held, so "borrowed" is never
+   * mistaken for "held".
+   */
+  protocols: {
+    id: string
+    name: string
+    /** Net across every position: deposits less debt. */
+    value: number
+    positions: {
+      name: string
+      chain: string
+      /** Net for this group. */
+      value: number
+      holdings: {
+        symbol: string
+        amount: string
+        /** deposited, borrowed, staked, locked, claimable, invested. */
+        held: string
+        value: number | null
+        wallet: { id: string; name: string }
+      }[]
+    }[]
+  }[]
+}
+
+/** How a protocol position is held, as a person says it. */
+export function heldWord(positionType: ProtocolPositionType): string {
+  switch (positionType) {
+    case 'deposit':
+      return 'deposited'
+    case 'loan':
+      return 'borrowed'
+    case 'staked':
+      return 'staked'
+    case 'locked':
+      return 'locked'
+    case 'reward':
+      return 'claimable'
+    case 'investment':
+      return 'invested'
+  }
 }
 
 /**
@@ -171,6 +218,10 @@ export function summarisePortfolio(
   const chains = new Map(portfolio.chains.map((chain) => [chain.chainId, chain.name]))
   const sorted = [...portfolio.assets].sort((a, b) => b.value - a.value)
   const shown = sorted.slice(0, limit)
+  const nameOf = (id: string) => {
+    const known = byId.get(id)
+    return known ? holderName(known) : truncateAddress(id)
+  }
 
   return {
     currency: portfolio.currency,
@@ -193,21 +244,35 @@ export function summarisePortfolio(
       name: row.asset.name,
       chain: chains.get(row.chainId) ?? row.chainId,
       amount: humanAmount(row.amount, row.asset.decimals),
-      spendable: humanAmount(row.spendable, row.asset.decimals),
       value: row.value,
-      wallets: holdersOf(row.holdings, row.asset.decimals, (id) => {
-        const known = byId.get(id)
-        return known ? holderName(known) : truncateAddress(id)
-      }),
+      wallets: holdersOf(row.holdings, row.asset.decimals, nameOf),
     })),
     omitted: Math.max(0, sorted.length - shown.length),
+    // Not capped: an account with more protocol groups than the limit is rare,
+    // and the debt row an agent most needs is often the smallest by value.
+    protocols: portfolio.protocols.map((app) => ({
+      id: app.id,
+      name: app.name,
+      value: app.value,
+      positions: app.groups.map((group) => ({
+        name: group.name,
+        chain: chains.get(group.chainId) ?? group.chainId,
+        value: group.value,
+        holdings: group.holdings.map((holding) => ({
+          symbol: holding.asset.symbol,
+          amount: humanAmount(holding.amount, holding.asset.decimals),
+          held: heldWord(holding.positionType),
+          value: holding.value,
+          wallet: { id: holding.walletId, name: nameOf(holding.walletId) },
+        })),
+      })),
+    })),
   }
 }
 
 /**
- * One entry per wallet holding an asset, amounts summed across position types
- * — a wallet with 1 ETH loose and 0.5 staked holds 1.5, and the agent can ask
- * list_wallets or the row's spendable figure for the difference.
+ * One entry per wallet holding an asset, amounts summed across arms. Only
+ * loose balances reach here, so what a wallet holds is what it could send.
  */
 export function holdersOf(
   holdings: readonly { walletId: string; amount: string }[],
@@ -248,9 +313,11 @@ export function portfolioText(summary: PortfolioSummary): string {
 
   const assets =
     summary.assets.length === 0
-      ? 'No balances found.'
+      ? summary.protocols.length === 0
+        ? 'No balances found.'
+        : 'Nothing loose in any wallet.'
       : [
-          'Holdings, highest value first:',
+          'In wallets, highest value first:',
           ...summary.assets.map(
             (row) =>
               `- ${row.amount} ${row.symbol} on ${row.chain}${heldByText(row.wallets)} — ${usd(row.value)}`,
@@ -258,5 +325,22 @@ export function portfolioText(summary: PortfolioSummary): string {
           ...(summary.omitted > 0 ? [`…and ${summary.omitted} smaller.`] : []),
         ].join('\n')
 
-  return [head, caveat, assets].filter(Boolean).join('\n')
+  // One line per group, every holding in words: "1.2398 ETH deposited, 1,202
+  // USDC borrowed". The net closes the line so a debt is never read as a gain.
+  const protocols =
+    summary.protocols.length === 0
+      ? null
+      : [
+          'In protocols:',
+          ...summary.protocols.flatMap((app) =>
+            app.positions.map((group) => {
+              const parts = group.holdings.map(
+                (h) => `${h.amount} ${h.symbol} ${h.held}${h.value === null ? '' : ` (${usd(h.value)})`} in ${h.wallet.name}`,
+              )
+              return `- ${app.name} — ${group.name} on ${group.chain}: ${parts.join(', ')}; net ${usd(group.value)}`
+            }),
+          ),
+        ].join('\n')
+
+  return [head, caveat, assets, protocols].filter(Boolean).join('\n')
 }

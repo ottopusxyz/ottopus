@@ -30,10 +30,10 @@ export interface AccountRef {
 /**
  * How an asset is being held.
  *
- * `wallet` is the only one a plan can spend, which is why this survives all the
- * way to the API response — the scorer's eligibility filter will need it, and a
- * staked balance counted as available would recommend a wallet that cannot
- * actually pay.
+ * `wallet` is the only one a plan can spend, and the only one that reaches the
+ * token list — everything else is a protocol position and is shown under the
+ * protocol it sits in, so a staked balance never reads as money a wallet could
+ * send today.
  */
 export type PositionType =
   | 'wallet'
@@ -54,10 +54,39 @@ export const POSITION_TYPES: readonly PositionType[] = [
   'investment',
 ]
 
-/** A plan can only spend what is sitting in the wallet itself. */
-export function isSpendable(positionType: PositionType): boolean {
-  return positionType === 'wallet'
-}
+/**
+ * Where inside a protocol a position sits — a lending market, an AMM pool, a
+ * vesting schedule. Zerion's vocabulary, kept as-is because it is the set every
+ * provider converges on and a UI only needs it for a label.
+ */
+export type ProtocolModule =
+  | 'deposit'
+  | 'lending'
+  | 'yield'
+  | 'liquidity_pool'
+  | 'staked'
+  | 'leveraged_farming'
+  | 'nft_staked'
+  | 'farming'
+  | 'locked'
+  | 'vesting'
+  | 'rewards'
+  | 'investment'
+
+export const PROTOCOL_MODULES: readonly ProtocolModule[] = [
+  'deposit',
+  'lending',
+  'yield',
+  'liquidity_pool',
+  'staked',
+  'leveraged_farming',
+  'nft_staked',
+  'farming',
+  'locked',
+  'vesting',
+  'rewards',
+  'investment',
+]
 
 export interface AssetInfo {
   /** Provider-scoped identity shared by deployments of the same token across chains. */
@@ -84,22 +113,34 @@ export interface AccountPosition {
    */
   amount: string
   /**
-   * Fiat value, **signed** — a loan is negative, because it is debt and a
-   * portfolio total that adds borrowings to net worth is not a portfolio total.
-   * Null when the provider has no price, which is different from zero.
+   * Fiat value, as a magnitude. A loan's value is what is owed, and it is
+   * `positionType` that says so — the aggregate subtracts it from the total,
+   * and a UI shows it under a "Debt" tag rather than with a minus sign. Null
+   * when the provider has no price, which is different from zero.
    */
   value: number | null
   /** Unit price in the requested currency. */
   price: number | null
-  /** 24h change in fiat, signed the same way as `value`. */
+  /** 24h change in fiat, as the provider reports it. For a loan, the change in what is owed. */
   change1d: number | null
   /** Protocol name for a DeFi position; null for a plain wallet balance. */
   protocol: string | null
+  /** The module inside the protocol. Null for a wallet balance or an unlabelled position. */
+  protocolModule: ProtocolModule | null
+  /** The provider's name for the position — "Fluid Lending (#9468)". Null for a wallet balance. */
+  positionName: string | null
+  /** Stable slug for the app, shared across chains and arms. Null for a wallet balance. */
+  dappId: string | null
+  dappIconUrl: string | null
+  dappUrl: string | null
+  /** Contract of the pool or market, when the provider knows it. */
+  poolAddress: string | null
+  /** Provider id of a parent position — rewards that hang off a farm. Carried, not nested. */
+  parentId: string | null
   /**
-   * Positions sharing this belong to one pool — a Uniswap v2 USDC/WETH pair
-   * arrives as two positions with one group_id. Kept so a UI can put them back
-   * together; the token table deliberately does not, because you do hold that
-   * much USDC, just not loosely.
+   * Positions sharing this belong to one pool or market — a Uniswap v2
+   * USDC/WETH pair arrives as two positions with one group_id, and a lending
+   * market's collateral and debt share one too. The aggregate groups by it.
    */
   groupId: string | null
 }

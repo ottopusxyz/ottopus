@@ -104,25 +104,85 @@ describe('naming a position in CAIP', () => {
   })
 })
 
-describe('a loan is debt, whichever sign the provider writes', () => {
-  it('makes a positive borrowed value negative', () => {
+describe('a loan is a magnitude, whichever sign the provider writes', () => {
+  it('keeps a borrowed value positive and leaves the sign to the type', () => {
     const loan = toPosition(position({ position_type: 'loan', value: 500, changes: { absolute_1d: 2 } }), CHAINS)
-    expect(loan?.value).toBe(-500)
-    expect(loan?.change1d).toBe(-2)
+    expect(loan?.positionType).toBe('loan')
+    expect(loan?.value).toBe(500)
+    expect(loan?.change1d).toBe(2)
   })
 
-  it('leaves an already-negative borrowed value negative', () => {
+  it('turns an already-negative borrowed value positive', () => {
     const loan = toPosition(position({ position_type: 'loan', value: -500 }), CHAINS)
-    expect(loan?.value).toBe(-500)
+    expect(loan?.value).toBe(500)
   })
 })
 
-describe('spendability is never inferred optimistically', () => {
+describe('what a protocol position carries', () => {
+  const fluid = {
+    position_type: 'deposit',
+    protocol: 'Fluid',
+    protocol_module: 'lending',
+    name: 'Fluid Lending (#9468)',
+    pool_address: '0x324c5dc1fc42c7a4d43d92df1eba58a54d13bf2d',
+    group_id: '8fc6ac20',
+    parent: null,
+    application_metadata: {
+      name: 'Fluid',
+      icon: { url: 'https://protocol-icons.s3.amazonaws.com/icons/fluid.jpg' },
+      url: 'https://fluid.instadapp.io',
+    },
+  }
+
+  it('names the app, the module, the position and the pool', () => {
+    const raw = position(fluid)
+    raw.relationships = { ...raw.relationships, dapp: { data: { id: 'fluid' } } } as never
+    expect(toPosition(raw, CHAINS)).toMatchObject({
+      protocol: 'Fluid',
+      protocolModule: 'lending',
+      positionName: 'Fluid Lending (#9468)',
+      dappId: 'fluid',
+      dappIconUrl: 'https://protocol-icons.s3.amazonaws.com/icons/fluid.jpg',
+      dappUrl: 'https://fluid.instadapp.io',
+      poolAddress: '0x324c5dc1fc42c7a4d43d92df1eba58a54d13bf2d',
+      parentId: null,
+      groupId: '8fc6ac20',
+    })
+  })
+
+  it('slugs the protocol name when the provider gives no dapp id', () => {
+    expect(toPosition(position({ ...fluid, protocol: 'Aave V3' }), CHAINS)?.dappId).toBe('aave-v3')
+  })
+
+  it('carries a parent id without nesting anything', () => {
+    expect(toPosition(position({ ...fluid, parent: 'farm-1' }), CHAINS)?.parentId).toBe('farm-1')
+  })
+
+  it('forgets a module it has no word for rather than dropping the position', () => {
+    const out = toPosition(position({ ...fluid, protocol_module: 'perpetuals' }), CHAINS)
+    expect(out?.protocolModule).toBeNull()
+    expect(out?.positionType).toBe('deposit')
+  })
+
+  it('gives a wallet balance none of it', () => {
+    expect(toPosition(position({ name: 'Asset' }), CHAINS)).toMatchObject({
+      protocol: null,
+      protocolModule: null,
+      positionName: null,
+      dappId: null,
+      dappIconUrl: null,
+      dappUrl: null,
+      groupId: null,
+    })
+  })
+})
+
+describe('a protocol position never lands in the token list by guesswork', () => {
   it('keeps the type the provider gave', () => {
     expect(toPosition(position({ position_type: 'staked', protocol: 'Lido' }), CHAINS)?.positionType).toBe('staked')
   })
 
-  it('calls an untyped position with a protocol deposited, not spendable', () => {
+  it('calls an untyped position with a protocol deposited, not a wallet balance', () => {
     const out = toPosition(position({ position_type: null, protocol: 'Aave V3' }), CHAINS)
     expect(out?.positionType).toBe('deposit')
     expect(out?.protocol).toBe('Aave V3')

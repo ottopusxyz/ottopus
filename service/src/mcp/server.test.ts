@@ -46,7 +46,7 @@ const PORTFOLIO: Portfolio = {
   currency: 'usd',
   asOf: '2026-09-09T10:00:00Z',
   total: 2000,
-  gross: 2000,
+  byType: { wallet: 2000, deposit: 0, loan: 0, locked: 0, staked: 0, reward: 0, investment: 0 },
   change1d: 12.4,
   arms: [
     { walletId: 'w1', address: WALLETS[0]!.address, status: 'ok', total: 2000, change1d: 12.4, positionCount: 1 },
@@ -59,16 +59,14 @@ const PORTFOLIO: Portfolio = {
       chainId: 'eip155:1',
       asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
       amount: '1258100000000000000',
-      spendable: '1258100000000000000',
       value: 2000,
       price: 1589.7,
       change1d: 12.4,
       share: 1,
-      holdings: [
-        { walletId: 'w1', positionType: 'wallet', amount: '1258100000000000000', value: 2000, protocol: null, groupId: null },
-      ],
+      holdings: [{ walletId: 'w1', amount: '1258100000000000000', value: 2000 }],
     },
   ],
+  protocols: [],
 }
 
 const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({

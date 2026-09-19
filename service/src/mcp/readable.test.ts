@@ -76,9 +76,9 @@ const portfolio: Portfolio = {
   provider: 'zerion',
   currency: 'usd',
   asOf: '2026-09-09T10:00:00Z',
-  total: 2816.91,
-  gross: 2816.91,
+  total: 2816.91 + 1898,
   change1d: -8.26,
+  byType: { wallet: 2816.91, deposit: 3100, loan: 1202, locked: 0, staked: 0, reward: 0, investment: 0 },
   arms: [
     { walletId: 'w1', address: '0xd8da…', status: 'ok', total: 2800, change1d: -8, positionCount: 3 },
     { walletId: 'w2', address: '0xabcd…', status: 'unavailable', total: 0, change1d: 0, positionCount: 0 },
@@ -93,15 +93,14 @@ const portfolio: Portfolio = {
       chainId: 'eip155:1',
       asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
       amount: '1258100000000000000',
-      spendable: '1258100000000000000',
       value: 2000,
       price: 1589.7,
       change1d: -8,
       share: 0.7,
       holdings: [
-        { walletId: 'w1', positionType: 'wallet', amount: '900000000000000000', value: 1430, protocol: null, groupId: null },
-        { walletId: 'w1', positionType: 'staked', amount: '100000000000000000', value: 159, protocol: 'Lido', groupId: null },
-        { walletId: 'w2', positionType: 'wallet', amount: '258100000000000000', value: 411, protocol: null, groupId: null },
+        { walletId: 'w1', amount: '900000000000000000', value: 1430 },
+        { walletId: 'w1', amount: '100000000000000000', value: 159 },
+        { walletId: 'w2', amount: '258100000000000000', value: 411 },
       ],
     },
     {
@@ -109,26 +108,67 @@ const portfolio: Portfolio = {
       chainId: 'eip155:8453',
       asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
       amount: '816910000',
-      spendable: '816910000',
       value: 816.91,
       price: 1,
       change1d: 0,
       share: 0.3,
-      holdings: [
-        { walletId: 'w1', positionType: 'wallet', amount: '816910000', value: 816.91, protocol: null, groupId: null },
-      ],
+      holdings: [{ walletId: 'w1', amount: '816910000', value: 816.91 }],
     },
     {
       assetId: 'eip155:8453/erc20:0x2',
       chainId: 'eip155:8453',
       asset: { symbol: 'DUST', name: 'Dust', decimals: 18, iconUrl: null, verified: false },
       amount: '1',
-      spendable: '1',
       value: 0,
       price: null,
       change1d: 0,
       share: 0,
       holdings: [],
+    },
+  ],
+  protocols: [
+    {
+      id: 'fluid',
+      name: 'Fluid',
+      iconUrl: null,
+      url: null,
+      value: 1898,
+      change1d: 0,
+      share: 0.4,
+      groups: [
+        {
+          id: 'g-fluid',
+          chainId: 'eip155:8453',
+          name: 'Fluid Lending (#9468)',
+          module: 'lending',
+          value: 1898,
+          change1d: 0,
+          holdings: [
+            {
+              walletId: 'w1',
+              assetId: 'eip155:8453/slip44:60',
+              chainId: 'eip155:8453',
+              asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
+              positionType: 'deposit',
+              amount: '1239800000000000000',
+              value: 3100,
+              price: 2500,
+              change1d: 32,
+            },
+            {
+              walletId: 'w1',
+              assetId: 'eip155:8453/erc20:0x1',
+              chainId: 'eip155:8453',
+              asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
+              positionType: 'loan',
+              amount: '1202021368',
+              value: 1202,
+              price: 1,
+              change1d: 0.2,
+            },
+          ],
+        },
+      ],
     },
   ],
 }
@@ -139,7 +179,8 @@ describe('a portfolio in words', () => {
   it('leads with the total and the day, then the holdings that matter', () => {
     const summary = summarisePortfolio(portfolio, arms, 2)
     const words = portfolioText(summary)
-    expect(words.split('\n')[0]).toBe('Total $2,816.91 across 2 wallets, −$8.26 today.')
+    expect(words.split('\n')[0]).toBe('Total $4,714.91 across 2 wallets, −$8.26 today.')
+    expect(words).toContain('In wallets, highest value first:')
     expect(words).toContain('- 1.2581 ETH on Ethereum across 2 wallets — $2,000.00')
     expect(words).toContain('- 816.91 USDC on Base in Main — $816.91')
     expect(words).toContain('…and 1 smaller.')
@@ -151,9 +192,41 @@ describe('a portfolio in words', () => {
     expect(words).toContain('1 of 2 could not be read (Cold) and are left out of the total.')
   })
 
+  it('says what sits in each protocol in words, debt included, and what it nets to', () => {
+    const summary = summarisePortfolio(portfolio, arms, 2)
+    expect(summary.protocols).toEqual([
+      {
+        id: 'fluid',
+        name: 'Fluid',
+        value: 1898,
+        positions: [
+          {
+            name: 'Fluid Lending (#9468)',
+            chain: 'Base',
+            value: 1898,
+            holdings: [
+              { symbol: 'ETH', amount: '1.2398', held: 'deposited', value: 3100, wallet: { id: 'w1', name: 'Main' } },
+              { symbol: 'USDC', amount: '1,202.0213', held: 'borrowed', value: 1202, wallet: { id: 'w1', name: 'Main' } },
+            ],
+          },
+        ],
+      },
+    ])
+    expect(portfolioText(summary)).toContain(
+      '- Fluid — Fluid Lending (#9468) on Base: 1.2398 ETH deposited ($3,100.00) in Main, 1,202.0213 USDC borrowed ($1,202.00) in Main; net $1,898.00',
+    )
+  })
+
+  it('says so when everything is in protocols and nothing is loose', () => {
+    const words = portfolioText(summarisePortfolio({ ...portfolio, assets: [] }, arms, 2))
+    expect(words).toContain('Nothing loose in any wallet.')
+    expect(words).toContain('In protocols:')
+    expect(portfolioText(summarisePortfolio({ ...portfolio, assets: [], protocols: [] }, arms, 2))).toContain('No balances found.')
+  })
+
   it('says which wallets hold each asset, and how much, most first', () => {
     const [eth, usdc] = summarisePortfolio(portfolio, arms, 2).assets
-    // Loose plus staked in the same wallet is one entry: what the wallet holds.
+    // Two rows from the same wallet are one entry: what the wallet holds.
     expect(eth!.wallets).toEqual([
       { id: 'w1', name: 'Main', amount: '1' },
       { id: 'w2', name: 'Cold', amount: '0.2581' },

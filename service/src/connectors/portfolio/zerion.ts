@@ -15,10 +15,12 @@ import { ChainMap, type ChainEntry } from './chains.js'
 import {
   PortfolioError,
   POSITION_TYPES,
+  PROTOCOL_MODULES,
   type AccountPosition,
   type AccountRef,
   type PortfolioConnector,
   type PositionType,
+  type ProtocolModule,
 } from './types.js'
 
 const DEFAULT_BASE_URL = 'https://api.zerion.io/v1'
@@ -69,20 +71,29 @@ interface ZerionFungibleInfo {
 
 interface ZerionPosition {
   attributes?: {
+    name?: string | null
     quantity?: ZerionQuantity
     value?: number | null
     price?: number | null
     changes?: { absolute_1d?: number | null } | null
     position_type?: string | null
     protocol?: string | null
+    protocol_module?: string | null
+    pool_address?: string | null
+    parent?: string | null
     group_id?: string | null
     fungible_info?: ZerionFungibleInfo
     flags?: { displayable?: boolean }
-    application_metadata?: { name?: string }
+    application_metadata?: {
+      name?: string
+      icon?: { url?: string | null } | null
+      url?: string | null
+    }
   }
   relationships?: {
     fungible?: { data?: { id?: string } }
     chain?: { data?: { id?: string } }
+    dapp?: { data?: { id?: string } }
   }
 }
 
@@ -143,7 +154,7 @@ export class ZerionPortfolioConnector implements PortfolioConnector {
       currency: 'usd',
       // Everything, DeFi included. A staked balance is real money and the
       // header total has to include it — `positionType` is what keeps it out of
-      // the spendable set. Note Zerion prices enterprise usage differently per
+      // the token list. Note Zerion prices enterprise usage differently per
       // filter value.
       'filter[positions]': 'no_filter',
       // Zerion's own spam classification. Airdropped fakes named USDC would
@@ -302,17 +313,28 @@ function sleep(ms: number): Promise<void> {
 }
 
 const KNOWN_TYPES = new Set<string>(POSITION_TYPES)
+const KNOWN_MODULES = new Set<string>(PROTOCOL_MODULES)
 
 /**
  * Zerion's `position_type` is nullable. Falling back is safe in one direction
- * only: calling a protocol position `wallet` would make it spendable, and the
- * scorer would recommend an arm that cannot actually pay. A position with no
- * protocol behind it genuinely is a loose balance; anything with a protocol is
- * treated as deposited until Zerion says otherwise.
+ * only: calling a protocol position `wallet` would put it in the token list,
+ * and the scorer would recommend an arm that cannot actually pay. A position
+ * with no protocol behind it genuinely is a loose balance; anything with a
+ * protocol is treated as deposited until Zerion says otherwise.
  */
 function positionTypeOf(raw: string | null | undefined, protocol: string | null): PositionType {
   if (raw && KNOWN_TYPES.has(raw)) return raw as PositionType
   return protocol === null ? 'wallet' : 'deposit'
+}
+
+/** A module we have a word for, or nothing — a new module is not a reason to drop the position. */
+function moduleOf(raw: string | null | undefined): ProtocolModule | null {
+  return raw && KNOWN_MODULES.has(raw) ? (raw as ProtocolModule) : null
+}
+
+/** Something a `dapp` relationship would say, for a protocol Zerion named but did not slug. */
+function slugOf(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 /**
@@ -376,18 +398,18 @@ export function toPosition(item: ZerionPosition, chains: ChainMap): AccountPosit
   if (typeof amount !== 'string' || !/^[0-9]+$/.test(amount)) return null
   if (!Number.isInteger(decimals) || decimals! < 0 || decimals! > 36) return null
 
-  const protocol = attributes.protocol ?? attributes.application_metadata?.name ?? null
+  const app = attributes.application_metadata
+  const protocol = attributes.protocol ?? app?.name ?? null
   const positionType = positionTypeOf(attributes.position_type, protocol)
+  const inProtocol = positionType !== 'wallet' || protocol !== null
 
-  // A loan is debt. Zerion reports `borrowed` as its own positive figure on the
-  // portfolio endpoint, so the sign here is not something to rely on — forcing
-  // it negative is right whichever way the provider writes it, and the failure
-  // it prevents is a total that counts borrowings as net worth.
-  const sign = positionType === 'loan' ? -1 : 1
-  const signed = (value: number | null | undefined): number | null =>
-    typeof value === 'number' && Number.isFinite(value) ? sign * Math.abs(value) : null
+  // Magnitudes. A loan's value is what is owed, and Zerion has written it both
+  // ways over time; `positionType` carries the sign from here, in one place,
+  // so a total never counts borrowings as net worth whichever way it arrives.
+  const magnitude = (value: number | null | undefined): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.abs(value) : null
   const change = (value: number | null | undefined): number | null =>
-    typeof value === 'number' && Number.isFinite(value) ? sign * value : null
+    typeof value === 'number' && Number.isFinite(value) ? value : null
 
   return {
     assetId,
@@ -405,13 +427,20 @@ export function toPosition(item: ZerionPosition, chains: ChainMap): AccountPosit
     },
     positionType,
     amount,
-    value: signed(attributes.value),
+    value: magnitude(attributes.value),
     price:
       typeof attributes.price === 'number' && Number.isFinite(attributes.price)
         ? attributes.price
         : null,
     change1d: change(attributes.changes?.absolute_1d),
     protocol,
+    protocolModule: inProtocol ? moduleOf(attributes.protocol_module) : null,
+    positionName: inProtocol ? (attributes.name ?? null) : null,
+    dappId: inProtocol ? (item.relationships?.dapp?.data?.id ?? (protocol ? slugOf(protocol) : null)) : null,
+    dappIconUrl: inProtocol ? (app?.icon?.url ?? null) : null,
+    dappUrl: inProtocol ? (app?.url ?? null) : null,
+    poolAddress: attributes.pool_address ?? null,
+    parentId: attributes.parent ?? null,
     groupId: attributes.group_id ?? null,
   }
 }

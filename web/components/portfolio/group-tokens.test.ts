@@ -6,8 +6,8 @@ function row(chain: string, familyId: string | null, decimals: number, amount: s
   return {
     assetId: `${chain}/erc20:contract`, chainId: chain,
     asset: { familyId, symbol: 'USDC', name: 'USD Coin', decimals, verified: true, iconUrl: null },
-    amount, spendable: amount, value, share: value > 0 ? value / 10 : 0, change1d: 0, price: 1,
-    holdings: [{ walletId: 'wallet', positionType: 'wallet', amount, value, protocol: null, groupId: null }],
+    amount, value, share: value > 0 ? value / 10 : 0, change1d: 0, price: 1,
+    holdings: [{ walletId: 'wallet', amount, value }],
   }
 }
 
@@ -16,7 +16,6 @@ describe('grouped token balances', () => {
     const rows = [row('eip155:1', 'zerion:usdc', 6, '1000001', 1), row('eip155:56', 'zerion:usdc', 18, '2000000000000000001', 2)]
     const [group] = groupTokens(rows)
     expect(group?.amount).toBe('3000001000000000001')
-    expect(group?.spendable).toBe(group?.amount)
     expect(group?.asset.decimals).toBe(18)
     expect(group?.value).toBe(3)
     expect(group?.networks).toHaveLength(2)
@@ -34,19 +33,16 @@ describe('grouped token balances', () => {
     expect(groups).toHaveLength(4)
   })
 
-  it('keeps debt, spendable balances, and unpriced positions distinct', () => {
-    const wallet = row('eip155:1', 'zerion:usdc', 6, '5000000', 5)
-    const loan = row('eip155:8453', 'zerion:usdc', 6, '2000000', -2)
-    loan.spendable = '0'
-    loan.holdings[0]!.positionType = 'loan'
-    loan.asset.verified = false
-    const [group] = groupTokens([wallet, loan])
-    expect(group?.value).toBe(3)
-    expect(group?.spendable).toBe('5000000')
+  it('keeps verification and pricing honest across a group', () => {
+    const verified = row('eip155:1', 'zerion:usdc', 6, '5000000', 5)
+    const unverified = row('eip155:8453', 'zerion:usdc', 6, '2000000', 2)
+    unverified.asset.verified = false
+    const [group] = groupTokens([verified, unverified])
+    expect(group?.value).toBe(7)
     expect(group?.asset.verified).toBe(false)
-    expect(group?.networks.find((network) => network.chainId === loan.chainId)?.value).toBe(-2)
-    wallet.holdings[0]!.value = null
-    expect(groupTokens([wallet])[0]?.priced).toBe(false)
+    expect(group?.networks.find((network) => network.chainId === unverified.chainId)?.value).toBe(2)
+    verified.holdings[0]!.value = null
+    expect(groupTokens([verified])[0]?.priced).toBe(false)
   })
 
   it('collapses multiple implementations on one network to one icon and balance', () => {

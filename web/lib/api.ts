@@ -153,8 +153,8 @@ export function unlinkWallet(credentials: Credentials, id: string): Promise<void
 }
 
 /**
- * How an asset is held. `wallet` is the only one a plan can spend — a staked
- * balance is real money and not money you can send today.
+ * How an asset is held. `wallet` is the only one a plan can spend, and the
+ * only one in the token list — everything else sits under its protocol.
  */
 export type PositionType =
   | 'wallet'
@@ -165,6 +165,24 @@ export type PositionType =
   | 'reward'
   | 'investment'
 
+/** How a protocol position is held. Never `wallet`. */
+export type ProtocolPositionType = Exclude<PositionType, 'wallet'>
+
+/** Where inside a protocol a position sits. The provider's vocabulary. */
+export type ProtocolModule =
+  | 'deposit'
+  | 'lending'
+  | 'yield'
+  | 'liquidity_pool'
+  | 'staked'
+  | 'leveraged_farming'
+  | 'nft_staked'
+  | 'farming'
+  | 'locked'
+  | 'vesting'
+  | 'rewards'
+  | 'investment'
+
 /** Why an arm's balances are missing. `ok` means they are not. */
 export type ArmStatus = 'ok' | 'untracked_address' | 'rate_limited' | 'unavailable' | 'not_configured'
 
@@ -172,20 +190,18 @@ export interface ArmSummary {
   walletId: string
   address: string
   status: ArmStatus
+  /** Net: what the arm holds less what it owes. */
   total: number
   change1d: number
   positionCount: number
 }
 
-/** One arm's share of an asset row. */
+/** One arm's share of a token row. */
 export interface Holding {
   walletId: string
-  positionType: PositionType
   /** Base units. */
   amount: string
   value: number | null
-  protocol: string | null
-  groupId: string | null
 }
 
 export interface AssetInfo {
@@ -198,6 +214,7 @@ export interface AssetInfo {
   verified: boolean
 }
 
+/** A loose balance: one asset, on one chain, across every arm. Every amount here is spendable. */
 export interface AssetRow {
   /** CAIP-19 — one asset, on one chain, across every arm. */
   assetId: string
@@ -205,37 +222,82 @@ export interface AssetRow {
   asset: AssetInfo
   /** Base units, summed across arms. Never a number. */
   amount: string
-  /** Base units held loosely — what a plan could actually spend. */
-  spendable: string
-  /** Signed: a row that is only debt is negative. */
+  /** Never negative: debt is not a token you hold. */
   value: number
   price: number | null
   change1d: number
-  /** Fraction of gross holdings, 0..1. */
+  /** Fraction of the net total, 0..1. */
   share: number
   holdings: Holding[]
+}
+
+/** One position of one arm inside a protocol. */
+export interface ProtocolHolding {
+  walletId: string
+  assetId: string
+  chainId: string
+  asset: AssetInfo
+  positionType: ProtocolPositionType
+  /** Base units. */
+  amount: string
+  /** A magnitude. For a loan, what is owed. Null when unpriced. */
+  value: number | null
+  price: number | null
+  /** As the provider reports it. For a loan, the change in what is owed. */
+  change1d: number | null
+}
+
+/** What the app treats as one thing: a lending market, a pool, a vault. */
+export interface PositionGroup {
+  id: string
+  chainId: string
+  name: string
+  module: ProtocolModule | null
+  /** Net: deposits less loans. Negative for debt with nothing beside it. */
+  value: number
+  change1d: number
+  holdings: ProtocolHolding[]
+}
+
+export interface ProtocolRow {
+  id: string
+  name: string
+  iconUrl: string | null
+  url: string | null
+  /** Net across every group. */
+  value: number
+  change1d: number
+  /** Fraction of the net total, 0..1. Zero when net debt. */
+  share: number
+  groups: PositionGroup[]
 }
 
 export interface ChainRow {
   iconUrl?: string | null
   chainId: string
   name: string
+  /** Net across tokens and protocols on this chain. */
   value: number
   share: number
 }
+
+/** Magnitudes per way of holding — what is loose, deposited, owed, staked, and so on. */
+export type ValueByType = Record<PositionType, number>
 
 export interface Portfolio {
   provider: string
   currency: string
   asOf: string
-  /** Signed sum across every arm that could be read. Debt reduces it. */
+  /** Net worth: everything held less everything owed, across every arm that could be read. */
   total: number
-  /** Sum of positive values — the denominator behind every `share`. */
-  gross: number
   change1d: number
+  byType: ValueByType
   arms: ArmSummary[]
   chains: ChainRow[]
+  /** Loose balances only. */
   assets: AssetRow[]
+  /** One card per app, biggest first. */
+  protocols: ProtocolRow[]
 }
 
 /**

@@ -1,31 +1,69 @@
-import type { Portfolio } from '@/lib/api'
+import type { ArmSummary, Portfolio, ProtocolRow } from '@/lib/api'
 
-/** Derive every displayed total from the same set of visible positions. */
+/** A 0..1 share of a net total, or nothing when there is no positive whole to be a share of. */
+function shareOf(value: number, total: number): number {
+  return total > 0 && value > 0 ? value / total : 0
+}
+
+/**
+ * The portfolio narrowed to one network, or the whole of it — with every
+ * displayed total re-derived from the same set of visible positions, so the
+ * header, the cards, the shares and the wallet figures never disagree.
+ *
+ * Shares are of the net total on both paths, the way a portfolio app reads
+ * "Wallet 28%, Fluid 71%". Debt makes the whole smaller than its parts, so a
+ * card can exceed 100%; that is honest, and a share of a non-positive whole
+ * is zero rather than nonsense.
+ */
 export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
   const assets = portfolio.assets.filter((row) => !chainId || row.chainId === chainId)
-  const total = assets.reduce((sum, row) => sum + row.value, 0)
-  const gross = assets.reduce((sum, row) => sum + Math.max(0, row.value), 0)
-  const share = (value: number) => gross > 0 ? Math.max(0, value) / gross : 0
+  const protocols: ProtocolRow[] = portfolio.protocols
+    .map((app) => {
+      const groups = app.groups.filter((group) => !chainId || group.chainId === chainId)
+      return {
+        ...app,
+        groups,
+        value: groups.reduce((sum, group) => sum + group.value, 0),
+        change1d: groups.reduce((sum, group) => sum + group.change1d, 0),
+      }
+    })
+    .filter((app) => app.groups.length > 0)
+
+  const walletValue = assets.reduce((sum, row) => sum + row.value, 0)
+  const total = walletValue + protocols.reduce((sum, app) => sum + app.value, 0)
+  const change1d =
+    assets.reduce((sum, row) => sum + row.change1d, 0) +
+    protocols.reduce((sum, app) => sum + app.change1d, 0)
+
+  // Each arm's net on the visible set: its loose balances plus its protocol
+  // positions, debt subtracted — the same arithmetic the service does for the
+  // whole, applied to the slice.
+  const armTotals = new Map<string, number>()
+  const add = (walletId: string, value: number) =>
+    armTotals.set(walletId, (armTotals.get(walletId) ?? 0) + value)
+  for (const row of assets) for (const holding of row.holdings) add(holding.walletId, holding.value ?? 0)
+  for (const app of protocols) {
+    for (const group of app.groups) {
+      for (const holding of group.holdings) {
+        add(holding.walletId, (holding.positionType === 'loan' ? -1 : 1) * (holding.value ?? 0))
+      }
+    }
+  }
+
+  const arms: (ArmSummary & { share: number })[] = portfolio.arms.map((arm) => {
+    const armTotal = armTotals.get(arm.walletId) ?? 0
+    return { ...arm, total: armTotal, share: shareOf(armTotal, total) }
+  })
+
   return {
     ...portfolio,
     total,
-    gross,
-    change1d: assets.reduce((sum, row) => sum + row.change1d, 0),
-    assets: assets.map((row) => ({ ...row, share: share(row.value) })),
-    arms: portfolio.arms.map((arm) => {
-      let total = 0
-      let positive = 0
-      for (const row of assets) {
-        const value = row.holdings.filter((holding) => holding.walletId === arm.walletId)
-          .reduce((sum, holding) => sum + (holding.value ?? 0), 0)
-        total += value
-        // Allocate each positive asset row between its positive wallet contributions.
-        const positiveContributions = portfolio.arms.reduce((sum, candidate) => sum + Math.max(0,
-          row.holdings.filter((holding) => holding.walletId === candidate.walletId)
-            .reduce((value, holding) => value + (holding.value ?? 0), 0)), 0)
-        if (positiveContributions > 0) positive += Math.max(0, row.value) * Math.max(0, value) / positiveContributions
-      }
-      return { ...arm, total, share: share(positive) }
-    }),
+    change1d,
+    wallet: { value: walletValue, share: shareOf(walletValue, total) },
+    assets: assets.map((row) => ({ ...row, share: shareOf(row.value, total) })),
+    protocols: protocols.map((app) => ({ ...app, share: shareOf(app.value, total) })),
+    arms,
   }
 }
+
+export type SelectedPortfolio = ReturnType<typeof selectPortfolio>

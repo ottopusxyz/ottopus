@@ -4,11 +4,10 @@ export interface TokenGroup {
   id: string
   asset: AssetRow['asset']
   amount: string
-  spendable: string
   value: number
   share: number
   priced: boolean
-  networks: { chainId: string; amount: string; spendable: string; value: number; priced: boolean }[]
+  networks: { chainId: string; amount: string; value: number; priced: boolean }[]
   /** Every arm's share, with the chain it sits on — the breakdown lists them per network. */
   holdings: (AssetRow['holdings'][number] & { chainId: string })[]
 }
@@ -25,10 +24,8 @@ export function groupTokens(rows: readonly AssetRow[]): TokenGroup[] {
   }
   return [...families].map(([id, members]) => {
     const decimals = Math.max(...members.map((row) => row.asset.decimals))
-    const amountOf = (row: AssetRow, field: 'amount' | 'spendable') =>
-      BigInt(row[field]) * 10n ** BigInt(decimals - row.asset.decimals)
-    const sum = (items: AssetRow[], field: 'amount' | 'spendable') =>
-      items.reduce((value, row) => value + amountOf(row, field), 0n).toString()
+    const amountOf = (row: AssetRow) => BigInt(row.amount) * 10n ** BigInt(decimals - row.asset.decimals)
+    const sum = (items: AssetRow[]) => items.reduce((value, row) => value + amountOf(row), 0n).toString()
     const priced = (items: AssetRow[]) => items.some((row) => row.holdings.some((h) => h.value !== null))
     const networkIds = [...new Set(members.map((row) => row.chainId))]
     return {
@@ -38,7 +35,7 @@ export function groupTokens(rows: readonly AssetRow[]): TokenGroup[] {
         iconUrl: members.find((row) => row.asset.iconUrl)?.asset.iconUrl ?? null,
         verified: members.every((row) => row.asset.verified),
       },
-      amount: sum(members, 'amount'), spendable: sum(members, 'spendable'),
+      amount: sum(members),
       value: members.reduce((value, row) => value + row.value, 0),
       share: members.reduce((value, row) => value + row.share, 0),
       priced: priced(members),
@@ -49,7 +46,7 @@ export function groupTokens(rows: readonly AssetRow[]): TokenGroup[] {
       networks: networkIds.map((chainId) => {
         const items = members.filter((row) => row.chainId === chainId)
         return {
-          chainId, amount: sum(items, 'amount'), spendable: sum(items, 'spendable'),
+          chainId, amount: sum(items),
           value: items.reduce((value, row) => value + row.value, 0), priced: priced(items),
         }
       }).sort((a, b) => b.value - a.value),
