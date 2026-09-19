@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { PLAN_STATUSES, callSchema, isTerminal, planDraftSchema, planStatusSchema } from './plan.js'
+import { PLAN_STATUSES, callSchema, isTerminal, planDraftSchema, planStatusSchema, simulationSchema } from './plan.js'
 
 describe('status vocabulary', () => {
   /**
@@ -217,5 +217,38 @@ describe('the plan is bound to its intent', () => {
       },
     })
     expect(ok.intent.kind).toBe('bridge')
+  })
+})
+
+describe('a simulation on record', () => {
+  const sim = {
+    provider: 'eth_simulateV1',
+    chainId: 'eip155:8453',
+    blockNumber: '51119499',
+    success: true,
+    assetChanges: [],
+    gasUsed: '21000',
+    gasUsd: '0.01',
+    resultHash: 'a'.repeat(64),
+    ranAt: '2026-09-11T00:00:00.000Z',
+  }
+
+  /**
+   * `tracedAssets` shipped, wrote itself into four stored simulations, and was
+   * reverted out of this strict object — at which point `parsePlan` threw
+   * `unrecognized_keys` on those rows and the plans list stopped loading
+   * entirely. A key a strict schema has ever written it must accept forever.
+   */
+  it('still parses when it carries a field nothing reads any more', () => {
+    expect(simulationSchema.parse({ ...sim, tracedAssets: true }).tracedAssets).toBe(true)
+  })
+
+  it('parses just as well without it, for runs written before it existed', () => {
+    expect(simulationSchema.parse(sim).tracedAssets).toBeUndefined()
+  })
+
+  /** Strict is still strict: an unknown key is a plan nobody wrote. */
+  it('refuses a key that was never ours', () => {
+    expect(() => simulationSchema.parse({ ...sim, whatIsThis: 1 })).toThrow(/[Uu]nrecognized/)
   })
 })

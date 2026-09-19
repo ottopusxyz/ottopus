@@ -193,6 +193,23 @@ export const simulationSchema = z.strictObject({
   success: z.boolean(),
   /** Every balance the run moved, for the account that signs. */
   assetChanges: z.array(assetDeltaSchema),
+  /**
+   * Whether balances were traced at all — accepted, and nothing reads it yet.
+   *
+   * It is here because plans on record carry it. It shipped, wrote itself
+   * into four stored simulations, and was then reverted out of the schema
+   * (#92) — at which point `parsePlan` began throwing `unrecognized_keys` on
+   * those rows and the whole plans list stopped loading. This object is
+   * strict on purpose, so a key it has ever written it must accept forever;
+   * removing one is a breaking read, not a tidy-up.
+   *
+   * Optional, so simulations written before it existed parse too. #92 is
+   * where it gets a reader: an empty `assetChanges` means two different
+   * things — "traced, and nothing moved" or "never looked" — and a policy
+   * cannot tell a swap that received nothing from a swap nobody watched
+   * without it.
+   */
+  tracedAssets: z.boolean().optional(),
   /** Gas units the whole batch burned. */
   gasUsed: z.string().regex(/^[0-9]+$/),
   /** The same in dollars, or "unknown" when no price was to hand. */
