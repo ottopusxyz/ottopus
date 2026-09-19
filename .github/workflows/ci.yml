@@ -1,0 +1,41 @@
+# Every pull request, and main after a merge: typecheck, lint, test, build.
+#
+# The invariant tests — plan hashing, the scorer, the decoder, tampered and
+# expired plans — only help if they run on every change, and until this file
+# the only automated check anywhere was tsc inside the deploy's Docker build,
+# after the merge. The database tests run on PGlite, so nothing here needs a
+# secret or a service container; the two NEXT_PUBLIC values are dummies that
+# let `next build` run and leave sign-in switched off.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 1
+      NEXT_PUBLIC_PRIVY_APP_ID: clzzzzzzzzzzzzzzzzzzzzzzz
+      NEXT_PUBLIC_API_URL: http://localhost:8787/api
+    steps:
+      - uses: actions/checkout@v4
+      # No version here: package.json pins packageManager, and the action
+      # refuses to be told twice.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

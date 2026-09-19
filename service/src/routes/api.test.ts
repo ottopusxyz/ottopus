@@ -66,7 +66,11 @@ describe('preflight', () => {
 describe('actual requests', () => {
   it('carries the header on a real response, not just the preflight', async () => {
     const res = await apiApp.request('/session', { method: 'POST', headers: { Origin: WEB } })
-    expect(res.status).toBe(401)
+    // A real response, whichever one this environment gives: the session
+    // middleware's 401 when Privy is configured, the unconfigured handler's
+    // 503 when it is not — as on a CI runner with no .env. The header is
+    // what is under test, and it has to be on both.
+    expect([401, 503]).toContain(res.status)
     expect(res.headers.get('access-control-allow-origin')).toBe(WEB)
   })
 
