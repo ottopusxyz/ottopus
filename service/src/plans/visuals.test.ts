@@ -39,13 +39,31 @@ describe('visuals beside the plan', () => {
     const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
     expect(visualsFor(plan, arms, portfolio)).toEqual({
       assets: { 'eip155:8453/slip44:60': { symbol: 'ETH', name: 'Ether', iconUrl: 'https://cdn/eth.png' } },
-      chains: { 'eip155:8453': { name: 'Base', iconUrl: 'https://cdn/base.png' } },
+      chains: { 'eip155:8453': { name: 'Base', iconUrl: 'https://cdn/base.png', nativeAssetId: 'eip155:8453/slip44:60', nativeSymbol: 'ETH', nativeDecimals: 18 } },
       wallets: { [ACCOUNT]: { walletType: 'rabby', label: 'Main' } },
     })
   })
 
-  it('is empty rather than wrong when nothing is known', () => {
+  /**
+   * The chain entry survives a missing portfolio because the page needs the
+   * native asset id to name what the browser's own simulation reports, and
+   * that comes from core, not from a balance provider. Icons are the part
+   * that goes missing.
+   */
+  it('keeps only what is known: the chain from core, no icons, no wallet', () => {
     const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
-    expect(visualsFor(plan, [], null)).toEqual({ assets: {}, chains: {}, wallets: {} })
+    expect(visualsFor(plan, [], null)).toEqual({
+      assets: {},
+      chains: {
+        'eip155:8453': {
+          name: 'Base',
+          iconUrl: null,
+          nativeAssetId: 'eip155:8453/slip44:60',
+          nativeSymbol: 'ETH',
+          nativeDecimals: 18,
+        },
+      },
+      wallets: {},
+    })
   })
 })

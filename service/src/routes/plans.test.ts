@@ -122,7 +122,7 @@ describe('GET /:token', () => {
     expect(body.plan.planHash).toBe(plan.planHash)
     expect(body.link.expiresAt).toBeDefined()
     // Beside the plan, never inside it: the hash is over body.plan alone.
-    expect(body.visuals.chains['eip155:8453']).toEqual({ name: 'Base', iconUrl: 'https://cdn/base.png' })
+    expect(body.visuals.chains['eip155:8453']).toEqual({ name: 'Base', iconUrl: 'https://cdn/base.png', nativeAssetId: 'eip155:8453/slip44:60', nativeSymbol: 'ETH', nativeDecimals: 18 })
     expect(body.visuals.assets['eip155:8453/slip44:60']).toMatchObject({ symbol: 'ETH', iconUrl: 'https://cdn/eth.png' })
   })
 
@@ -138,7 +138,9 @@ describe('GET /:token', () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as { plan: { id: string }; visuals: { assets: object; chains: object } }
       expect(body.plan.id).toBe(plan.id)
-      expect(body.visuals).toEqual({ assets: {}, chains: {}, wallets: {} })
+      // The chain's own words come from core, so they outlive the provider.
+      expect(body.visuals).toMatchObject({ assets: {}, wallets: {} })
+      expect(body.visuals.chains).toHaveProperty(['eip155:8453', 'nativeAssetId'], 'eip155:8453/slip44:60')
     }
   })
 

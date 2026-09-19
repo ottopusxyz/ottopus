@@ -7,6 +7,7 @@ import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
 import { PlanError } from '../plans/index.js'
 import { planFor } from '../plans/fixtures.js'
 import { KNOWN_ABI, type Lookups } from '../verify/index.js'
+import type { SimulationRun, Simulator } from '../connectors/simulation/index.js'
 import type { Arm } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
 
@@ -114,6 +115,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   listWallets: async () => WALLETS,
   readPortfolio: async () => PORTFOLIO,
   lookups,
+  simulator: null,
   createPlan: planSink().createPlan,
   issueReviewLink: async (planId, version) => ({
     token: 'tok',
@@ -742,5 +744,182 @@ describe('cancel_plan', () => {
     const result = await call(client, 'cancel_plan', { planId: onRecord().plan.id })
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toContain('plans:write')
+  })
+})
+
+/**
+ * A simulator whose answer the test dictates, so the pipeline can be checked
+ * on what a simulation does to a plan rather than on what a chain says today.
+ */
+function stubSimulator(over: Partial<SimulationRun> = {}): Simulator {
+  return {
+    name: 'stub',
+    serves: () => true,
+    async simulate(request) {
+      return {
+        provider: 'stub',
+        chainId: request.chainId,
+        blockNumber: '51119499',
+        success: true,
+        gasUsed: '44831',
+        assetChanges: [
+          {
+            assetId: `${BASE}/erc20:${USDC}`,
+            symbol: 'USDC',
+            decimals: 6,
+            diff: '-500000000',
+            pre: '1000000000',
+            post: '500000000',
+          },
+        ],
+        tracedAssets: true,
+        ranAt: '2026-09-10T12:00:00.000Z',
+        raw: { baseFeePerGas: '1000000000' },
+        ...over,
+      }
+    },
+  }
+}
+
+describe('prepare_transfer with a simulation', () => {
+  const holdings: Portfolio = {
+    ...PORTFOLIO,
+    chains: [{ chainId: BASE, name: 'Base', value: 2000, share: 1 }],
+    assets: [
+      {
+        assetId: `${BASE}/erc20:${USDC}`,
+        chainId: BASE,
+        asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
+        amount: '1000000000',
+        value: 1000,
+        price: 1,
+        change1d: 0,
+        share: 0.7,
+        holdings: [{ walletId: 'w1', amount: '1000000000', value: 1000 }],
+      },
+      {
+        assetId: `${BASE}/slip44:60`,
+        chainId: BASE,
+        asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
+        amount: '300000000000000000',
+        value: 500,
+        price: 4000,
+        change1d: 0,
+        share: 0.3,
+        holdings: [{ walletId: 'w1', amount: '300000000000000000', value: 500 }],
+      },
+    ],
+  }
+  const send = (client: Client) =>
+    client.callTool({
+      name: 'prepare_transfer',
+      arguments: {
+        asset: `${BASE}/erc20:${USDC}`,
+        amount: '500000000',
+        to: `${BASE}:0x1111111111111111111111111111111111111111`,
+      },
+    })
+
+  it('attaches the run as evidence and prices the fee into the plan', async () => {
+    const sink = planSink()
+    const logged: { planId: string; simulation: { provider: string } }[] = []
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      simulator: stubSimulator(),
+      createPlan: sink.createPlan,
+      recordSimulation: async (input) => {
+        logged.push(input as never)
+      },
+    }, { grantId: 'grant-1' })
+
+    const res = (await send(client)) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBeFalsy()
+
+    const plan = sink.created[0]!.plan
+    expect(plan.status).toBe('awaiting_review')
+    expect(plan.simulation).toMatchObject({ provider: 'stub', success: true, gasUsed: '44831', blockNumber: '51119499' })
+    // 44831 gas at 1 gwei is 0.0000448 ETH; at $4,000 that is 18 cents, and
+    // the fee is part of the human plan, so the hash covers it.
+    expect(plan.simulation?.gasUsd).toBe('0.17')
+    expect(plan.humanPlan.feesUsd).toBe('0.17')
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toMatchObject({ planId: plan.id, simulation: { provider: 'stub' } })
+    // Evidence stays evidence: nothing an agent could execute comes back.
+    expect(JSON.stringify(res)).not.toContain('assetChanges')
+  })
+
+  it('blocks the plan when the simulation says the call reverts, and says why', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      simulator: stubSimulator({
+        success: false,
+        assetChanges: [],
+        revertReason: 'ERC20: transfer amount exceeds balance',
+        failedCall: 1,
+      }),
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+
+    const res = (await send(client)) as { isError?: boolean; content: { text: string }[]; structuredContent?: Record<string, unknown> }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('the simulation failed on call 1: ERC20: transfer amount exceeds balance')
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+    // A blocked plan never gets a link.
+    expect(JSON.stringify(res)).not.toContain('review/')
+  })
+
+  it('blocks a plan whose simulation shows a second asset leaving', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      simulator: stubSimulator({
+        assetChanges: [
+          { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+          { assetId: `${BASE}/slip44:60`, symbol: 'ETH', decimals: 18, diff: '-90000000000000000', pre: '300000000000000000', post: '210000000000000000' },
+        ],
+      }),
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+
+    const res = (await send(client)) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('the simulation shows ETH leaving the wallet as well')
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+  })
+
+  /** No simulator, or one that cannot answer, must not read as a problem. */
+  it('still builds a reviewable plan when no simulator serves the chain', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      simulator: { name: 'stub', serves: () => false, simulate: async () => { throw new Error('never asked') } },
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+
+    const res = (await send(client)) as { isError?: boolean }
+    expect(res.isError).toBeFalsy()
+    expect(sink.created[0]!.plan.simulation).toBeNull()
+    expect(sink.created[0]!.plan.humanPlan.feesUsd).toBe('unknown')
+  })
+
+  it('treats a simulator that throws as no evidence rather than a refusal', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => holdings,
+      simulator: {
+        name: 'stub',
+        serves: () => true,
+        simulate: async () => {
+          throw new Error('the provider is down')
+        },
+      },
+      createPlan: sink.createPlan,
+    }, { grantId: 'grant-1' })
+
+    const res = (await send(client)) as { isError?: boolean }
+    expect(res.isError).toBeFalsy()
+    expect(sink.created[0]!.plan.status).toBe('awaiting_review')
+    expect(sink.created[0]!.plan.simulation).toBeNull()
   })
 })

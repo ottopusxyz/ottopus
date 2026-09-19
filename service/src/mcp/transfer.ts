@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { encodeFunctionData } from 'viem'
 import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
+import { SimulationUnavailableError, type Simulator, asSimulation } from '../connectors/simulation/index.js'
 import {
   type Call,
   type PlanDraft,
+  type Simulation,
   type TransferIntent,
   type WalletCandidate,
   type Warning,
@@ -43,8 +45,12 @@ export interface PrepareDeps {
   listWallets(userId: string): Promise<Arm[]>
   readPortfolio: ((arms: readonly ArmRef[]) => Promise<Portfolio>) | null
   lookups: Lookups
+  /** Null on a deployment with no simulator; the plan is then reviewed on its decoding alone. */
+  simulator: Simulator | null
   createPlan(input: CreatePlanInput): Promise<PlanRecord>
   issueReviewLink(planId: string, version: number, planExpiresAt: string): Promise<ReviewLink>
+  /** Keeps the run beside the plan. Optional: the tools work without the log. */
+  recordSimulation?: ((input: { planId: string; planVersion: number; simulation: Simulation; raw?: unknown }) => Promise<void>) | undefined
 }
 
 export interface PrepareContext {
@@ -241,6 +247,20 @@ export async function prepareTransfer(
   const call = buildTransferCall(intent)
   const expiresAt = new Date(now.getTime() + PLAN_TTL_MS).toISOString()
   const summary = transferSummary(intent, asset, chosen.resolution.account)
+
+  // Decode, then simulate, then hash. The fee estimate the simulation
+  // produces goes into the human plan, which is hashed — the number a person
+  // agreed to has to be bound to the plan they agreed to, like every other
+  // sentence on the page.
+  const decodedActions = await decodeCalls([call], deps.lookups)
+  const simulation = await simulate(deps, {
+    chainId,
+    account: chosen.resolution.account.caip10,
+    calls: [call],
+    gasAsset,
+    portfolio,
+  })
+
   const draft: PlanDraft = planDraftSchema.parse({
     id: randomUUID(),
     version: 1,
@@ -254,8 +274,7 @@ export async function prepareTransfer(
     humanPlan: {
       summary,
       steps: [summary, ...(intent.note ? [`Note from the request: ${intent.note}`] : [])],
-      // Gas is estimated by simulation (#23); until then the page says so.
-      feesUsd: 'unknown',
+      feesUsd: simulation?.gasUsd ?? 'unknown',
       warnings: [],
       assets: [{ id: intent.asset, symbol: asset.symbol, decimals: asset.decimals }],
     },
@@ -263,14 +282,19 @@ export async function prepareTransfer(
     expiresAt,
   })
 
-  const decodedActions = await decodeCalls([call], deps.lookups)
-  const verdict = verifyPlan({ intent, calls: [call], decodedActions })
+  const verdict = verifyPlan({ intent, calls: [call], decodedActions, simulation })
   const warnings = blockWarnings(verdict)
   const plan = assemblePlan(
     { ...draft, status: verdict.ok ? 'awaiting_review' : 'blocked', humanPlan: { ...draft.humanPlan, warnings } },
-    { decodedActions },
+    { decodedActions, simulation },
   )
   const record = await deps.createPlan({ plan, walletId: chosen.walletId, grantId: ctx.grantId })
+  if (simulation && deps.recordSimulation) {
+    // The log is a nicety; a plan that exists must not be lost to it.
+    await deps
+      .recordSimulation({ planId: record.plan.id, planVersion: record.plan.version, simulation })
+      .catch(() => {})
+  }
 
   if (!verdict.ok) {
     return { kind: 'blocked', planId: record.plan.id, summary, reasons: verdict.reasons, warnings }
@@ -289,6 +313,48 @@ export async function prepareTransfer(
     expiresAt: record.plan.expiresAt,
     reviewUrl: link.url,
     linkExpiresAt: link.expiresAt,
+  }
+}
+
+interface SimulateArgs {
+  chainId: string
+  account: string
+  calls: Call[]
+  gasAsset: string
+  portfolio: Portfolio | null
+}
+
+/**
+ * Run the simulation, or return null and say nothing about it.
+ *
+ * Absence of evidence must never read as evidence: a chain no simulator
+ * serves, or an RPC that would not answer, leaves `simulation` null, and the
+ * policy skips its rules rather than blocking. What must not happen is a
+ * simulation quietly failing and the page implying one passed.
+ *
+ * Gas is priced here because this is where the portfolio is: the simulator
+ * reports units and the block's base fee, the portfolio knows what the
+ * chain's currency is worth, and neither has any business knowing the other.
+ */
+async function simulate(deps: PrepareDeps, args: SimulateArgs): Promise<Simulation | null> {
+  if (!deps.simulator || !deps.simulator.serves(args.chainId)) return null
+  try {
+    const run = await deps.simulator.simulate({
+      chainId: args.chainId,
+      account: args.account,
+      calls: args.calls,
+    })
+    const native = args.portfolio?.assets.find((a) => a.assetId.toLowerCase() === args.gasAsset.toLowerCase())
+    return asSimulation(run, {
+      gasPriceWei: (run.raw as { baseFeePerGas?: string | null } | null)?.baseFeePerGas ?? null,
+      nativePriceUsd: native?.price ?? null,
+      nativeDecimals: native?.asset.decimals ?? findChain(args.chainId)?.nativeCurrency.decimals ?? null,
+    })
+  } catch (err) {
+    if (err instanceof SimulationUnavailableError) return null
+    // An RPC that will not answer is not a verdict either. The decoded plan
+    // still stands, and the page says the simulation did not run.
+    return null
   }
 }
 

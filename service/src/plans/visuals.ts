@@ -1,5 +1,6 @@
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import type { Plan } from '../core/index.js'
+import { findChain, nativeAssetIdOf } from '../core/index.js'
 import type { Arm } from '../wallets/index.js'
 import type { PlanSummary } from './store.js'
 
@@ -12,8 +13,26 @@ import type { PlanSummary } from './store.js'
  */
 export interface Visuals {
   assets: Record<string, { symbol: string; name: string; iconUrl: string | null }>
-  chains: Record<string, { name: string; iconUrl: string | null }>
+  chains: Record<string, ChainVisual>
   wallets: Record<string, { walletType: string; label: string | null }>
+}
+
+/**
+ * A chain's words, plus the CAIP-19 id of its own currency.
+ *
+ * The native asset id is here because the review page needs it and must not
+ * work it out: the SLIP-44 table lives in core, and a page that guessed coin
+ * type 60 would label BNB as ETH. The page simulates in the browser and gets
+ * bare addresses back; this is how it names the native row without owning the
+ * table.
+ */
+export interface ChainVisual {
+  name: string
+  iconUrl: string | null
+  /** e.g. eip155:8453/slip44:60. Null on a chain whose currency core cannot name. */
+  nativeAssetId: string | null
+  nativeSymbol: string
+  nativeDecimals: number
 }
 
 /** Every asset id a plan mentions. */
@@ -21,6 +40,10 @@ function assetIdsOf(plan: Plan): string[] {
   const ids = new Set<string>()
   if (plan.intent.kind === 'transfer') ids.add(plan.intent.asset)
   for (const a of plan.humanPlan.assets ?? []) ids.add(a.id)
+  // A simulation can name assets the intent never did — a swap's output, a
+  // token a call moved on the side. Those rows are on the page, so their
+  // icons have to be looked up too.
+  for (const change of plan.simulation?.assetChanges ?? []) ids.add(change.assetId)
   return [...ids]
 }
 
@@ -40,7 +63,16 @@ export function visualsFor(plan: Plan, arms: readonly Arm[], portfolio: Portfoli
   const [namespace, reference] = plan.resolution.account.caip10.split(':')
   const chainId = `${namespace}:${reference}`
   const chain = portfolio?.chains.find((c) => c.chainId.toLowerCase() === chainId.toLowerCase())
-  if (chain) visuals.chains[chainId] = { name: chain.name, iconUrl: chain.iconUrl ?? null }
+  const info = findChain(chainId)
+  if (chain || info) {
+    visuals.chains[chainId] = {
+      name: chain?.name ?? info?.name ?? chainId,
+      iconUrl: chain?.iconUrl ?? null,
+      nativeAssetId: nativeAssetIdOf(chainId),
+      nativeSymbol: info?.nativeCurrency.symbol ?? 'units',
+      nativeDecimals: info?.nativeCurrency.decimals ?? 18,
+    }
+  }
 
   for (const account of accountsOf(plan)) {
     const address = account.split(':')[2]?.toLowerCase()

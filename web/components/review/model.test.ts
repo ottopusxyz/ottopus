@@ -8,7 +8,9 @@ import {
   decodedRows,
   effectiveStatus,
   facts,
+  observedChanges,
   recipientOf,
+  simulationNote,
   verificationSummary,
 } from './model'
 
@@ -79,7 +81,7 @@ describe('status on the page', () => {
 
 describe('what the page says', () => {
   it('shows the outgoing amount in the asset’s own words', () => {
-    expect(assetChanges(plan)).toEqual([{ direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' }])
+    expect(assetChanges(plan)).toEqual([{ assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' }])
   })
 
   it('shows nothing rather than guessing when the plan recorded no asset words', () => {
@@ -133,5 +135,80 @@ describe('the wallet gate', () => {
       address: MAIN,
       chain: BASE,
     })
+  })
+})
+
+describe('what the simulation observed', () => {
+  const simulated = (over: Partial<NonNullable<Plan['simulation']>> = {}): Plan => ({
+    ...plan,
+    simulation: {
+      provider: 'eth_simulateV1',
+      chainId: BASE,
+      blockNumber: '51119499',
+      success: true,
+      assetChanges: [
+        { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+      ],
+      gasUsed: '44831',
+      gasUsd: '0.17',
+      resultHash: 'a'.repeat(64),
+      ranAt: '2026-09-10T12:00:00.000Z',
+      ...over,
+    },
+  })
+
+  it('prefers the traced balances over the request, and says which it is showing', () => {
+    const page = simulated()
+    expect(observedChanges(page)).toBe(true)
+    expect(assetChanges(page)).toEqual([
+      { assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
+    ])
+  })
+
+  it('falls back to the request when nothing was traced, and admits it', () => {
+    expect(observedChanges(simulated({ assetChanges: [] }))).toBe(false)
+    expect(observedChanges(plan)).toBe(false)
+    expect(assetChanges(simulated({ assetChanges: [] }))).toHaveLength(1)
+  })
+
+  it('reads the sign of the change as the direction', () => {
+    const page = simulated({
+      assetChanges: [
+        { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+        { assetId: `${BASE}/slip44:60`, symbol: 'ETH', decimals: 18, diff: '2000000000000000', pre: '0', post: '2000000000000000' },
+      ],
+    })
+    expect(assetChanges(page).map((c) => `${c.direction} ${c.amount} ${c.symbol} ${c.where}`)).toEqual([
+      'out 500 USDC leaves Main',
+      'in 0.002 ETH arrives in Main',
+    ])
+  })
+
+  it('shows a token it could not name in that token’s own units', () => {
+    const page = simulated({
+      assetChanges: [
+        { assetId: `${BASE}/erc20:0x1111111111111111111111111111111111111111`, symbol: null, decimals: null, diff: '-4200', pre: '4200', post: '0' },
+      ],
+    })
+    expect(assetChanges(page)[0]).toMatchObject({ amount: '4200', symbol: 'units' })
+  })
+
+  it('names the simulator and calls the result a prediction', () => {
+    expect(simulationNote(simulated())).toBe('Simulated by eth_simulateV1 at block 51119499. A prediction, not a guarantee.')
+  })
+
+  it('says what reverted when the simulation failed', () => {
+    const note = simulationNote(simulated({ success: false, failedCall: 1, revertReason: 'ERC20: transfer amount exceeds balance' }))
+    expect(note).toBe('eth_simulateV1 at block 51119499 — call 1 reverted: ERC20: transfer amount exceeds balance')
+  })
+
+  it('has nothing to say when no simulation ran', () => {
+    expect(simulationNote(plan)).toBeNull()
+  })
+
+  it('shows the fee once the simulation has priced it', () => {
+    const page = { ...simulated(), humanPlan: { ...plan.humanPlan, feesUsd: '0.17' } }
+    expect(facts(page).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee (est.): $0.17')
+    expect(facts(plan).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee: Your wallet will show it')
   })
 })

@@ -2,13 +2,14 @@ import { Hono } from 'hono'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { findUserById } from '../auth/session.js'
-import { createPlan, findPlan, issueReviewLink, transition } from '../plans/index.js'
+import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
 import { listWallets } from '../wallets/index.js'
+import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { portfolioProvider } from './portfolio-provider.js'
 import {
   authorizationServerMetadata,
@@ -82,9 +83,11 @@ if (!config.databaseUrl) {
     listWallets: (userId) => listWallets(db, userId),
     readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
     lookups: httpLookups({ rpcUrlTemplate: config.rpcUrlTemplate }),
+    simulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
       issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),
+    recordSimulation: (input) => recordSimulation(db, input),
     findPlan: (userId, planId) => findPlan(db, userId, planId),
     transition: (input) => transition(db, input),
   }

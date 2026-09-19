@@ -1,4 +1,4 @@
-import type { DecodedAction, Plan, PlanStatusName, PlanWarning } from '@/lib/api'
+import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
 
@@ -56,26 +56,73 @@ export interface AssetChange {
   symbol: string
   /** "leaves Main", "arrives at koshik.eth" */
   where: string
+  /** The CAIP-19 id, so the row can find its icon. */
+  assetId: string
 }
 
 /**
- * What moves. For a transfer that is one outgoing row, read from the intent.
- * The simulation diff replaces this in M4; until then the page is honest that
- * it is the intent, not an observed result.
+ * What moves.
+ *
+ * The simulation's traced balances when there are any, because those were
+ * observed; the intent when there are not, because a plan on a chain nobody
+ * simulates still has to say what it will do. The two are not interchangeable
+ * and the page labels which one it is showing — `observedChanges` is how it
+ * knows.
+ *
+ * The simulation traces the signing account's balances, so every row is about
+ * that wallet: what left it, and anything that arrived in it.
  */
 export function assetChanges(plan: Plan): AssetChange[] {
+  const holder = plan.resolution.account.label ?? truncateAddress(addressOf(plan.resolution.account.caip10))
+  const traced = plan.simulation?.assetChanges ?? []
+  if (traced.length > 0) return traced.map((delta) => observedRow(delta, holder))
   if (plan.intent.kind !== 'transfer') return []
   const words = assetWords(plan, plan.intent.asset)
   if (!words) return []
-  const from = plan.resolution.account.label ?? truncateAddress(addressOf(plan.resolution.account.caip10))
   return [
     {
       direction: 'out',
       amount: formatAmount(plan.intent.amount, words.decimals),
       symbol: words.symbol,
-      where: `leaves ${from}`,
+      where: `leaves ${holder}`,
+      assetId: plan.intent.asset,
     },
   ]
+}
+
+/** Whether the rows above were observed by a simulation or read off the request. */
+export function observedChanges(plan: Plan): boolean {
+  return (plan.simulation?.assetChanges.length ?? 0) > 0
+}
+
+function observedRow(delta: AssetDelta, holder: string): AssetChange {
+  const out = delta.diff.startsWith('-')
+  const magnitude = out ? delta.diff.slice(1) : delta.diff
+  return {
+    direction: out ? 'out' : 'in',
+    // A token the simulator could not name is shown in its own units rather
+    // than converted by a guessed number of decimals.
+    amount: delta.decimals === null ? magnitude : formatAmount(magnitude, delta.decimals),
+    symbol: delta.symbol ?? 'units',
+    where: out ? `leaves ${holder}` : `arrives in ${holder}`,
+    assetId: delta.assetId,
+  }
+}
+
+/**
+ * The line under the asset changes: who simulated, at which block, and that
+ * it is a prediction. Null when nothing ran, so the page can say that too
+ * rather than implying a pass.
+ */
+export function simulationNote(plan: Plan): string | null {
+  const sim = plan.simulation
+  if (!sim) return null
+  const where = `${sim.provider} at block ${sim.blockNumber}`
+  if (!sim.success) {
+    const which = sim.failedCall ? `call ${sim.failedCall}` : 'the batch'
+    return `${where} — ${which} reverted${sim.revertReason ? `: ${sim.revertReason}` : ''}`
+  }
+  return `Simulated by ${where}. A prediction, not a guarantee.`
 }
 
 export interface Recipient {

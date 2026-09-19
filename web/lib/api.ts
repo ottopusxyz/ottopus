@@ -478,7 +478,35 @@ export interface Plan {
   expiresAt: string
   planHash: string
   decodedActions: DecodedAction[]
-  simulation: unknown | null
+  simulation: Simulation | null
+}
+
+/** One balance the simulation watched move. Signed base units; negative leaves. */
+export interface AssetDelta {
+  assetId: string
+  symbol: string | null
+  decimals: number | null
+  diff: string
+  pre: string
+  post: string
+}
+
+/**
+ * What the simulation observed. A prediction, never a guarantee — the page
+ * says so, because a green result is not a safety claim.
+ */
+export interface Simulation {
+  provider: string
+  chainId: string
+  blockNumber: string
+  success: boolean
+  assetChanges: AssetDelta[]
+  gasUsed: string
+  gasUsd: string
+  revertReason?: string
+  failedCall?: number
+  resultHash: string
+  ranAt: string
 }
 
 /**

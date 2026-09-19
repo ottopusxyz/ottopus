@@ -19,6 +19,7 @@ export {
   summarise,
   transition,
 } from './store.js'
+export { type RecordSimulationInput, latestSimulation, recordSimulation } from './simulations.js'
 export {
   type IssueInput,
   ENDED_LINK_TTL_MS,

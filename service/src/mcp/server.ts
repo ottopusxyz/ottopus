@@ -1,14 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
-import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
-import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
-import type { Lookups } from '../verify/index.js'
-import type { Arm } from '../wallets/index.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
-import { prepareText, prepareTransfer } from './transfer.js'
+import { type PrepareDeps, prepareText, prepareTransfer } from './transfer.js'
 
 /**
  * The tool surface.
@@ -37,20 +33,18 @@ export interface ToolContext {
 /**
  * What the tools read, handed in rather than imported.
  *
- * Three functions instead of a database handle: the tools are then testable
- * over a real MCP client with nothing but fakes, and the route is the one place
- * that knows how a userId becomes a row. `readPortfolio` is null when no
- * balance provider is configured, so the tool can say so instead of failing.
+ * Functions instead of a database handle: the tools are then testable over a
+ * real MCP client with nothing but fakes, and the route is the one place that
+ * knows how a userId becomes a row.
+ *
+ * The reads a prepare_* tool needs are `PrepareDeps` and the reads get_plan
+ * and cancel_plan need are `StatusDeps`, declared where those functions live
+ * rather than copied here — one list per capability, and no chance of this
+ * one drifting from what the pipeline actually asks for.
  */
-export interface ToolDeps extends StatusDeps {
+export interface ToolDeps extends StatusDeps, PrepareDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
-  listWallets(userId: string): Promise<Arm[]>
-  readPortfolio: ((arms: readonly ArmRef[]) => Promise<Portfolio>) | null
-  /** The decoder's reads: code, Sourcify, 4byte. */
-  lookups: Lookups
-  createPlan(input: CreatePlanInput): Promise<PlanRecord>
-  issueReviewLink(planId: string, version: number, planExpiresAt: string): Promise<ReviewLink>
 }
 
 export const SERVER_INFO = {
