@@ -38,6 +38,16 @@ export interface Sent {
 
 export class UserRejected extends Error {}
 export class UnsafeFallback extends Error {}
+/**
+ * The wallet accepted the batch and then we lost sight of it. The calls may
+ * be on chain; they must never be sent again. Carries the batch id so the
+ * person can be told what to look for.
+ */
+export class BatchAccepted extends Error {
+  constructor(readonly batchId: string, message: string) {
+    super(message)
+  }
+}
 
 const hexChain = (caip2: string) => `0x${Number(caip2.split(':')[1]).toString(16)}`
 
@@ -70,7 +80,11 @@ export async function supportsSendCalls(provider: Eip1193, from: string, chainId
 const POLL_MS = 1_500
 const CALLS_TIMEOUT_MS = 3 * 60_000
 
-async function sendBatch(input: SendInput): Promise<`0x${string}`> {
+/**
+ * Submission only. Returns the batch id the wallet handed back; from that
+ * moment the calls belong to the wallet and nothing here may send them again.
+ */
+async function submitBatch(input: SendInput): Promise<string> {
   const { provider, from, chainId, calls } = input
   const result = (await provider.request({
     method: 'wallet_sendCalls',
@@ -86,20 +100,26 @@ async function sendBatch(input: SendInput): Promise<`0x${string}`> {
   })) as { id?: string } | string
   const id = typeof result === 'string' ? result : result?.id
   if (!id) throw new Error('the wallet accepted the batch but returned no id')
+  return id
+}
 
+/** Watch an accepted batch until it names a transaction. Never resends. */
+async function awaitBatch(provider: Eip1193, id: string): Promise<`0x${string}`> {
   const started = Date.now()
   while (Date.now() - started < CALLS_TIMEOUT_MS) {
-    const status = (await provider.request({ method: 'wallet_getCallsStatus', params: [id] })) as {
-      status?: number | string
-      receipts?: { transactionHash?: `0x${string}`; status?: string }[]
+    let status: { status?: number | string; receipts?: { transactionHash?: `0x${string}`; status?: string }[] }
+    try {
+      status = (await provider.request({ method: 'wallet_getCallsStatus', params: [id] })) as typeof status
+    } catch (err) {
+      throw new BatchAccepted(id, `Your wallet accepted it, but stopped answering about it: ${(err as Error).message}`)
     }
     const code = typeof status.status === 'string' ? (status.status === 'CONFIRMED' ? 200 : status.status === 'PENDING' ? 100 : 500) : (status.status ?? 100)
     const hash = status.receipts?.[0]?.transactionHash
     if (hash) return hash
-    if (code >= 400) throw new Error(`the wallet reported the batch failed (${code})`)
+    if (code >= 400) throw new BatchAccepted(id, `Your wallet reported the batch failed (${code}).`)
     await new Promise((r) => setTimeout(r, POLL_MS))
   }
-  throw new Error('the wallet did not report a transaction in time')
+  throw new BatchAccepted(id, 'Your wallet accepted it but has not named a transaction yet.')
 }
 
 async function sendSequential(input: SendInput): Promise<`0x${string}`> {
@@ -126,12 +146,19 @@ async function sendSequential(input: SendInput): Promise<`0x${string}`> {
 
 export async function sendPlanCalls(input: SendInput): Promise<Sent> {
   if (await supportsSendCalls(input.provider, input.from, input.chainId)) {
+    let batchId: string | null = null
     try {
-      return { txHash: await sendBatch(input), method: 'sendCalls' }
+      batchId = await submitBatch(input)
     } catch (err) {
       if (isUserRejection(err)) throw new UserRejected('You declined in your wallet.')
       if (!isUnsupported(err)) throw err
-      // Claimed support, then refused the method. Fall through as if it never claimed.
+      // Claimed support, then refused the method before accepting anything.
+      // Only here is the sequential path still safe: nothing was sent.
+    }
+    if (batchId !== null) {
+      // Accepted. Whatever happens now, the calls are the wallet's and are
+      // never offered again through another method.
+      return { txHash: await awaitBatch(input.provider, batchId), method: 'sendCalls' }
     }
   }
   if (!input.sequentialIsSafe) {

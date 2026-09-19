@@ -24,7 +24,12 @@ export const STATUS_ORDER: readonly PlanStatusName[] = [
 ]
 
 export type StatusFilter = 'all' | PlanStatusName
+/** "all", or a lowercased address: one wallet is one account on every chain. */
 export type WalletFilter = 'all' | string
+
+export function addressOfAccount(caip10: string): string {
+  return (caip10.split(':')[2] ?? caip10).toLowerCase()
+}
 
 /** Expired is derived on the page too, so a row flips without a reload. */
 export function effectiveStatus(row: Pick<PlanSummary, 'status' | 'expiresAt'>, now = Date.now()): PlanStatusName {
@@ -52,7 +57,8 @@ export function statusCounts(rows: readonly PlanSummary[], now = Date.now()): { 
 }
 
 export interface WalletOption {
-  caip10: string
+  /** The lowercased address, which is the wallet whatever chain a plan ran on. */
+  address: string
   label: string
   count: number
   /** The client it lives in, when the service knew it. */
@@ -62,13 +68,16 @@ export interface WalletOption {
 export function walletOptions(rows: readonly PlanSummary[]): WalletOption[] {
   const seen = new Map<string, WalletOption>()
   for (const row of rows) {
-    const key = row.account.caip10.toLowerCase()
-    const held = seen.get(key)
-    if (held) held.count += 1
-    else {
-      const address = row.account.caip10.split(':')[2] ?? row.account.caip10
-      seen.set(key, {
-        caip10: key,
+    const address = addressOfAccount(row.account.caip10)
+    const held = seen.get(address)
+    if (held) {
+      held.count += 1
+      // A later row may know more than the first did.
+      held.label = row.account.label ?? row.wallet?.label ?? held.label
+      held.walletType ??= row.wallet?.walletType ?? null
+    } else {
+      seen.set(address, {
+        address,
         label: row.account.label ?? row.wallet?.label ?? `${address.slice(0, 6)}…${address.slice(-4)}`,
         count: 1,
         walletType: row.wallet?.walletType ?? null,
@@ -82,7 +91,7 @@ export function filterPlans(rows: readonly PlanSummary[], status: StatusFilter, 
   return rows.filter(
     (row) =>
       (status === 'all' || effectiveStatus(row, now) === status) &&
-      (wallet === 'all' || row.account.caip10.toLowerCase() === wallet),
+      (wallet === 'all' || addressOfAccount(row.account.caip10) === wallet),
   )
 }
 

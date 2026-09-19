@@ -17,7 +17,7 @@ import { usePlans } from './use-plans'
  */
 export function RequestsView() {
   const { plans: pending, open } = useRequests()
-  const { state, refresh } = usePlans(pending.length)
+  const { state, refresh } = usePlans(pending.map((p) => `${p.id}:${p.version}:${p.status}`).join(','))
   const router = useRouter()
   const [opening, setOpening] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)

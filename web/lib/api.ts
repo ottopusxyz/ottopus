@@ -496,6 +496,8 @@ export interface ReviewRead {
   plan: Plan
   walletId: string | null
   statusAt: string
+  /** What the latest event carried: the tx hash once submitted, a reason once failed. */
+  statusDetail: { txHash?: string; reason?: string } | null
   link: { expiresAt: string }
   visuals?: Visuals
 }

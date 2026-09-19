@@ -56,7 +56,7 @@ export function PlanTable({ plans, opening, onOpen, now }: PlanTableProps) {
   const [wallet, setWallet] = useState<WalletChoice>('all')
   const sorted = sortPlans(plans, now)
   const counts = statusCounts(sorted, now)
-  const wallets = walletOptions(sorted).map((w) => ({ ...w, ref: refFor(w.caip10, w.label, w.walletType) }))
+  const wallets = walletOptions(sorted).map((w) => ({ ...w, ref: refFor(w.address, w.label, w.walletType) }))
   const shown = filterPlans(sorted, status, wallet, now)
 
   return (

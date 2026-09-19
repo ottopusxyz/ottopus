@@ -9,7 +9,7 @@ import type { Plan, WebTransition } from '@/lib/api'
 import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
 import { addressOf, truncateAddress } from '@/lib/format'
 import { approvals, chainOfPlan } from './model'
-import { UnsafeFallback, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
+import { BatchAccepted, UnsafeFallback, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
 import { gateFor } from './wallet-gate'
 
 /**
@@ -25,6 +25,8 @@ export interface SignPanelProps {
   move: (transition: WebTransition) => Promise<unknown>
   /** Whether the plan may still be signed, by the page's own clock. */
   open: boolean
+  /** The hash the service holds for a submitted plan, so a reopened page resumes the watch. */
+  txHash?: string | null | undefined
 }
 
 type Phase =
@@ -35,11 +37,17 @@ type Phase =
   | { kind: 'confirmed'; txHash: `0x${string}` }
   | { kind: 'failed'; txHash: `0x${string}` | null; reason: string }
 
-export function SignPanel({ plan, move, open }: SignPanelProps) {
+const isHash = (v: unknown): v is `0x${string}` => typeof v === 'string' && /^0x[0-9a-f]{64}$/i.test(v)
+
+export function SignPanel({ plan, move, open, txHash }: SignPanelProps) {
   const router = useRouter()
   const { wallets, ready } = useWallets()
   const { connectWallet } = useConnectWallet()
-  const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
+  // A page opened on a plan already submitted starts where the plan is.
+  const [phase, setPhase] = useState<Phase>(() =>
+    plan.status === 'submitted' && isHash(txHash) ? { kind: 'submitted', txHash } : { kind: 'idle' },
+  )
+  const watching = useRef(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -66,6 +74,31 @@ export function SignPanel({ plan, move, open }: SignPanelProps) {
       wroteAwaiting.current = false
     })
   }, [open, gate.kind, plan.status, move])
+
+  // Resume the receipt watch for a submitted plan through the named wallet's
+  // provider, when that wallet is connected. Without it the page still shows
+  // the hash and the explorer; the job (#40) closes the loop server-side.
+  useEffect(() => {
+    if (phase.kind !== 'submitted' || !wallet || watching.current) return
+    watching.current = true
+    const hash = phase.txHash
+    void (async () => {
+      try {
+        const provider = await wallet.getEthereumProvider()
+        const outcome = await waitForReceipt(provider, hash)
+        if (outcome === 'success') {
+          await move({ status: 'confirmed' })
+          setPhase({ kind: 'confirmed', txHash: hash })
+        } else {
+          await move({ status: 'failed', detail: { reason: 'reverted' } })
+          setPhase({ kind: 'failed', txHash: hash, reason: 'The transaction reverted on chain.' })
+        }
+      } catch {
+        watching.current = false
+        setProblem('Lost track of the receipt. The transaction is on chain; check the explorer.')
+      }
+    })()
+  }, [phase, wallet, move])
 
   const switchChain = useCallback(async () => {
     if (!wallet) return
@@ -111,24 +144,18 @@ export function SignPanel({ plan, move, open }: SignPanelProps) {
       })
       txHash = sent.txHash
       await move({ status: 'submitted', detail: { txHash } })
+      // The watch effect takes it from here, for this page and for any reopened one.
       setPhase({ kind: 'submitted', txHash })
-      const outcome = await waitForReceipt(provider, txHash)
-      if (outcome === 'success') {
-        await move({ status: 'confirmed' })
-        setPhase({ kind: 'confirmed', txHash })
-      } else {
-        await move({ status: 'failed', detail: { reason: 'reverted' } })
-        setPhase({ kind: 'failed', txHash, reason: 'The transaction reverted on chain.' })
-      }
     } catch (err) {
-      if (err instanceof UserRejected) {
+      if (err instanceof UserRejected || err instanceof UnsafeFallback) {
         setPhase({ kind: 'idle' })
         setProblem(err.message)
         return
       }
-      if (err instanceof UnsafeFallback) {
-        setPhase({ kind: 'idle' })
-        setProblem(err.message)
+      if (err instanceof BatchAccepted) {
+        // Never idle again: idle would offer the sign button, and the calls are
+        // already the wallet's. Nothing to write yet either — submitted needs a hash.
+        setPhase({ kind: 'failed', txHash: null, reason: `${err.message} Check your wallet's activity before doing anything else; this request was not sent twice.` })
         return
       }
       // Submitted but the wait failed: the chain still has it. Say so rather than

@@ -50,7 +50,8 @@ describe('filters', () => {
     row({ id: 'a' }),
     row({ id: 'b', status: 'confirmed' }),
     row({ id: 'c', status: 'blocked', account: { caip10: 'eip155:8453:0x0000000000000000000000000000000000000002' } }),
-    row({ id: 'd', status: 'confirmed' }),
+    // The same wallet as 'a' and 'b', on another chain: one option, not two.
+    row({ id: 'd', status: 'confirmed', account: { caip10: 'eip155:56:0x0000000000000000000000000000000000000001', label: 'Main' }, chainId: 'eip155:56' }),
   ]
 
   it('counts each status present, in the pill order', () => {
@@ -61,17 +62,18 @@ describe('filters', () => {
     ])
   })
 
-  it('offers each wallet with its label and count, busiest first', () => {
+  it('offers each wallet once across chains, with its label and count, busiest first', () => {
     expect(walletOptions(rows)).toEqual([
-      { caip10: 'eip155:8453:0x0000000000000000000000000000000000000001', label: 'Main', count: 3, walletType: null },
-      { caip10: 'eip155:8453:0x0000000000000000000000000000000000000002', label: '0x0000…0002', count: 1, walletType: null },
+      { address: '0x0000000000000000000000000000000000000001', label: 'Main', count: 3, walletType: null },
+      { address: '0x0000000000000000000000000000000000000002', label: '0x0000…0002', count: 1, walletType: null },
     ])
   })
 
-  it('narrows by status and wallet together', () => {
+  it('narrows by status and wallet together, the wallet meaning every chain it was used on', () => {
     expect(filterPlans(rows, 'confirmed', 'all', NOW).map((r) => r.id)).toEqual(['b', 'd'])
-    expect(filterPlans(rows, 'all', 'eip155:8453:0x0000000000000000000000000000000000000002', NOW).map((r) => r.id)).toEqual(['c'])
-    expect(filterPlans(rows, 'blocked', 'eip155:8453:0x0000000000000000000000000000000000000001', NOW)).toEqual([])
+    expect(filterPlans(rows, 'all', '0x0000000000000000000000000000000000000001', NOW).map((r) => r.id)).toEqual(['a', 'b', 'd'])
+    expect(filterPlans(rows, 'all', '0x0000000000000000000000000000000000000002', NOW).map((r) => r.id)).toEqual(['c'])
+    expect(filterPlans(rows, 'blocked', '0x0000000000000000000000000000000000000001', NOW)).toEqual([])
   })
 
   it('names the verb', () => {

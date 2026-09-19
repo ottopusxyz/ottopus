@@ -23,7 +23,7 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
   const sheet = useMediaQuery(SHEET_MEDIA)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
-  const selected = wallets.find((w) => w.caip10 === value)
+  const selected = wallets.find((w) => w.address === value)
 
   useEffect(() => {
     if (!open || sheet) return
@@ -57,7 +57,7 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
       >
         <span aria-hidden className="flex -space-x-2 pr-1">
           {wallets.slice(0, 3).map((w) => (
-            <WalletMark key={w.caip10} wallet={w.ref} size={22} className="ring-2 ring-[var(--ot-card)]" />
+            <WalletMark key={w.address} wallet={w.ref} size={22} className="ring-2 ring-[var(--ot-card)]" />
           ))}
         </span>
         <span className="flex-1 truncate">All wallets</span>
@@ -66,21 +66,21 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
       </button>
       {wallets.map((w) => (
         <button
-          key={w.caip10}
+          key={w.address}
           type="button"
-          aria-pressed={value === w.caip10}
-          onClick={() => pick(w.caip10)}
+          aria-pressed={value === w.address}
+          onClick={() => pick(w.address)}
           className={cn(
             'flex w-full cursor-pointer items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-[var(--ot-surface-3)]',
             'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ot-plan)]',
             rowClassName,
-            value === w.caip10 && 'bg-[var(--ot-surface-3)] font-semibold',
+            value === w.address && 'bg-[var(--ot-surface-3)] font-semibold',
           )}
         >
           <WalletMark wallet={w.ref} size={24} />
           <span className="flex-1 truncate">{w.label}</span>
           <span className="text-[11px] text-[var(--ot-text-3)]">{w.count}</span>
-          {value === w.caip10 ? <span aria-hidden>✓</span> : null}
+          {value === w.address ? <span aria-hidden>✓</span> : null}
         </button>
       ))}
     </>
@@ -114,7 +114,7 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
         ) : (
           <span aria-hidden className="flex -space-x-2 pr-1">
             {wallets.slice(0, 3).map((w) => (
-              <WalletMark key={w.caip10} wallet={w.ref} size={20} className="ring-2 ring-[var(--ot-card)]" />
+              <WalletMark key={w.address} wallet={w.ref} size={20} className="ring-2 ring-[var(--ot-card)]" />
             ))}
           </span>
         )}

@@ -65,7 +65,7 @@ function Review({ token }: { token: string }) {
     )
   }
 
-  const { plan, visuals } = state.read
+  const { plan, visuals, statusDetail } = state.read
   const status = effectiveStatus(plan, now)
   const reference = `request #${plan.id.slice(0, 6)}`
 
@@ -85,7 +85,7 @@ function Review({ token }: { token: string }) {
         {canSign(status) ? (
           <SignPanel plan={plan} move={move} open />
         ) : status === 'submitted' ? (
-          <SignPanel plan={plan} move={move} open={false} />
+          <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
         ) : (
           <Ended status={status} />
         )}
