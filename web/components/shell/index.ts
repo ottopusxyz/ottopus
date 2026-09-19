@@ -2,7 +2,7 @@ export { AccountMenu, DOCS_URL, REPO_URL, type AccountMenuProps, type Identity }
 export { AgentCard } from './agent-card'
 export { AppShell, type AppShellProps } from './app-shell'
 export { BottomNav } from './bottom-nav'
-export { EXAMPLE_PROMPT, FirstIntentNudge, IntentNudge, IntentNudgeOverlay, type IntentNudgeProps } from './first-intent-nudge'
+export { EXAMPLE_PROMPT, FirstIntentNudge, IntentNudge, IntentNudgeOverlay, SidebarNudge, type IntentNudgeProps } from './first-intent-nudge'
 export { NudgePlacementProvider, useRailNudge, useSidebarNudge } from './nudge-placement'
 export { INTENT_PROMPTS, promptsFor, smallSlice } from './prompts'
 export { ShellNav } from './nav'

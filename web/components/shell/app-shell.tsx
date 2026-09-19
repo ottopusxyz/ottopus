@@ -6,7 +6,7 @@ import { AccountMenu } from './account-menu'
 import { AgentCard } from './agent-card'
 import { BottomNav } from './bottom-nav'
 import { ShellNav } from './nav'
-import { IntentNudge } from './first-intent-nudge'
+import { SidebarNudge } from './first-intent-nudge'
 import { NudgePlacementProvider, useSidebarNudge } from './nudge-placement'
 
 export interface AppShellProps {
@@ -109,8 +109,8 @@ function Shell({ children, agent, account }: AppShellProps) {
           aria-label="Account and agent"
           className={`${COLUMN} hidden flex-col gap-3 pt-4 pb-5 lg:row-start-3 lg:flex`}
         >
-          {/* Otto asks on every route, unless the portfolio's rail is already asking. */}
-          {sidebarNudge ? <IntentNudge variant="compact" /> : null}
+          {/* Otto offers on every route, unless the portfolio's rail is already asking. */}
+          {sidebarNudge ? <SidebarNudge /> : null}
           {agent ?? <AgentCard />}
           {/* The theme control and sign-out live inside the menu. The shell is
               the only chrome the app has, and Settings carries a second copy

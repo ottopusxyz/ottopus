@@ -65,9 +65,14 @@ export function Holdings({ portfolio, wallets = [], show = 'all' }: HoldingsProp
     const change = portfolio.protocols.reduce((sum, app) => sum + app.change1d, 0)
     const unpriced = portfolio.protocols.reduce((sum, app) => sum + app.unpriced, 0)
     return (
-      <div className="ot-scroll @container min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-5" tabIndex={0} aria-label="DeFi positions">
+      <div className="@container min-w-0 flex-1 space-y-3 px-3 pt-3 pb-5" aria-label="DeFi positions">
         <section aria-label="DeFi">
           <SectionHead icon={<DefiGlyph />} title="DeFi" value={value} share={share} change={change} unpriced={unpriced} currency={portfolio.currency} />
+          {/* The token table's column header, in shape, so the first card sits level with the first row. */}
+          <div aria-hidden className="flex justify-between px-2.5 pt-1 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase sm:px-3.5">
+            <span>Protocol</span>
+            <span>Value</span>
+          </div>
           <div className="space-y-3">{cards}</div>
         </section>
       </div>
@@ -75,7 +80,7 @@ export function Holdings({ portfolio, wallets = [], show = 'all' }: HoldingsProp
   }
 
   return (
-    <div className="ot-scroll @container min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 pt-3 pb-5 sm:px-6" tabIndex={0} aria-label="Holdings">
+    <div className="@container min-w-0 flex-1 space-y-3 px-4 pt-3 pb-5 sm:px-6" aria-label="Holdings">
       {empty ? (
         <p className="ot-token-row py-8 text-center text-[13px] text-[var(--ot-text-2)]">No balances on this network.</p>
       ) : (

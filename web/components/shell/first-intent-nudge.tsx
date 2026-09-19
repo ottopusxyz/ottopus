@@ -121,6 +121,43 @@ export function IntentNudge({ variant = 'card', prompts = INTENT_PROMPTS, classN
 /** The old name. Same component. */
 export const FirstIntentNudge = IntentNudge
 
+/** The pill: Otto's badge and two words, the size of a button. */
+function TryOttoPill({ onClick, className }: { onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={false}
+      className={cn(
+        'inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--ot-border-strong)] bg-[var(--ot-card)] py-[7px] pr-3.5 pl-2.5',
+        'text-[13px] font-semibold shadow-[var(--ot-shadow-card)] transition-colors hover:bg-[var(--ot-surface-2)]',
+        className,
+      )}
+    >
+      <OttoBadge tier="icon" size={22} animate="idle" />
+      Try Otto
+    </button>
+  )
+}
+
+/**
+ * The sidebar's nudge: the pill at rest, the compact card when asked, and
+ * the pill again on Close. Same shape as the corner overlay, so "Try Otto"
+ * means one thing wherever it is.
+ */
+export function SidebarNudge({ prompts, className }: Pick<IntentNudgeProps, 'prompts' | 'className'>) {
+  const [open, setOpen] = useState(false)
+  if (!open) return <TryOttoPill onClick={() => setOpen(true)} className={cn('w-full justify-center', className)} />
+  return (
+    <div className={cn('flex flex-col gap-1.5', className)}>
+      <IntentNudge variant="compact" prompts={prompts} />
+      <Button variant="ghost" size="sm" className="w-fit text-[12px]" onClick={() => setOpen(false)}>
+        Close
+      </Button>
+    </div>
+  )
+}
+
 /**
  * The nudge where there is no rail: a pill in the corner that opens into the
  * card and closes again.
@@ -133,23 +170,7 @@ export const FirstIntentNudge = IntentNudge
 export function IntentNudgeOverlay({ prompts, className }: Pick<IntentNudgeProps, 'prompts' | 'className'>) {
   const [open, setOpen] = useState(false)
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-expanded={false}
-        className={cn(
-          'absolute right-3 bottom-3 z-20 inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--ot-border-strong)] bg-[var(--ot-card)] py-[7px] pr-3.5 pl-2.5',
-          'text-[13px] font-semibold shadow-[var(--ot-shadow-card)] transition-colors hover:bg-[var(--ot-surface-2)]',
-          className,
-        )}
-      >
-        <OttoBadge tier="icon" size={22} animate="idle" />
-        Try Otto
-      </button>
-    )
-  }
+  if (!open) return <TryOttoPill onClick={() => setOpen(true)} className={cn('absolute right-3 bottom-3 z-20', className)} />
 
   return (
     <div
