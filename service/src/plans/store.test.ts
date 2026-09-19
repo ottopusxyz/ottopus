@@ -4,7 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
-import { inMinutes, planFor } from './fixtures.js'
+import { ACCOUNT, inMinutes, planFor } from './fixtures.js'
 import { REVIEW_LINK_TTL_MS, issueReviewLink, supersedePlan } from './review-link.js'
 import {
   PlanError,
@@ -327,6 +327,44 @@ describe('listPlans', () => {
       blockedReason: null,
     })
     expect(JSON.stringify(summary)).not.toContain('"calls"')
+  })
+
+  it('names what a trade pays and what it buys, so a row is not blank for a swap', async () => {
+    const plan = planFor(alice, {
+      intent: { kind: 'swap', from: 'eip155:8453/slip44:60', to: 'eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed', amountIn: '2000' },
+      humanPlan: {
+        summary: 'Swap',
+        steps: [],
+        feesUsd: 'unknown',
+        warnings: [],
+        assets: [
+          { id: 'eip155:8453/slip44:60', symbol: 'ETH', decimals: 18 },
+          { id: 'eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed', symbol: 'DEGEN', decimals: 18 },
+        ],
+      },
+    })
+    const [row] = (await createPlan(db, { plan }), await listPlans(db, alice))
+    expect(summarise(row!)).toMatchObject({
+      kind: 'swap',
+      asset: { id: 'eip155:8453/slip44:60', amount: '2000', symbol: 'ETH', decimals: 18 },
+      toAsset: { id: 'eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed', symbol: 'DEGEN' },
+      recipient: null,
+    })
+  })
+
+  it('leads a custom plan with its first declared ceiling', async () => {
+    const plan = planFor(alice, {
+      intent: {
+        kind: 'custom',
+        fromAccount: ACCOUNT,
+        chainId: 'eip155:8453',
+        summary: 'Add liquidity',
+        expectedChanges: [{ asset: 'eip155:8453/slip44:60', maxOut: '5000' }],
+        approvals: [],
+      },
+    })
+    const [row] = (await createPlan(db, { plan }), await listPlans(db, alice))
+    expect(summarise(row!)).toMatchObject({ kind: 'custom', asset: { id: 'eip155:8453/slip44:60', amount: '5000' }, toAsset: null })
   })
 })
 

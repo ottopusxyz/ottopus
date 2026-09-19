@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Plan } from '@/lib/api'
 import { gateFor } from './wallet-gate'
 import {
+  approvalAmount,
+  approvals,
   assetChanges,
   canSign,
   countdown,
@@ -12,6 +14,7 @@ import {
   planSteps,
   liveRefusal,
   executability,
+  headsUp,
   recipientOf,
   simulationNote,
   standingApproval,
@@ -549,5 +552,46 @@ describe('an agent-crafted plan', () => {
 
   it('carries the note into the key facts like a transfer does', () => {
     expect(keyFacts(custom)).toContainEqual({ label: 'Note', value: 'earn fees on idle USDC' })
+  })
+
+  /**
+   * The approved token is the call's target. Naming it after the asset the
+   * plan spends would call a WETH allowance "USDC" on this very plan.
+   */
+  it('names an approval in the words of the token it is on, not the asset the plan leads with', () => {
+    const granting: Plan = {
+      ...custom,
+      decodedActions: [
+        {
+          target: `${BASE}:${WETH}`,
+          isContract: true,
+          source: 'abi',
+          verified: true,
+          contractName: 'WETH9',
+          function: 'approve(address,uint256)',
+          args: [],
+          value: '0',
+          approval: { spender: `${BASE}:${PM}`, amount: '1208327299744937' },
+        },
+      ],
+    }
+    const [grant] = approvals(granting)
+    expect(grant).toMatchObject({ asset: `${BASE}/erc20:${WETH}`, unlimited: false, spenderName: null })
+    expect(approvalAmount(granting, grant!)).toBe('0.001208 WETH')
+    expect(standingApproval(granting)).toMatchObject({ amount: '0.001208', symbol: 'WETH' })
+  })
+
+  it('counts what there is to read first, and grades it by the worst of it', () => {
+    expect(headsUp(custom)).toMatchObject({ count: 0, worst: null })
+    const cautious: Plan = {
+      ...custom,
+      humanPlan: { ...custom.humanPlan, warnings: [{ severity: 'caution', code: 'x', message: 'Careful' }, { severity: 'info', code: 'y', message: 'FYI' }] },
+    }
+    expect(headsUp(cautious)).toMatchObject({ count: 1, worst: 'caution' })
+    const greedy: Plan = {
+      ...cautious,
+      decodedActions: [{ ...cautious.decodedActions[0]!, approval: { spender: `${BASE}:${PM}`, amount: 'unlimited' } }],
+    }
+    expect(headsUp(greedy)).toMatchObject({ count: 2, worst: 'block' })
   })
 })

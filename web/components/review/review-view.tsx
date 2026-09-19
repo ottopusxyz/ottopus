@@ -4,23 +4,26 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { RequireSession, usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
-import { StillnessProvider } from '@/components/motion'
+import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { explorerTxUrl } from '@/lib/chains'
 import { decoderUrl } from '@/lib/simulators'
 import { AdvancedPanel } from './advanced-panel'
+import { HeadsUpPanel } from './heads-up-panel'
 import { canSign, chainOfPlan, countdown, effectiveStatus } from './model'
 import { ReviewCard } from './review-card'
 import { AdvancedSkeleton, ReviewSkeleton } from './review-skeleton'
-import { SignPanel } from './sign-panel'
+import { Settled, SignPanel } from './sign-panel'
 import { useReview } from './use-review'
 import { useSimulation } from './use-simulation'
 
 /**
  * P4. The link is usually opened on a phone from a chat, to decide one thing.
- * No ambient motion on this route — the water is held — and no nav: the card
- * is the page.
+ * No nav: the card is the page. It stands on the same water as the portfolio,
+ * and the water stays in the gutters — the card is opaque and nothing ambient
+ * ever passes behind an amount.
  *
  * Every dead link is one state. The service answers tampered, expired,
  * superseded and someone-else's with the same 404, and this page does not
@@ -144,12 +147,15 @@ function Review({ token }: { token: string }) {
             ) : status === 'submitted' ? (
               <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
             ) : (
-              <Ended status={status} />
+              <Ended status={status} chain={chainId} txHash={statusDetail?.txHash ?? null} />
             )}
           </ReviewCard>
+          {/* Under the card, and so under its folded advanced review, on a phone. */}
+          <HeadsUpPanel plan={plan} className="mx-4 mt-4 sm:mx-0 min-[1032px]:hidden" />
         </div>
-        <aside className="absolute top-0 left-full ml-4 hidden w-[280px] min-[1032px]:block">
+        <aside className="absolute top-0 left-full ml-4 hidden w-[280px] flex-col gap-4 min-[1032px]:flex">
           <AdvancedPanel {...panelProps} />
+          <HeadsUpPanel plan={plan} />
         </aside>
       </div>
     </Ground>
@@ -167,20 +173,33 @@ function useClock(running: boolean): number {
   return now
 }
 
+/**
+ * The portfolio's creatures are drawn for the lower half of a tall column.
+ * Here the card sits at the top and centre, so they keep to the sides: a fish
+ * crossing the left gutter, a jelly rising up the right, a crab on the floor.
+ */
+const GUTTER_LIFE: readonly SeaCreature[] = [
+  { species: 'fish', left: 4, top: 34, size: 22, travel: 120, lift: -12, delay: 0, duration: 52, opacity: 0.85 },
+  { species: 'jelly', left: 90, top: 58, size: 24, travel: 14, lift: -120, delay: 7, duration: 38, opacity: 0.7 },
+  { species: 'crab', left: 10, top: 93, size: 20, travel: 70, lift: 0, delay: 3, duration: 30, opacity: 0.8 },
+]
+
 function Ground({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <StillnessProvider held>
-      <main
-        className={cn(
-          'ot-canvas relative flex min-h-dvh justify-center overflow-x-hidden px-0 py-0 sm:px-5 sm:py-11',
-          // A plan sits at the top on a wide screen because the panel beside
-          // it is taller than the card; a dead link is short and centres.
-          wide ? 'items-start' : 'items-start sm:items-center',
-        )}
-      >
-        <div className={cn('relative w-full', wide ? 'max-w-[440px] lg:max-w-[824px]' : 'max-w-[440px]')}>{children}</div>
-      </main>
-    </StillnessProvider>
+    <main
+      className={cn(
+        'ot-review-sea relative flex min-h-dvh justify-center overflow-x-hidden px-0 py-0 sm:px-5 sm:py-11',
+        // A plan sits at the top on a wide screen because the panel beside
+        // it is taller than the card; a dead link is short and centres.
+        wide ? 'items-start' : 'items-start sm:items-center',
+      )}
+    >
+      <div aria-hidden className="ot-caustic" />
+      <div aria-hidden className="ot-caustic ot-caustic--b" />
+      <BubbleField pattern="canvas" />
+      <SeaLife creatures={GUTTER_LIFE} />
+      <div className={cn('relative w-full', wide ? 'max-w-[440px] lg:max-w-[824px]' : 'max-w-[440px]')}>{children}</div>
+    </main>
   )
 }
 
@@ -237,17 +256,31 @@ const ENDED_COPY: Partial<Record<PlanStatusName, { title: string; body: string }
   superseded: { title: 'Replaced by a newer plan', body: 'Open the newer link instead.' },
 }
 
-function Ended({ status }: { status: PlanStatusName }) {
+/**
+ * A plan opened after it ended. Settled reads the same as it did the moment
+ * it settled — Otto celebrating, the explorer a tap away — because the
+ * receipt job often wins the race to `confirmed` and the page re-reads into
+ * this branch before the person has seen either.
+ */
+function Ended({ status, chain, txHash }: { status: PlanStatusName; chain: string | null; txHash: string | null }) {
   const router = useRouter()
   const copy = ENDED_COPY[status] ?? { title: 'Nothing to sign', body: 'This request is not waiting on you.' }
+  const explorer = chain && txHash ? explorerTxUrl(chain, txHash) : null
   return (
     <div className="flex flex-col items-center gap-2 text-center">
-      {status === 'confirmed' ? <Otto pose="confirmed" size={72} label="Otto, arms up" /> : null}
+      {status === 'confirmed' ? <Settled /> : null}
       <span className="font-[family-name:var(--ot-font-display)] text-[19px] font-bold">{copy.title}</span>
       <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">{copy.body}</p>
-      <Button variant="secondary" size="sm" onClick={() => router.push('/portfolio')}>
-        Back to portfolio
-      </Button>
+      <div className="flex w-full gap-2">
+        {explorer ? (
+          <Button variant="secondary" size="sm" fullWidth onClick={() => window.open(explorer, '_blank', 'noreferrer')}>
+            {status === 'failed' ? 'See the failed transaction' : 'View on the explorer'}
+          </Button>
+        ) : null}
+        <Button variant="secondary" size="sm" fullWidth onClick={() => router.push('/portfolio')}>
+          Back to portfolio
+        </Button>
+      </div>
     </div>
   )
 }

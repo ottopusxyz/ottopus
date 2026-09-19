@@ -1,3 +1,15 @@
+/* P4 · Review. The card stands on the portfolio's water. Opaque from the
+   first pixel, unlike .ot-sea, because nothing sits above it to fade from. */
+.ot-review-sea {
+  background: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 5%, var(--ot-water-1)) 28%,
+    color-mix(in srgb, var(--ot-plan) 11%, var(--ot-water-2)) 64%,
+    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-3)) 100%
+  );
+}
+
 /* P4 · Review. The one ripple that is not a loader: it plays once, on
    settlement, and then it is over. Restrained on purpose — not confetti. */
 .ot-settle-ripple {
@@ -17,6 +29,34 @@
   .ot-settle-ripple {
     animation: none;
     opacity: 0;
+  }
+}
+
+/* Settled: Otto keeps hopping. Anchored at his feet so the squash reads as a
+   landing, and gated like every other motion so a held region stills him. */
+.ot-celebrate {
+  transform-origin: 50% 100%;
+  animation: ot-hop 1.4s var(--ot-ease-out) infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  14% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+  48% {
+    transform: translateY(-14px) scale(0.97, 1.04);
+  }
+  78% {
+    transform: translateY(0) scale(1.04, 0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ot-celebrate {
+    animation: none;
   }
 }
 

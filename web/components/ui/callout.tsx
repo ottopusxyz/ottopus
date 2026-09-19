@@ -28,6 +28,8 @@ export interface CalloutProps {
   /** Otto, once the mascot lands in #48. A 44px square slot. */
   icon?: ReactNode
   actions?: ReactNode
+  /** Smaller type and padding, for a 280px panel where the full size is a wall. */
+  compact?: boolean
   className?: string
 }
 
@@ -37,6 +39,7 @@ export function Callout({
   children,
   icon,
   actions,
+  compact = false,
   className,
 }: CalloutProps) {
   const tone = SEVERITY[severity]
@@ -45,7 +48,7 @@ export function Callout({
       // Assertive would interrupt a screen reader mid-sentence while someone is
       // reading a transaction. Polite still announces before they can sign.
       role="status"
-      className={cn('flex gap-3.5 rounded-[10px] p-4', tone.bg, className)}
+      className={cn('flex gap-3.5 rounded-[10px]', compact ? 'p-3' : 'p-4', tone.bg, className)}
     >
       {icon ? (
         <div aria-hidden className="h-11 w-11 flex-none">
@@ -53,9 +56,9 @@ export function Callout({
         </div>
       ) : null}
       <div className="flex flex-col gap-1">
-        <p className={cn('text-[15px] font-semibold', tone.title)}>{title}</p>
+        <p className={cn('font-semibold', compact ? 'text-[13px] leading-[1.4]' : 'text-[15px]', tone.title)}>{title}</p>
         {children ? (
-          <div className="text-[14px] leading-[1.5] text-[var(--ot-text)]">{children}</div>
+          <div className={cn('leading-[1.5] text-[var(--ot-text)]', compact ? 'text-[12.5px]' : 'text-[14px]')}>{children}</div>
         ) : null}
         {actions ? <div className="mt-2 flex flex-wrap gap-2">{actions}</div> : null}
       </div>

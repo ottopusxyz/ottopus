@@ -58,7 +58,14 @@ export interface PlanSummary {
   account: { caip10: string; label?: string | undefined }
   chainId: string
   /** The asset that leaves, in its own words when the plan recorded them. */
+  /**
+   * What the plan pays: a transfer's asset, a trade's `from`, a custom plan's
+   * first declared ceiling. Null for an exact-out trade, whose paid amount
+   * is the quote's to name, not the request's.
+   */
   asset: { id: string; amount: string; symbol: string | null; decimals: number | null } | null
+  /** The other side of a trade, in words, so a row can read "USDC → ETH". */
+  toAsset: { id: string; symbol: string | null } | null
   recipient: { address: string; name: string | null } | null
   /** The block reason, for a row that must say what did not happen. */
   blockedReason: string | null
@@ -72,13 +79,24 @@ export function summarise(record: PlanRecord): PlanSummary {
   const { plan } = record
   const [namespace, reference] = plan.resolution.account.caip10.split(':')
   const words = (id: string) => plan.humanPlan.assets?.find((a) => a.id.toLowerCase() === id.toLowerCase())
-  const transfer = plan.intent.kind === 'transfer' ? plan.intent : null
-  const asset = transfer
-    ? { id: transfer.asset, amount: transfer.amount, symbol: words(transfer.asset)?.symbol ?? null, decimals: words(transfer.asset)?.decimals ?? null }
-    : null
-  const recipient = transfer
-    ? { address: transfer.to.split(':')[2] ?? transfer.to, name: transfer.toName ?? null }
-    : null
+  const named = (id: string, amount: string) => ({ id, amount, symbol: words(id)?.symbol ?? null, decimals: words(id)?.decimals ?? null })
+  const { intent } = plan
+  const asset =
+    intent.kind === 'transfer'
+      ? named(intent.asset, intent.amount)
+      : intent.kind === 'swap' || intent.kind === 'bridge'
+        ? intent.amountIn !== undefined
+          ? named(intent.from, intent.amountIn)
+          : null
+        : intent.kind === 'custom'
+          ? intent.expectedChanges[0]
+            ? named(intent.expectedChanges[0].asset, intent.expectedChanges[0].maxOut)
+            : null
+          : null
+  const toAsset =
+    intent.kind === 'swap' || intent.kind === 'bridge' ? { id: intent.to, symbol: words(intent.to)?.symbol ?? null } : null
+  const recipient =
+    intent.kind === 'transfer' ? { address: intent.to.split(':')[2] ?? intent.to, name: intent.toName ?? null } : null
   return {
     id: plan.id,
     version: plan.version,
@@ -89,6 +107,7 @@ export function summarise(record: PlanRecord): PlanSummary {
     account: plan.resolution.account,
     chainId: `${namespace}:${reference}`,
     asset,
+    toAsset,
     recipient,
     blockedReason: plan.humanPlan.warnings.find((w) => w.severity === 'block')?.message ?? null,
     createdVia: plan.createdVia,

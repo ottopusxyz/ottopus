@@ -38,7 +38,7 @@ describe('visuals beside the plan', () => {
   it('finds the token, the chain and the wallet client by the ids the plan carries', async () => {
     const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
     expect(await visualsFor(plan, arms, portfolio)).toEqual({
-      assets: { 'eip155:8453/slip44:60': { symbol: 'ETH', name: 'Ether', iconUrl: 'https://cdn/eth.png' } },
+      assets: { 'eip155:8453/slip44:60': { symbol: 'ETH', name: 'Ether', iconUrl: 'https://cdn/eth.png', priceUsd: 1 } },
       chains: { 'eip155:8453': { name: 'Base', iconUrl: 'https://cdn/base.png', nativeAssetId: 'eip155:8453/slip44:60', nativeSymbol: 'ETH', nativeDecimals: 18 } },
       wallets: { [ACCOUNT]: { walletType: 'rabby', label: 'Main' } },
     })
@@ -109,6 +109,7 @@ describe('an asset the portfolio has never seen', () => {
       symbol: 'DEGEN',
       name: 'Degen',
       iconUrl: 'https://cdn/degen.webp',
+      priceUsd: 0.001,
     })
   })
 

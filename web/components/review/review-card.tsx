@@ -3,24 +3,14 @@
 import type { ReactNode } from 'react'
 import { Otto } from '@/components/brand'
 import { AssetIcon } from '@/components/portfolio/asset-icon'
-import { Badge, Callout } from '@/components/ui'
+import { Badge } from '@/components/ui'
 import { walletClientName, walletMark } from '@/components/wallets/naming'
 import type { Plan, Visuals } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
-import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
-import {
-  SOURCE_LABEL,
-  approvals,
-  assetChanges,
-  assetWords,
-  bannerWarnings,
-  chainOfPlan,
-  changeSource,
-  executability,
-  keyFacts,
-  recipientOf,
-} from './model'
+import { addressOf, truncateAddress } from '@/lib/format'
+import { HEADS_UP_ID } from './heads-up-panel'
+import { SOURCE_LABEL, assetChanges, chainOfPlan, changeSource, executability, headsUp, keyFacts, recipientOf } from './model'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -77,8 +67,7 @@ export function ReviewCard({
   const source = changeSource(plan, liveRun)
   const recipient = recipientOf(plan)
   const rows = keyFacts(plan)
-  const grants = approvals(plan)
-  const warnings = bannerWarnings(plan)
+  const alerts = headsUp(plan)
   const verdict = executability(plan, liveRun)
 
   return (
@@ -210,33 +199,34 @@ export function ReviewCard({
         ))}
       </div>
 
-      {grants.length > 0 || warnings.length > 0 ? (
-        <div className="flex flex-col gap-2.5 px-[18px] pt-3.5">
-          {grants.map((grant) => (
-            <Callout
-              key={grant.spender}
-              severity={grant.unlimited ? 'block' : 'caution'}
-              title={grant.unlimited ? 'This spender wants unlimited token access.' : 'This plan grants an approval.'}
-              icon={<Otto pose="heads-up" size={44} />}
+      {/*
+        The card says how much there is to read and where; the reading is in
+        the heads-up panel, beside the card or under it. One line rather than
+        the callouts themselves, so the button is never pushed off a phone
+        screen by the argument for not pressing it — and a line, not nothing,
+        because a warning nobody scrolls to is not a warning.
+      */}
+      {alerts.count > 0 ? (
+        <a
+          href={`#${HEADS_UP_ID}`}
+          className={cn(
+            'mx-[18px] mt-3.5 flex items-center gap-2.5 rounded-[10px] px-3 py-2 no-underline',
+            alerts.worst === 'block' ? 'bg-[var(--ot-block-bg)]' : 'bg-[var(--ot-warn-bg)]',
+          )}
+        >
+          <Otto pose="heads-up" size={30} />
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[12.5px]">
+            <span
+              className={cn('font-semibold', alerts.worst === 'block' ? 'text-[var(--ot-block-text)]' : 'text-[var(--ot-warn-text)]')}
             >
-              <span className="block">
-                Spender <code className="font-mono text-[12px]">{grant.spender.split(':').pop()}</code>
-                {spenderName(plan, grant.spender) ? ` · ${spenderName(plan, grant.spender)}` : ''}
-              </span>
-              <span className="block">
-                Amount{' '}
-                <code className="font-mono text-[12px] font-semibold">
-                  {grant.unlimited ? 'unlimited' : approvalAmount(plan, grant.amount)}
-                </code>
-              </span>
-            </Callout>
-          ))}
-          {warnings.map((w) => (
-            <Callout key={w.code + w.message} severity={w.severity === 'block' ? 'block' : 'caution'} title={w.message}>
-              {w.saferAlternative}
-            </Callout>
-          ))}
-        </div>
+              {alerts.count === 1 ? 'One thing' : `${alerts.count} things`} to read first
+            </span>
+            <span className="text-[var(--ot-text-2)]">
+              in Heads-up, <span className="min-[1032px]:hidden">below</span>
+              <span className="hidden min-[1032px]:inline">to the right</span>
+            </span>
+          </span>
+        </a>
       ) : null}
 
       <footer className="mt-3.5 flex flex-col gap-3 border-t border-[var(--ot-border)] bg-[var(--ot-water-1)] px-[18px] pt-3.5 pb-[18px]">
@@ -257,11 +247,6 @@ const Dot = () => (
     ·
   </span>
 )
-
-function approvalAmount(plan: Plan, amount: string): string {
-  const asset = plan.intent.kind === 'transfer' ? assetWords(plan, plan.intent.asset) : null
-  return asset ? `${formatAmount(amount, asset.decimals)} ${asset.symbol}` : amount
-}
 
 /** A 22px mark: the wallet's logo, the chain's icon, or a letter. */
 function Tile({ mark, fallback, tone }: { mark: string | null; fallback: string; tone: string }) {
@@ -284,8 +269,3 @@ function Tile({ mark, fallback, tone }: { mark: string | null; fallback: string;
   )
 }
 
-/** The name the decoder found for a spender, when it is one of the plan's own targets. */
-function spenderName(plan: Plan, spender: string): string | null {
-  const hit = plan.decodedActions.find((a) => a.target.toLowerCase() === spender.toLowerCase())
-  return hit?.contractName ?? null
-}
