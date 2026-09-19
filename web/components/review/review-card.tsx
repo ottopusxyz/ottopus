@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { Otto } from '@/components/brand'
 import { AssetIcon } from '@/components/portfolio/asset-icon'
-import { Callout } from '@/components/ui'
+import { Badge, Callout } from '@/components/ui'
 import { walletClientName, walletMark } from '@/components/wallets/naming'
 import type { Plan, Visuals } from '@/lib/api'
 import { chainName } from '@/lib/chains'
@@ -92,6 +92,13 @@ export function ReviewCard({
       </header>
 
       <div className="flex flex-col gap-[3px] px-[18px] pb-3.5">
+        {plan.provenance === 'agent_crafted' ? (
+          // No route provider stood behind these calls, and the summary is
+          // the agent's own words. Said before the words, not after them.
+          <Badge tone="coral" className="mb-1.5">
+            Agent-crafted · Otto did not choose this route
+          </Badge>
+        ) : null}
         <h1 className="m-0 font-[family-name:var(--ot-font-display)] text-[20px] leading-[1.28] font-bold tracking-[-0.01em]">
           {plan.humanPlan.summary}
         </h1>

@@ -7,6 +7,7 @@ import { readPortfolio } from '../connectors/portfolio/index.js'
 import { zerionTokens } from '../connectors/tokens/index.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
+import { apiErrorHandler } from './errors.js'
 import { planRoutes } from './plans.js'
 import { portfolioRoutes } from './portfolio.js'
 import { portfolioProvider } from './portfolio-provider.js'
@@ -20,6 +21,11 @@ import { walletRoutes } from './wallets.js'
  * to data. Authenticated by Privy session, unlike the MCP surface.
  */
 export const apiApp = new Hono()
+
+// Sub-apps mounted with route() share this: an error they let escape lands
+// here, not in Hono's default, which answered with nothing the page or a log
+// could use.
+apiApp.onError(apiErrorHandler)
 
 /**
  * The web app is always cross-origin — ottopus.xyz calling api.ottopus.xyz in

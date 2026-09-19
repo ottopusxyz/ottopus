@@ -39,6 +39,11 @@ const MAX_PAGES = 5
 const MAX_RETRY_WAIT_MS = 2_000
 const MAX_ATTEMPTS = 3
 
+/** What `AbortSignal.timeout` rejects a fetch with; an abort by any other hand looks the same and means the same. */
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+}
+
 export interface ZerionOptions {
   apiKey: string
   baseUrl?: string
@@ -234,7 +239,12 @@ export class ZerionPortfolioConnector implements PortfolioConnector {
         })
       } catch (err) {
         lastError = new PortfolioError('unavailable', 'zerion did not answer', { cause: err })
-        if (attempt === MAX_ATTEMPTS) break
+        // A timeout is not a blip to retry through: the provider is hanging,
+        // and three waits in a row turned a ten-second ceiling into thirty,
+        // on every arm, for every request. One wait, then the arm reads as
+        // unavailable and the cache answers the next caller. A connection
+        // that dropped is a blip, and still gets its retries.
+        if (isTimeout(err) || attempt === MAX_ATTEMPTS) break
         continue
       }
 

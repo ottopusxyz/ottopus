@@ -373,3 +373,27 @@ describe('portfolio display metadata', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })
+
+/**
+ * Found during a Zerion incident: three ten-second waits per arm turned a
+ * hanging provider into a thirty-second request, for every caller. A timeout
+ * is the provider not answering; asking twice more is not a retry, it is
+ * waiting three times.
+ */
+describe('when zerion hangs', () => {
+  const account = { walletId: 'w1', namespace: 'eip155', address: '0x958543756a4c7ac6fb361f0efbfecd98e4d297db' }
+
+  it('waits once on a timeout and gives up, rather than three times', async () => {
+    const fetchImpl = vi.fn(async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError') })
+    const connector = new ZerionPortfolioConnector({ apiKey: 'k', fetch: fetchImpl, timeoutMs: 50 })
+    await expect(connector.positionsFor(account)).rejects.toMatchObject({ code: 'unavailable' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('still retries a connection that dropped, which is a blip and not a hang', async () => {
+    const fetchImpl = vi.fn(async () => { throw new TypeError('fetch failed') })
+    const connector = new ZerionPortfolioConnector({ apiKey: 'k', fetch: fetchImpl, timeoutMs: 50 })
+    await expect(connector.positionsFor(account)).rejects.toMatchObject({ code: 'unavailable' })
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+  })
+})

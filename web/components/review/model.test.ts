@@ -499,3 +499,55 @@ describe('the steps the wallet will be asked for', () => {
     expect(planSteps(plan)).toEqual([{ index: 1, label: 'Send 500 USDC', detail: 'to 0x67d2…98d2' }])
   })
 })
+
+/**
+ * An agent-crafted plan. The declaration stands in for the request, and the
+ * page must read it as a ceiling the agent promised, not a figure it knows.
+ */
+describe('an agent-crafted plan', () => {
+  const WETH = '0x4200000000000000000000000000000000000006'
+  const PM = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1'
+  const custom: Plan = {
+    ...plan,
+    provenance: 'agent_crafted',
+    intent: {
+      kind: 'custom',
+      fromAccount: `${BASE}:${MAIN}`,
+      chainId: BASE,
+      summary: 'Add 1 USDC and the matching WETH to the USDC/WETH 0.05% pool',
+      expectedChanges: [
+        { asset: `${BASE}/erc20:${USDC}`, maxOut: '1000000' },
+        { asset: `${BASE}/erc20:${WETH}`, maxOut: '1208327299744937' },
+      ],
+      approvals: [{ asset: `${BASE}/erc20:${USDC}`, spender: `${BASE}:${PM}`, amount: '1000000' }],
+      note: 'earn fees on idle USDC',
+    },
+    humanPlan: {
+      ...plan.humanPlan,
+      summary: 'Add 1 USDC and the matching WETH to the USDC/WETH 0.05% pool',
+      assets: [
+        { id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 },
+        { id: `${BASE}/erc20:${WETH}`, symbol: 'WETH', decimals: 18 },
+      ],
+    },
+    simulation: null,
+  }
+
+  it('shows each declared ceiling as an outgoing row, and says it is a ceiling', () => {
+    const rows = assetChanges(custom)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ direction: 'out', amount: '1', symbol: 'USDC', where: 'at most, leaves Main' })
+    expect(rows[1]).toMatchObject({ direction: 'out', symbol: 'WETH' })
+  })
+
+  it('labels the rows as declared, not as the request', () => {
+    expect(changeSource(custom)).toBe('declared')
+    // Once a simulation has been observed the declaration steps aside, as it does for any plan.
+    const observed = { ...custom, simulation: { ...plan.simulation!, assetChanges: [{ assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-1000000', pre: '10000000', post: '9000000' }] } }
+    expect(changeSource(observed)).toBe('stored')
+  })
+
+  it('carries the note into the key facts like a transfer does', () => {
+    expect(keyFacts(custom)).toContainEqual({ label: 'Note', value: 'earn fees on idle USDC' })
+  })
+})

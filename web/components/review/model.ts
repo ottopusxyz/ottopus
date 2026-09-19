@@ -127,6 +127,28 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
     }
     return rows
   }
+
+  /**
+   * An agent-crafted plan, read off the declaration when no simulation has
+   * been observed. Each row is a ceiling, not a figure — the agent promised
+   * no more than this would leave — and the wording says so, because a page
+   * that printed a bound as an amount would be the declaration overclaiming.
+   */
+  if (plan.intent.kind === 'custom') {
+    const rows: AssetChange[] = []
+    for (const change of plan.intent.expectedChanges) {
+      const words = assetWords(plan, change.asset)
+      if (!words) continue
+      rows.push({
+        direction: 'out',
+        amount: formatAmount(change.maxOut, words.decimals),
+        symbol: words.symbol,
+        where: `at most, leaves ${holder}`,
+        assetId: change.asset,
+      })
+    }
+    return rows
+  }
   return []
 }
 
@@ -149,18 +171,21 @@ function holderOf(plan: Plan): string {
  * the reader. "request" is the intent, which is a promise rather than an
  * observation.
  */
-export type ChangeSource = 'live' | 'stored' | 'request'
+export type ChangeSource = 'live' | 'stored' | 'request' | 'declared'
 
 export function changeSource(plan: Plan, live?: Simulation | null): ChangeSource {
   if ((live?.assetChanges.length ?? 0) > 0) return 'live'
   if ((plan.simulation?.assetChanges.length ?? 0) > 0) return 'stored'
-  return 'request'
+  // An agent's declaration is a promise about the request, not the request
+  // itself, and the page should not let the two read the same.
+  return plan.intent.kind === 'custom' ? 'declared' : 'request'
 }
 
 export const SOURCE_LABEL: Readonly<Record<ChangeSource, string>> = {
   live: 'simulated just now',
   stored: 'simulated when the plan was built',
   request: 'from the request',
+  declared: 'declared by the agent, as ceilings',
 }
 
 function observedRow(delta: AssetDelta, holder: string): AssetChange {
@@ -275,6 +300,8 @@ export function standingApproval(plan: Plan): StandingApproval | null {
 export function sourceAssetIdOf(plan: Plan): string | null {
   if (plan.intent.kind === 'transfer') return plan.intent.asset
   if (plan.intent.kind === 'swap' || plan.intent.kind === 'bridge') return plan.intent.from
+  // A custom plan may spend several; the first declared is the one to lead with.
+  if (plan.intent.kind === 'custom') return plan.intent.expectedChanges[0]?.asset ?? null
   return null
 }
 
@@ -357,7 +384,7 @@ export function keyFacts(plan: Plan): Fact[] {
   } else {
     rows.push({ label: 'Network fee', value: 'Shown by your wallet' })
   }
-  if (plan.intent.kind === 'transfer' && plan.intent.note) {
+  if ((plan.intent.kind === 'transfer' || plan.intent.kind === 'custom') && plan.intent.note) {
     rows.push({ label: 'Note', value: plan.intent.note })
   }
   return rows

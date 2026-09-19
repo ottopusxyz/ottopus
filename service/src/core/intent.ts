@@ -190,11 +190,19 @@ const expectedChangeSchema = z.strictObject({
   maxOut: amountSchema,
 })
 
-/** An allowance the calls will create. Exact by construction: this shape cannot say "unlimited". */
+/**
+ * An allowance the calls will set. Exact by construction: this shape cannot
+ * say "unlimited". Zero is allowed, and is the whole of a revoke — the one
+ * approval a person is most likely to want and the one `amountSchema` would
+ * have refused to let them declare.
+ */
 const declaredApprovalSchema = z.strictObject({
   asset: assetIdSchema,
   spender: accountIdSchema,
-  amount: amountSchema,
+  amount: z
+    .string()
+    .regex(/^[0-9]+$/, 'expected an integer amount in base units, as a string')
+    .refine((s) => s.length <= 78, 'amount is implausibly large'),
 })
 
 /**

@@ -462,7 +462,24 @@ export interface TradeIntent {
   note?: string
 }
 
-export type PlanIntent = TransferIntent | TradeIntent | { kind: 'supply'; [key: string]: unknown }
+/**
+ * Calls the agent authored itself, with its declaration of what they do.
+ * The declaration is the intent: it is what was hashed, and the page shows
+ * it beside what the simulation actually saw.
+ */
+export interface CustomIntent {
+  kind: 'custom'
+  fromAccount: string
+  chainId: string
+  summary: string
+  /** The most of each asset that may leave. A bound, not a figure. */
+  expectedChanges: { asset: string; maxOut: string }[]
+  approvals: { asset: string; spender: string; amount: string }[]
+  nativeValue?: string
+  note?: string
+}
+
+export type PlanIntent = TransferIntent | TradeIntent | CustomIntent | { kind: 'supply'; [key: string]: unknown }
 
 export interface Plan {
   id: string

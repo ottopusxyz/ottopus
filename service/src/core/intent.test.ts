@@ -269,6 +269,12 @@ describe('custom intent', () => {
     expect(() => customIntentSchema.parse({ ...honest, summary: 'x'.repeat(281) })).toThrow()
   })
 
+  it('lets a declared approval be zero — a revoke — while a ceiling still cannot be', () => {
+    const revoke = customIntentSchema.parse({ ...honest, expectedChanges: [], approvals: [{ asset: USDC, spender: PM, amount: '0' }] })
+    expect(revoke.approvals[0]?.amount).toBe('0')
+    expect(() => customIntentSchema.parse({ ...honest, expectedChanges: [{ asset: USDC, maxOut: '0' }] })).toThrow()
+  })
+
   it('may declare nothing leaving at all, for a claim or a revoke', () => {
     const intent = customIntentSchema.parse({ ...honest, expectedChanges: [], approvals: [] })
     expect(intent.expectedChanges).toEqual([])

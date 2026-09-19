@@ -518,6 +518,41 @@ const tradeRules: Rule = (input) => {
 }
 
 /**
+ * Whether a decoded call carries calldata inside its arguments.
+ *
+ * `bytes[]` is always a wrapper. A `bytes` argument that is not empty is
+ * something the outer ABI declines to describe — a nested call, a
+ * signature, a payload — and the only one of those this tier could vouch
+ * for is the empty one. Tuples hide their component types behind `tuple`,
+ * so their values are scanned: a hex string that is neither an address nor
+ * a 32-byte word is treated as opaque. Conservative on purpose — a `bytes4`
+ * field trips it too — because the failure the other way is an approval
+ * nobody checked.
+ */
+function carriesOpaqueCalldata(action: DecodedAction): boolean {
+  const opaqueHex = (s: unknown) =>
+    typeof s === 'string' && /^0x[0-9a-f]*$/i.test(s) && s.length >= 10 && s.length !== 42 && s.length !== 66
+  const scan = (v: unknown): boolean => {
+    if (typeof v === 'string') return opaqueHex(v)
+    if (Array.isArray(v)) return v.some(scan)
+    if (v && typeof v === 'object') return Object.values(v).some(scan)
+    return false
+  }
+  return action.args.some((arg) => {
+    if (arg.type === 'bytes[]') return true
+    if (arg.type === 'bytes') return arg.value !== '0x' && arg.value !== ''
+    if (arg.type.startsWith('tuple')) {
+      try {
+        return scan(JSON.parse(arg.value))
+      } catch {
+        return false
+      }
+    }
+    return false
+  })
+}
+
+/**
  * The heightened tier for calls the agent authored.
  *
  * A route provider is untrusted but bounded: it builds one shape, and the
@@ -542,7 +577,17 @@ const customRules: Rule = (input) => {
   const findings: Finding[] = []
 
   decodedActions.forEach((a, i) => {
-    if (a.source === 'native') return
+    if (a.source === 'native') {
+      // A plain value transfer to a wallet is the one call with nothing to
+      // read. To a contract it runs receive() or fallback(), and that code
+      // has to be published like any other the plan executes.
+      if (a.isContract && !a.verified) {
+        findings.push({
+          block: `call ${i + 1} sends value to ${short(a.target)}, a contract with no verified source; what its fallback does cannot be read`,
+        })
+      }
+      return
+    }
     if (!a.isContract) {
       findings.push({ block: `call ${i + 1} sends calldata to ${short(a.target)}, which has no code` })
       return
@@ -559,6 +604,23 @@ const customRules: Rule = (input) => {
     } else if (a.source === 'unknown') {
       findings.push({ block: `call ${i + 1} to ${short(a.target)} could not be read at all` })
     }
+    // Reading the outer call is not reading what it carries. A `bytes[]` is
+    // a wrapper — multicall, execute, batch — and a non-empty `bytes` is
+    // calldata this tier cannot see into; an approval hidden in either passes
+    // the checks below untouched. A caution, by decision, not a block: v3's
+    // own decrease and native-side create arrive as a multicall, and refusing
+    // every vendor bundle was judged too high a price. The page says what it
+    // could not read; the person decides.
+    if (carriesOpaqueCalldata(a)) {
+      findings.push({
+        warn: {
+          severity: 'caution' as const,
+          code: 'opaque_calldata',
+          message: `call ${i + 1} to ${short(a.target)} (${a.function.replace(/\(.*$/, '')}) carries calldata inside its arguments that this page cannot read — an approval in there would not be caught`,
+          saferAlternative: 'Prefer the same action as separate calls, each one readable, over a bundle.',
+        },
+      })
+    }
   })
 
   // Every approval the bytes make, against the one the declaration made.
@@ -572,6 +634,15 @@ const customRules: Rule = (input) => {
     const approval = approvalIn(call)
     // Unlimited is the global rule's block; nothing to compare it to here.
     if (!approval || approval.amount === 'unlimited') continue
+    // An allowance is set, never grown. `increaseAllowance` adds to whatever
+    // stands, so two of them at the declared amount leave twice it — and the
+    // declaration would have matched each one on its own.
+    if (readCalldata(call)?.signature === 'increaseAllowance(address,uint256)') {
+      findings.push({
+        block: `an increaseAllowance to ${short(approval.spender)}; an agent-authored plan sets an allowance with approve, exactly, and never adds to one`,
+      })
+      continue
+    }
     const token = parseAccountId(call.to).address.toLowerCase()
     const spender = parseAccountId(approval.spender).address.toLowerCase()
     const at = declared.findIndex((d) => d.token === token && d.spender === spender)
@@ -580,6 +651,12 @@ const customRules: Rule = (input) => {
       // declaration named a pairing, and this is not it.
       findings.push({
         block: `an approval on ${short(call.to)} to ${short(approval.spender)}, which the declaration does not name for that token`,
+      })
+      continue
+    }
+    if (matched.has(at)) {
+      findings.push({
+        block: `${short(call.to)} is approved to ${short(approval.spender)} twice; one declaration is one approval`,
       })
       continue
     }

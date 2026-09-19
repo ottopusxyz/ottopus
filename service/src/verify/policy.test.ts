@@ -586,6 +586,8 @@ describe('an agent-authored plan', () => {
   const WETH = '0x4200000000000000000000000000000000000006'
   const CLAIM_ABI = [
     { type: 'function', name: 'claimFees', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+    { type: 'function', name: 'multicall', inputs: [{ name: 'data', type: 'bytes[]' }], outputs: [], stateMutability: 'payable' },
+    { type: 'function', name: 'exec', inputs: [{ name: 'payload', type: 'bytes' }], outputs: [], stateMutability: 'nonpayable' },
   ] as const
   const claimFees = encodeFunctionData({ abi: CLAIM_ABI, functionName: 'claimFees' })
 
@@ -700,6 +702,65 @@ describe('an agent-authored plan', () => {
     it('refuses calldata sent to an address with no code', async () => {
       const verdict = await verifyCustom(intent({ expectedChanges: [], approvals: [] }), [call(ALICE, claimFees)], traced([]))
       expect(verdict).toMatchObject({ ok: false, reasons: [expect.stringMatching(/which has no code/)] })
+    })
+  })
+
+  /**
+   * Reviewed: a verified wrapper around an unlimited approval passed untouched.
+   * By decision it still passes — v3's own decrease arrives as a multicall —
+   * but the page is told what it could not read, and this test pins that the
+   * approval inside is indeed invisible, so nobody mistakes the caution for a check.
+   */
+  describe('calldata it cannot see into', () => {
+    it('cautions on a wrapper, and the approval inside it is not seen', async () => {
+      const hidden = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'setApprovalForAll', args: [MALLORY, true] })
+      const wrapped = encodeFunctionData({ abi: CLAIM_ABI, functionName: 'multicall', args: [[hidden]] })
+      const verdict = await verifyCustom(intent({ expectedChanges: [], approvals: [] }), [call(PM, wrapped)], traced([]))
+      expect(verdict.ok).toBe(true)
+      expect(verdict.warnings).toEqual([
+        expect.objectContaining({ code: 'opaque_calldata', severity: 'caution', message: expect.stringMatching(/multicall.*would not be caught/) }),
+      ])
+    })
+
+    it('cautions on a non-empty bytes argument, and says nothing of an empty one', async () => {
+      const bare = intent({ expectedChanges: [], approvals: [] })
+      const loaded = await verifyCustom(bare, [call(PM, encodeFunctionData({ abi: CLAIM_ABI, functionName: 'exec', args: ['0x095ea7b3'] }))], traced([]))
+      expect(loaded.ok).toBe(true)
+      expect(loaded.warnings.map((w) => w.code)).toEqual(['opaque_calldata'])
+      const empty = await verifyCustom(bare, [call(PM, encodeFunctionData({ abi: CLAIM_ABI, functionName: 'exec', args: ['0x'] }))], traced([]))
+      expect(empty).toEqual({ ok: true, warnings: [] })
+    })
+  })
+
+  /** Reviewed: two increases at the declared amount each matched the declaration and left twice it. */
+  describe('an allowance is set, never grown', () => {
+    it('refuses increaseAllowance outright', async () => {
+      const grow = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'increaseAllowance', args: [PM, 1_000_000n] })
+      const verdict = await verifyCustom(intent(), [call(USDC, grow), call(PM, claimFees)], traced())
+      expect(verdict).toMatchObject({ ok: false, reasons: expect.arrayContaining([expect.stringMatching(/increaseAllowance .* never adds to one/)]) })
+    })
+
+    it('refuses the same pair approved twice, even at the declared amount', async () => {
+      const twice = [call(USDC, approve(PM, 1_000_000n)), call(USDC, approve(PM, 1_000_000n)), call(PM, claimFees)]
+      const verdict = await verifyCustom(intent(), twice, traced())
+      expect(verdict).toMatchObject({ ok: false, reasons: [expect.stringMatching(/approved to .* twice/)] })
+    })
+
+    it('allows a revoke: approve to zero, declared as zero', async () => {
+      const revoke = intent({ expectedChanges: [], approvals: [{ asset: `${CHAIN}/erc20:${USDC}`, spender: `${CHAIN}:${PM}`, amount: '0' }] })
+      const verdict = await verifyCustom(revoke, [call(USDC, approve(PM, 0n))], traced([]))
+      expect(verdict).toEqual({ ok: true, warnings: [] })
+    })
+  })
+
+  /** Reviewed: empty calldata was labelled native and skipped the source check, contract or not. */
+  describe('value with no calldata', () => {
+    it('may go to a wallet, but a contract’s fallback still needs published source', async () => {
+      const paying = intent({ expectedChanges: [], approvals: [], nativeValue: '1000' })
+      expect((await verifyCustom(paying, [call(ALICE, '0x', '1000')], traced([]))).ok).toBe(true)
+      const toUnverified = await verifyCustom(paying, [call(ROUTER, '0x', '1000')], traced([]))
+      expect(toUnverified).toMatchObject({ ok: false, reasons: [expect.stringMatching(/sends value to .* no verified source; what its fallback does/)] })
+      expect((await verifyCustom(paying, [call(PM, '0x', '1000')], traced([]))).ok).toBe(true)
     })
   })
 
