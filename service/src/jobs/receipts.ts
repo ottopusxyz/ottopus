@@ -18,7 +18,8 @@ import { RpcReadError } from '../verify/index.js'
  * with no receipt the plan is marked failed with the reason `dropped`: a
  * wallet that replaced or dropped the transaction is not going to produce a
  * receipt for that hash, and a plan that reads "waiting for the chain"
- * forever is worse than one that says what is known.
+ * forever is worse than one that says what is known. That verdict needs the
+ * chain to have answered — never age alone, and never a failed read.
  */
 
 export type ReceiptOutcome = 'success' | 'reverted'
@@ -132,12 +133,10 @@ export class ReceiptWatcher {
     const base = { userId: record.plan.userId, planId: record.plan.id, version: record.plan.version }
     report.checked += 1
 
-    if (now - Date.parse(record.statusAt) >= this.giveUpAfter) {
-      await this.write({ ...base, to: 'failed', detail: { txHash, reason: 'dropped' } }, key)
-      report.dropped += 1
-      return
-    }
-
+    // The chain is asked first, always. Age alone proves nothing: after a
+    // day of downtime, or an outage at the provider, an old submission with
+    // a perfectly good receipt is still a confirmed transfer, and a read
+    // that failed says nothing about the transaction at all.
     let outcome: ReceiptOutcome | null
     try {
       outcome = await this.deps.reader.receipt(chainId, txHash)
@@ -148,6 +147,13 @@ export class ReceiptWatcher {
       return
     }
     if (outcome === null) {
+      // The chain answered, and it has never seen this hash. Only past the
+      // give-up age does that become a verdict.
+      if (now - Date.parse(record.statusAt) >= this.giveUpAfter) {
+        await this.write({ ...base, to: 'failed', detail: { txHash, reason: 'dropped' } }, key)
+        report.dropped += 1
+        return
+      }
       this.backOff(key, attempt, now)
       return
     }

@@ -352,6 +352,14 @@ export const planEvents = pgTable(
       name: 'plan_events_plan_fk',
     }),
     index('plan_events_plan_idx').on(t.planId, t.planVersion),
+    /**
+     * The receipt job's read: submitted events, of which each version has at
+     * most one and few are in flight. Partial, so it stays the size of what
+     * has been submitted rather than of everything that has happened.
+     */
+    index('plan_events_submitted_idx')
+      .on(t.planId, t.planVersion, t.seq)
+      .where(sql`status = 'submitted'`),
     check(
       'plan_events_status',
       // Frozen vocabulary — must match the canonical plan doc exactly.

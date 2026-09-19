@@ -101,13 +101,36 @@ describe('the receipt watcher', () => {
     expect(reads()).toBe(2)
   })
 
-  it('gives up after a day with no receipt, as failed with reason dropped', async () => {
-    const stale = submitted({ statusAt: new Date(T0 - 24 * 60 * 60_000).toISOString() })
-    const { watcher, moves, reads } = harness([stale], async () => null)
-    const report = await watcher.tick()
-    expect(report.dropped).toBe(1)
-    expect(reads(), 'no read for a hash given up on').toBe(0)
-    expect(moves[0]).toMatchObject({ to: 'failed', detail: { txHash: TX, reason: 'dropped' } })
+  describe('a submission older than a day', () => {
+    const DAY = 24 * 60 * 60_000
+    const stale = () => submitted({ statusAt: new Date(T0 - DAY - 60 * 60_000).toISOString() })
+
+    it('is dropped only once the chain has answered that it never saw the hash', async () => {
+      const { watcher, moves, reads } = harness([stale()], async () => null)
+      const report = await watcher.tick()
+      expect(reads(), 'the chain is asked before any verdict').toBe(1)
+      expect(report.dropped).toBe(1)
+      expect(moves[0]).toMatchObject({ to: 'failed', detail: { txHash: TX, reason: 'dropped' } })
+    })
+
+    it('is confirmed when a receipt turns up, however late — after downtime, say', async () => {
+      const { watcher, moves } = harness([stale()], async () => 'success')
+      const report = await watcher.tick()
+      expect(report).toMatchObject({ confirmed: 1, dropped: 0 })
+      expect(moves[0]).toMatchObject({ to: 'confirmed', detail: { txHash: TX } })
+    })
+
+    it('is left alone while the chain cannot be read: an outage is not a verdict', async () => {
+      const { watcher, moves, advance, reads } = harness([stale()], async () => {
+        throw new RpcReadError('eip155:8453', new Error('provider down'))
+      })
+      const report = await watcher.tick()
+      expect(report).toMatchObject({ errors: 1, dropped: 0 })
+      expect(moves).toEqual([])
+      advance(BACKOFF_BASE_MS)
+      await watcher.tick()
+      expect(reads(), 'and it is asked again').toBe(2)
+    })
   })
 
   it('accepts a refusal as the browser having written the outcome first', async () => {

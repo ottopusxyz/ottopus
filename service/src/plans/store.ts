@@ -1,5 +1,5 @@
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
-import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core'
+import { and, desc, eq, gt, inArray, isNull, notExists, sql } from 'drizzle-orm'
+import { type PgDatabase, type PgQueryResultHKT, alias } from 'drizzle-orm/pg-core'
 import {
   type Plan,
   PlanIntegrityError,
@@ -248,42 +248,54 @@ export async function transition(
   })
 }
 
+/** How many submitted plans one tick of the receipt job takes on. */
+const SUBMITTED_BATCH = 200
+
 /**
- * Every plan, any user's, whose latest event is `submitted`: what the receipt
- * job watches. Reads start from the submitted events — each version has at
- * most one, and there are few — rather than from every plan of every user.
+ * Plans, any user's, whose latest event is `submitted`: what the receipt job
+ * watches. "Latest" is decided in SQL — a submitted event with no later event
+ * for its version — over the partial index on submitted events, so the read
+ * costs what is currently in flight, not what has ever been submitted. Events
+ * are append-only and the table only grows; a query that loaded history to
+ * filter it in memory would grow with it, every ten seconds, until the
+ * driver's parameter limit stopped it.
+ *
+ * Oldest submission first, in a bounded batch. More than a batch in flight
+ * at once means the newest wait a tick or two; the job is not the only
+ * watcher, and the browser has usually written the outcome already.
  */
 export async function listSubmitted(db: PlanDb): Promise<PlanRecord[]> {
-  const submitted = await db
-    .select({ planId: planEvents.planId })
-    .from(planEvents)
-    .where(eq(planEvents.status, 'submitted'))
-  if (submitted.length === 0) return []
-  const ids = [...new Set(submitted.map((e) => e.planId))]
-  const latest = await db
-    .selectDistinctOn([planEvents.planId, planEvents.planVersion], {
-      planId: planEvents.planId,
-      planVersion: planEvents.planVersion,
+  const later = alias(planEvents, 'later')
+  const rows = await db
+    .select({
+      plan: plans,
       status: planEvents.status,
       createdAt: planEvents.createdAt,
       detail: planEvents.detail,
     })
     .from(planEvents)
-    .where(inArray(planEvents.planId, ids))
-    .orderBy(planEvents.planId, planEvents.planVersion, desc(planEvents.seq))
-  const still = latest.filter((e) => e.status === 'submitted')
-  if (still.length === 0) return []
-  const byVersion = new Map(still.map((e) => [`${e.planId}:${e.planVersion}`, e]))
-  const rows = await db
-    .select()
-    .from(plans)
-    .where(inArray(plans.id, [...new Set(still.map((e) => e.planId))]))
-  const records: PlanRecord[] = []
-  for (const row of rows) {
-    const event = byVersion.get(`${row.id}:${row.version}`)
-    if (event) records.push(toRecord(row, event))
-  }
-  return records
+    .innerJoin(plans, and(eq(plans.id, planEvents.planId), eq(plans.version, planEvents.planVersion)))
+    .where(
+      and(
+        eq(planEvents.status, 'submitted'),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(later)
+            .where(
+              and(
+                eq(later.planId, planEvents.planId),
+                eq(later.planVersion, planEvents.planVersion),
+                gt(later.seq, planEvents.seq),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(planEvents.createdAt)
+    .limit(SUBMITTED_BATCH)
+  const now = new Date()
+  return rows.map((row) => toRecord(row.plan, { status: row.status, createdAt: row.createdAt, detail: row.detail }, now))
 }
 
 /** The plan, at a version or at its latest. Null if it is not this user's. */

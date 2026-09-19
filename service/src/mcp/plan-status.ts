@@ -100,6 +100,12 @@ export function outcomeWords(record: PlanRecord): string {
       return `Confirmed on ${chain}: ${plan.humanPlan.summary} went through.${txWords}`
     case 'failed': {
       const reason = record.statusDetail?.reason
+      if (reason === 'dropped') {
+        return (
+          `No receipt appeared on ${chain} within a day of sending, so the wallet most likely dropped or replaced ` +
+          `the transaction. Ottopus cannot say what became of it; the wallet's own history can.${txWords}`
+        )
+      }
       const why = typeof reason === 'string' && reason ? ` (${reason})` : ''
       return `The transaction failed on ${chain}${why}. The transfer did not happen; only gas was spent.${txWords}`
     }

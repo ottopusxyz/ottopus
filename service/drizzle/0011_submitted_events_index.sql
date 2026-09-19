@@ -1,0 +1,1 @@
+CREATE INDEX "plan_events_submitted_idx" ON "plan_events" USING btree ("plan_id","plan_version","seq") WHERE status = 'submitted';

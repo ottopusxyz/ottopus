@@ -56,7 +56,19 @@ export function useReview(token: string): UseReview {
     async (transition: WebTransition) => {
       if (state.status !== 'ready') throw new Error('no plan loaded')
       const { plan } = state.read
-      const { status } = await movePlan(await credentials(), plan.id, plan.version, transition)
+      let status: PlanStatusName
+      try {
+        ;({ status } = await movePlan(await credentials(), plan.id, plan.version, transition))
+      } catch (err) {
+        // The service's receipt job races this page to confirmed and failed,
+        // and whichever lands second is refused. For an outcome the chain has
+        // already decided, a refusal means the service knows it too; re-read
+        // rather than tell the person something went wrong.
+        const decided = transition.status === 'confirmed' || transition.status === 'failed'
+        if (!(decided && err instanceof ApiError && err.status === 409)) throw err
+        setTick((t) => t + 1)
+        return transition.status
+      }
       setState({ status: 'ready', read: { ...state.read, plan: { ...plan, status }, statusAt: new Date().toISOString() } })
       return status
     },
