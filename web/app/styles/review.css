@@ -27,3 +27,17 @@
 .ot-review-caret {
   transition: transform var(--ot-dur-fast) var(--ot-ease-out);
 }
+
+/* A batched plan is one action to the wallet, so its steps are braced
+   together rather than numbered apart. Static: this page holds still, and a
+   brace that moved would be decoration rather than meaning. */
+.ot-batch-brace {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--ot-ok-text) 42%, transparent),
+    color-mix(in srgb, var(--ot-ok-text) 16%, transparent)
+  );
+}
+.ot-batch-group {
+  position: relative;
+}

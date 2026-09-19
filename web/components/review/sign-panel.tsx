@@ -8,9 +8,18 @@ import { Button, Dialog } from '@/components/ui'
 import type { Plan, WebTransition } from '@/lib/api'
 import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
 import { getAddress } from 'viem'
+import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
-import { approvals, chainOfPlan, standingApproval } from './model'
-import { BatchAccepted, SequentialNeedsConsent, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
+import { approvals, chainOfPlan, type PlanStep, planSteps, standingApproval } from './model'
+import {
+  BatchAccepted,
+  type Batching,
+  SequentialNeedsConsent,
+  UserRejected,
+  probeBatching,
+  sendPlanCalls,
+  waitForReceipt,
+} from './send-calls'
 import { gateFor } from './wallet-gate'
 
 /**
@@ -75,6 +84,17 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
   const consented = useRef(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  /**
+   * What the wallet says about batching, for the label only.
+   *
+   * Never consulted when sending: `sendPlanCalls` offers the batch whatever
+   * this says. "unknown" is a real answer and stays silent rather than
+   * guessing, because a wallet that cannot be asked is not a wallet that
+   * cannot batch.
+   */
+  const [batching, setBatching] = useState<Batching>('unknown')
+  /** Which call the wallet is on, and how many are behind it. */
+  const [progress, setProgress] = useState<{ signing: number | null; done: number }>({ signing: null, done: 0 })
   const wroteAwaiting = useRef(false)
 
   const chain = chainOfPlan(plan)
@@ -88,6 +108,8 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
   // Memoised: called bare in the body, it defeated the React Compiler's
   // memoisation of every callback below it.
   const standing = useMemo(() => standingApproval(plan), [plan])
+  const steps = useMemo(() => planSteps(plan), [plan])
+  const batched = batching === 'yes'
   const signerName = plan.resolution.account.label
     ? `${plan.resolution.account.label} (${truncateAddress(wanted)})`
     : truncateAddress(wanted)
@@ -101,6 +123,27 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
       wroteAwaiting.current = false
     })
   }, [open, gate.kind, plan.status, move])
+
+  /**
+   * Ask once the right wallet is connected, and only when there is more than
+   * one call — with a single call there is nothing to batch and nothing worth
+   * saying about it.
+   */
+  useEffect(() => {
+    if (!wallet || gate.kind !== 'ready' || steps.length < 2) return
+    let live = true
+    void (async () => {
+      try {
+        const answer = await probeBatching(await wallet.getEthereumProvider(), wanted, chain)
+        if (live) setBatching(answer)
+      } catch {
+        if (live) setBatching('unknown')
+      }
+    })()
+    return () => {
+      live = false
+    }
+  }, [wallet, gate.kind, wanted, chain, steps.length])
 
   // Resume the receipt watch for a submitted plan through the named wallet's
   // provider, when that wallet is connected. Without it the page still shows
@@ -158,6 +201,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
     if (!wallet || gate.kind !== 'ready' || plan.outcome.type !== 'calls') return
     setProblem(null)
     setAskConsent(false)
+    setProgress({ signing: null, done: 0 })
     setPhase({ kind: 'signing' })
     let txHash: `0x${string}` | null = null
     try {
@@ -185,6 +229,10 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         // Nothing could be left standing, or the person has been shown what
         // would be and said yes.
         sequentialIsSafe: plan.outcome.calls.length === 1 || approvals(plan).length === 0 || consented.current,
+        onStep: (index, phase) =>
+          setProgress((held) =>
+            phase === 'signing' ? { ...held, signing: index } : { signing: null, done: index + 1 },
+          ),
       })
       txHash = sent.txHash
       await move({ status: 'submitted', detail: { txHash } })
@@ -300,18 +348,13 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1.5 rounded-[10px] bg-[var(--ot-card)] px-3 py-[11px]">
-        <span className="text-[11.5px] text-[var(--ot-text-3)]">One signature in your wallet</span>
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="flex h-[19px] w-[19px] flex-none items-center justify-center rounded-full bg-[var(--ot-surface-3)] text-[10.5px] font-semibold text-[var(--ot-text-3)]"
-          >
-            1
-          </span>
-          <span className="text-[13px] text-[var(--ot-text-2)]">{plan.humanPlan.steps[0] ?? plan.humanPlan.summary}</span>
-        </div>
-      </div>
+      <PlanStepList
+        steps={steps}
+        batched={batched}
+        known={batching !== 'unknown'}
+        signing={phase.kind === 'signing'}
+        progress={progress}
+      />
 
       {problem ? (
         <p role="alert" className="m-0 rounded-[8px] bg-[var(--ot-warn-bg)] px-3 py-2 text-[12.5px] text-[var(--ot-warn-text)]">
@@ -319,6 +362,12 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         </p>
       ) : null}
 
+      {/*
+        What signing will actually involve, once the wallet is connected and
+        there is more than one step. Silent on "unknown": a wallet that could
+        not be asked is not a wallet that cannot batch, and the send path
+        tries regardless.
+      */}
       {/*
         The wallet will not batch. Say exactly what stopping halfway would
         leave behind, then let the person decide — an allowance for a named
@@ -412,5 +461,102 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         }
       />
     </div>
+  )
+}
+
+
+/**
+ * Every call the wallet will be asked for, in order.
+ *
+ * The one thing this has to get right is honesty about how many signatures
+ * are coming. A batched plan is one signature over the whole list, so the
+ * rows are bracketed together and share a state; a sequential one is a
+ * signature each, so the rows are numbered and only the current one is lit.
+ *
+ * "unknown" gets the plain numbered list with no claim either way, because a
+ * wallet that could not be asked is not a wallet that cannot batch.
+ */
+function PlanStepList({
+  steps,
+  batched,
+  known,
+  signing,
+  progress,
+}: {
+  steps: readonly PlanStep[]
+  batched: boolean
+  known: boolean
+  signing: boolean
+  progress: { signing: number | null; done: number }
+}) {
+  if (steps.length === 0) return null
+  const many = steps.length > 1
+  const heading = !many
+    ? 'One signature in your wallet'
+    : batched
+      ? `${steps.length} steps, one signature`
+      : known
+        ? `${steps.length} steps, a signature each`
+        : `${steps.length} steps in your wallet`
+
+  return (
+    <div className="flex flex-col gap-2 rounded-[10px] bg-[var(--ot-card)] px-3 py-[11px]">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11.5px] text-[var(--ot-text-3)]">{heading}</span>
+        {many && batched ? (
+          <span className="flex items-center gap-1 text-[10.5px] font-semibold text-[var(--ot-ok-text)]">
+            <BatchMark />
+            batched
+          </span>
+        ) : null}
+      </div>
+
+      <div className={cn('flex gap-2.5', many && batched && 'ot-batch-group')}>
+        {/* One brace for a batch: the rows are one action to the wallet. */}
+        {many && batched ? <span aria-hidden className="ot-batch-brace mt-0.5 mb-0.5 w-[3px] flex-none rounded-full" /> : null}
+        <ol className="m-0 flex flex-1 list-none flex-col gap-1.5 p-0">
+          {steps.map((step, i) => {
+            const done = batched ? false : i < progress.done
+            const active = batched ? signing : signing && progress.signing === i
+            return (
+              <li key={step.index} className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className={cn(
+                    'flex h-[19px] w-[19px] flex-none items-center justify-center rounded-full text-[10.5px] font-semibold transition-colors',
+                    done
+                      ? 'bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]'
+                      : active
+                        ? 'bg-[var(--ot-plan)] text-[var(--ot-on-state)]'
+                        : 'bg-[var(--ot-surface-3)] text-[var(--ot-text-3)]',
+                  )}
+                >
+                  {done ? '✓' : batched ? '•' : step.index}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+                  <span className={cn('text-[13px]', active ? 'font-semibold text-[var(--ot-text)]' : 'text-[var(--ot-text-2)]')}>
+                    {step.label}
+                  </span>
+                  {step.detail ? <span className="text-[11px] text-[var(--ot-text-3)]">{step.detail}</span> : null}
+                </span>
+                {active && !batched ? (
+                  <span className="flex-none text-[10.5px] font-medium text-[var(--ot-plan-text)]">in your wallet</span>
+                ) : null}
+              </li>
+            )
+          })}
+        </ol>
+      </div>
+    </div>
+  )
+}
+
+/** Two shapes closing into one. Static: this page holds still. */
+function BatchMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+      <rect x="1.2" y="1.3" width="9.6" height="9.4" rx="2.6" />
+      <path d="M3.9 6h4.2M6 3.9v4.2" strokeLinecap="round" strokeWidth="1.2" opacity="0.6" />
+    </svg>
   )
 }

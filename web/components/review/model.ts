@@ -362,3 +362,99 @@ export function keyFacts(plan: Plan): Fact[] {
   }
   return rows
 }
+
+/**
+ * What the wallet will be asked to do, one row per call.
+ *
+ * The panel used to say "One signature in your wallet" and draw a single
+ * numbered row, whatever the plan held — so a swap's approval was invisible
+ * until the wallet opened twice. A plan's calls are the steps, and a person
+ * about to sign should be able to count them.
+ */
+export interface PlanStep {
+  /** 1-based, as a person counts. */
+  index: number
+  label: string
+  /** The spender, the recipient, the contract. Shown small, beside the label. */
+  detail?: string
+}
+
+/**
+ * Prefixes this page writes into `humanPlan.steps` itself, so the route's own
+ * words can be told apart from the sentences added around them.
+ *
+ * Reading our own format is the weak part of this: the route's hops would be
+ * better as their own field on `humanPlan`, the way `assets` is. Sniffing
+ * costs nothing and works for every plan already stored, which a new field
+ * would not.
+ */
+const ADDED_STEP = /^(At least |Note from the request:|[a-z]+ estimates |[a-z]+ does not estimate )/
+
+export function planSteps(plan: Plan): PlanStep[] {
+  if (plan.outcome.type !== 'calls') return []
+  const calls = plan.outcome.calls
+  const routeWords = plan.humanPlan.steps.filter((step) => !ADDED_STEP.test(step))
+
+  return calls.map((call, i) => {
+    const action = plan.decodedActions[i]
+    const index = i + 1
+
+    if (action?.approval) {
+      const spent = sourceAssetIdOf(plan)
+      const words = spent === null ? null : assetWords(plan, spent)
+      const amount =
+        action.approval.amount === 'unlimited'
+          ? 'unlimited'
+          : words
+            ? `${formatAmount(action.approval.amount, words.decimals)} ${words.symbol}`
+            : action.approval.amount
+      return {
+        index,
+        label: `Approve ${amount}`,
+        detail: `for ${truncateAddress(addressOf(action.approval.spender))}`,
+      }
+    }
+
+    // A move we can read is described by what it does, not by its signature.
+    const moved = readableMove(plan, call, action)
+    if (moved) return { index, ...moved }
+
+    // The last call is the one the route's words describe: one call executes
+    // the whole route, however many hops the provider listed.
+    if (i === calls.length - 1 && routeWords.length > 0) {
+      return { index, label: routeWords.join(', then ') }
+    }
+    return {
+      index,
+      label: action?.function === 'unknown' || !action ? 'A call this page could not read' : action.function,
+      detail: `on ${truncateAddress(addressOf(call.to))}`,
+    }
+  })
+}
+
+/**
+ * A transfer, in words, when the decoder could read it.
+ *
+ * Printing `transfer(address,uint256)` at somebody about to sign is a worse
+ * answer than the page already has: the arguments are right there, and being
+ * able to say what a call does is the whole point of decoding it.
+ */
+function readableMove(
+  plan: Plan,
+  call: { to: string; value: string },
+  action: DecodedAction | undefined,
+): { label: string; detail?: string } | null {
+  const spent = sourceAssetIdOf(plan)
+  const words = spent === null ? null : assetWords(plan, spent)
+
+  if (action?.source === 'native' && call.value !== '0') {
+    const amount = words ? `${formatAmount(call.value, words.decimals)} ${words.symbol}` : `${call.value} wei`
+    return { label: `Send ${amount}`, detail: `to ${truncateAddress(addressOf(call.to))}` }
+  }
+  if (action?.function !== 'transfer(address,uint256)') return null
+  const to = action.args.find((a) => a.type === 'address')?.value
+  const raw = action.args.find((a) => a.type.startsWith('uint'))?.value
+  if (!to || !raw) return null
+  const amount = words ? `${formatAmount(raw, words.decimals)} ${words.symbol}` : raw
+  return { label: `Send ${amount}`, detail: `to ${truncateAddress(to)}` }
+}

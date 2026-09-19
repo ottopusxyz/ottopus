@@ -53,6 +53,13 @@ export interface SendInput {
    * standing, or when the person has been shown what would be and said yes.
    */
   sequentialIsSafe: boolean
+  /**
+   * Which call the wallet is on, for the page to follow along.
+   *
+   * Only the one-at-a-time path reports: a batch is one signature over every
+   * call at once, and the page already knows that without being told.
+   */
+  onStep?: ((index: number, phase: 'signing' | 'done') => void) | undefined
 }
 
 export type SendMethod = 'sendCalls' | 'sequential'
@@ -186,6 +193,7 @@ async function sendSequential(input: SendInput): Promise<`0x${string}`> {
   const client = createPublicClient({ transport: custom(provider as never) })
   let last: `0x${string}` | null = null
   for (const [i, call] of calls.entries()) {
+    input.onStep?.(i, 'signing')
     const hash = (await provider.request({
       method: 'eth_sendTransaction',
       params: [
@@ -206,6 +214,7 @@ async function sendSequential(input: SendInput): Promise<`0x${string}`> {
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 2_000, timeout: CALLS_TIMEOUT_MS })
       if (receipt.status !== 'success') throw new Error(`step ${i + 1} reverted; the rest was not sent`)
     }
+    input.onStep?.(i, 'done')
   }
   if (!last) throw new Error('nothing to send')
   return last

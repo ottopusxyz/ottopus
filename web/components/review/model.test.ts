@@ -9,6 +9,7 @@ import {
   effectiveStatus,
   changeSource,
   keyFacts,
+  planSteps,
   liveRefusal,
   executability,
   recipientOf,
@@ -410,5 +411,91 @@ describe('a trade with nothing simulated yet', () => {
   it('shows nothing rather than a half row when the plan never named the assets', () => {
     const bare = { ...trade('swap', `${BASE}/erc20:${DEGEN}`), humanPlan: { ...plan.humanPlan, assets: undefined } }
     expect(assetChanges(bare)).toEqual([])
+  })
+})
+
+describe('the steps the wallet will be asked for', () => {
+  const ROUTER = '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae'
+  const approval = {
+    target: `${BASE}:${USDC}`,
+    isContract: true,
+    source: 'abi' as const,
+    verified: true,
+    function: 'approve(address,uint256)',
+    args: [],
+    value: '0',
+    approval: { spender: `${BASE}:${ROUTER}`, amount: '500000000' },
+  }
+  const opaque = {
+    target: `${BASE}:${ROUTER}`,
+    isContract: true,
+    source: 'unknown' as const,
+    verified: true,
+    function: 'unknown',
+    args: [],
+    value: '0',
+  }
+  const swap = (): Plan => ({
+    ...plan,
+    intent: { kind: 'swap', from: `${BASE}/erc20:${USDC}`, to: `${BASE}/slip44:60`, amountIn: '500000000' },
+    outcome: {
+      type: 'calls',
+      calls: [
+        { to: `${BASE}:${USDC}`, value: '0', data: '0x095ea7b3', chainId: BASE },
+        { to: `${BASE}:${ROUTER}`, value: '0', data: '0xdeadbeef', chainId: BASE },
+      ],
+    },
+    humanPlan: {
+      ...plan.humanPlan,
+      steps: [
+        'Swap on Bitget',
+        'Bridge with Squid to Arbitrum One',
+        'At least 0.1194 ETH, or it reverts',
+        'Note from the request: rent',
+      ],
+      assets: [{ id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 }],
+    },
+    decodedActions: [approval, opaque],
+  })
+
+  /**
+   * The panel used to say "One signature in your wallet" and draw one row
+   * whatever the plan held, so a swap's approval was invisible until the
+   * wallet opened twice.
+   */
+  it('is one row per call, not one row per plan', () => {
+    const steps = planSteps(swap())
+    expect(steps).toHaveLength(2)
+    expect(steps[0]).toEqual({ index: 1, label: 'Approve 500 USDC', detail: 'for 0x1231…4eae' })
+  })
+
+  it('gives the route’s own words to the call that executes the route', () => {
+    // One call runs the whole route, however many hops the provider listed.
+    expect(planSteps(swap())[1]).toEqual({ index: 2, label: 'Swap on Bitget, then Bridge with Squid to Arbitrum One' })
+  })
+
+  /** The floor and the note are this page's sentences, not the route's hops. */
+  it('leaves out the sentences the plan added around the route', () => {
+    const labels = planSteps(swap()).map((s) => s.label)
+    expect(labels.join(' ')).not.toContain('At least')
+    expect(labels.join(' ')).not.toContain('Note from the request')
+  })
+
+  it('says plainly when a call could not be read', () => {
+    const bare = { ...swap(), humanPlan: { ...swap().humanPlan, steps: [] } }
+    expect(planSteps(bare)[1]).toMatchObject({ label: 'A call this page could not read', detail: 'on 0x1231…4eae' })
+  })
+
+  it('names an unlimited approval as unlimited rather than as a number', () => {
+    const greedy = {
+      ...swap(),
+      decodedActions: [{ ...approval, approval: { spender: `${BASE}:${ROUTER}`, amount: 'unlimited' } }, opaque],
+    }
+    expect(planSteps(greedy)[0]?.label).toBe('Approve unlimited')
+  })
+
+  /** The arguments are right there; printing the signature would waste them. */
+  it('is a single row for a transfer, saying what it moves and to whom', () => {
+    expect(planSteps(plan)).toEqual([{ index: 1, label: 'Send 500 USDC', detail: 'to 0x67d2…98d2' }])
   })
 })
