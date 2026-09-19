@@ -250,9 +250,14 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       inputSchema: {
         asset: z
           .string()
-          .describe('CAIP-19 asset id: eip155:8453/slip44:60 for ETH on Base, eip155:8453/erc20:0x… for a token.'),
-        amount: z.string().regex(/^[0-9]+$/).describe('Base units as a decimal string. 500 USDC is "500000000".'),
-        to: z.string().describe('CAIP-10 recipient, e.g. eip155:8453:0xd8da…'),
+          .describe('CAIP-19 asset id, exactly as get_portfolio lists it under assetId: eip155:8453/slip44:60 for ETH on Base, eip155:8453/erc20:0x… for a token. Never guess a token contract from its symbol.'),
+        amount: z
+          .string()
+          .regex(/^[0-9]+$/)
+          .describe('Base units as a decimal string: the display amount times 10^decimals, with decimals from get_portfolio. 500 USDC (6 decimals) is "500000000".'),
+        to: z
+          .string()
+          .describe('The recipient: an ENS name (koshik.eth), a 0x address, or a CAIP-10 (eip155:8453:0xd8da…). A name is resolved on Ethereum and used on the asset’s chain.'),
         fromAccount: z
           .string()
           .optional()

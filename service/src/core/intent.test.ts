@@ -141,3 +141,18 @@ describe('bridge intent', () => {
     expect(ok.toChain).toBe('eip155:56')
   })
 })
+
+describe('note', () => {
+  it('is kept, trimmed, and bounded', () => {
+    const base = {
+      kind: 'transfer' as const,
+      asset: 'eip155:8453/slip44:60',
+      amount: '1',
+      to: 'eip155:8453:0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+    }
+    expect(transferIntentSchema.parse({ ...base, note: '  rent ' }).note).toBe('rent')
+    expect(transferIntentSchema.parse(base).note).toBeUndefined()
+    expect(() => transferIntentSchema.parse({ ...base, note: 'x'.repeat(201) })).toThrow()
+    expect(() => transferIntentSchema.parse({ ...base, note: '   ' })).toThrow()
+  })
+})

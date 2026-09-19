@@ -146,6 +146,15 @@ export interface PortfolioSummary {
     symbol: string
     name: string
     chain: string
+    /**
+     * CAIP-19 and CAIP-2, exactly what prepare_transfer takes. A symbol is
+     * not an identity — anyone can deploy a token called USDC — so the id of
+     * the thing actually held is the only safe thing to hand on.
+     */
+    assetId: string
+    chainId: string
+    /** So "100k" can become base units without guessing that every token has 18. */
+    decimals: number
     amount: string
     value: number
     /**
@@ -246,6 +255,9 @@ export function summarisePortfolio(
       symbol: row.asset.symbol,
       name: row.asset.name,
       chain: chains.get(row.chainId) ?? row.chainId,
+      assetId: row.assetId,
+      chainId: row.chainId,
+      decimals: row.asset.decimals,
       amount: humanAmount(row.amount, row.asset.decimals),
       value: row.value,
       wallets: holdersOf(row.holdings, row.asset.decimals, nameOf),
@@ -323,9 +335,11 @@ export function portfolioText(summary: PortfolioSummary): string {
         : 'Nothing loose in any wallet.'
       : [
           'In wallets, highest value first:',
+          // The id rides on the line: a host that shows only the text still
+          // leaves the agent with something it can hand to prepare_transfer.
           ...summary.assets.map(
             (row) =>
-              `- ${row.amount} ${row.symbol} on ${row.chain}${heldByText(row.wallets)} — ${usd(row.value)}`,
+              `- ${row.amount} ${row.symbol} on ${row.chain}${heldByText(row.wallets)} — ${usd(row.value)} [${row.assetId}]`,
           ),
           ...(summary.omitted > 0 ? [`…and ${summary.omitted} smaller.`] : []),
         ].join('\n')

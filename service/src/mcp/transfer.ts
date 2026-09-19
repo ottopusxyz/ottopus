@@ -143,9 +143,34 @@ function candidatesFrom(
 
 export function transferSummary(intent: TransferIntent, asset: AssetWords, from: { label?: string | undefined; caip10: string }): string {
   const amount = `${humanAmount(intent.amount, asset.decimals)} ${asset.symbol}`
-  const to = truncateAddress(parseAccountId(intent.to).address)
+  const address = truncateAddress(parseAccountId(intent.to).address)
+  const to = intent.toName ? `${intent.toName} (${address})` : address
   const fromName = from.label ?? truncateAddress(parseAccountId(from.caip10).address)
   return `Send ${amount} to ${to} from ${fromName} on ${chainName(sourceChainOf(intent))}`
+}
+
+/** Looks like an ENS name rather than an address or a CAIP-10. */
+const ENS_NAME = /^[^\s:/]+\.[a-z]{2,}$/i
+
+/**
+ * `to` may be a CAIP-10, a bare 0x address, or an ENS name. A name resolves
+ * on Ethereum and the address it gives is used on the intent's chain — the
+ * same account, as an EOA is the same on every EVM chain. The name is kept
+ * on the intent so the page shows both and the hash covers the pairing.
+ */
+async function recipientOf(
+  to: string,
+  chainId: string,
+  lookups: Lookups,
+): Promise<{ to: string; toName?: string } | { error: string }> {
+  const trimmed = to.trim()
+  if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return { to: `${chainId}:${trimmed.toLowerCase()}` }
+  if (!ENS_NAME.test(trimmed)) return { to: trimmed }
+  // ENS names are case-insensitive; the registry normalises further.
+  const name = trimmed.toLowerCase()
+  const address = await lookups.resolveName(name)
+  if (!address) return { error: `${name} does not resolve to an address on ENS` }
+  return { to: `${chainId}:${address}`, toName: name }
 }
 
 export async function prepareTransfer(
@@ -154,11 +179,24 @@ export async function prepareTransfer(
   input: PrepareInput,
   now: Date = new Date(),
 ): Promise<PrepareOutcome> {
+  // The chain comes from the asset, so a recipient given by name or bare
+  // address can be placed on it before the intent is parsed as a whole.
+  let assetChain: string
+  try {
+    const parsedAsset = parseAssetId(input.asset)
+    assetChain = `${parsedAsset.namespace}:${parsedAsset.reference}`
+  } catch {
+    return { kind: 'invalid', reasons: [`asset: ${input.asset} is not a CAIP-19 asset id; get_portfolio lists each holding's assetId`] }
+  }
+  const recipient = await recipientOf(input.to, assetChain, deps.lookups)
+  if ('error' in recipient) return { kind: 'invalid', reasons: [recipient.error] }
+
   const parsed = transferIntentSchema.safeParse({
     kind: 'transfer',
     asset: input.asset,
     amount: input.amount,
-    to: input.to,
+    to: recipient.to,
+    ...(recipient.toName ? { toName: recipient.toName } : {}),
     ...(input.fromAccount ? { fromAccount: input.fromAccount } : {}),
     ...(input.note?.trim() ? { note: input.note.trim() } : {}),
   })

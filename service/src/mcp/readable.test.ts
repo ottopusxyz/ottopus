@@ -275,3 +275,18 @@ describe('a portfolio in words', () => {
     expect(summary.omitted).toBe(2)
   })
 })
+
+describe('asset ids for the agent', () => {
+  const arms = [arm({ id: 'w1', label: 'Main' }), arm({ id: 'w2', label: 'Cold', address: '0xabcd' })]
+
+  it('carries each holding’s CAIP-19 id in the structure and on the line', () => {
+    const summary = summarisePortfolio(portfolio, arms, 5)
+    for (const row of summary.assets) {
+      expect(row.assetId).toMatch(/^eip155:\d+\/(erc20|slip44):/)
+      expect(row.chainId).toMatch(/^eip155:\d+$/)
+      expect(Number.isInteger(row.decimals)).toBe(true)
+    }
+    const words = portfolioText(summary)
+    expect(words).toContain(`[${summary.assets[0]!.assetId}]`)
+  })
+})

@@ -27,6 +27,9 @@ const lookups: Lookups = {
   async fourByte() {
     return []
   },
+  async resolveName() {
+    return null
+  },
 }
 
 const call = (to: string, data: string, value = '0'): Call => ({

@@ -89,6 +89,9 @@ const lookups: Lookups = {
   async fourByte() {
     return []
   },
+  async resolveName(name) {
+    return name === 'koshik.eth' ? '0x67d29520c6f9579fe4b32dcba346620846ef98d2' : null
+  },
 }
 
 /** A store in memory: keeps what createPlan was handed, hands back a record. */
@@ -468,6 +471,74 @@ describe('prepare_transfer', () => {
     const plan = sink.created[0]!.plan
     expect(plan.status).toBe('blocked')
     expect(plan.humanPlan.warnings[0]).toMatchObject({ severity: 'block', code: 'verify_failed' })
+  })
+
+  it('resolves an ENS recipient, keeps the name on the intent, and shows both', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { to: 'Koshik.eth' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/Send 500 USDC to koshik\.eth \(0x67d2…98d2\) from Main on Base/)
+    const plan = sink.created[0]!.plan
+    expect(plan.intent.kind === 'transfer' && plan.intent.to).toBe(`${BASE}:0x67d29520c6f9579fe4b32dcba346620846ef98d2`)
+    expect(plan.intent.kind === 'transfer' && plan.intent.toName).toBe('koshik.eth')
+    // The call goes to the resolved address, on the asset's chain.
+    expect(plan.outcome.type === 'calls' && plan.outcome.calls[0]!.data).toContain('67d29520c6f9579fe4b32dcba346620846ef98d2')
+  })
+
+  it('accepts a bare address and places it on the asset’s chain', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { to: '0x1111111111111111111111111111111111111111' })) as { isError?: boolean }
+    expect(res.isError).toBeFalsy()
+    expect(sink.created[0]!.plan.intent.kind === 'transfer' && sink.created[0]!.plan.intent.to).toBe(RECIPIENT)
+  })
+
+  it('refuses a name that does not resolve, and never guesses', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { to: 'nobody-here.eth' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/nobody-here\.eth does not resolve to an address on ENS/)
+    expect(sink.created).toHaveLength(0)
+  })
+
+  it('tells the agent where asset ids come from when it hands over a symbol', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { createPlan: sink.createPlan })
+    const res = (await send(client, { asset: 'USDC' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/get_portfolio lists each holding's assetId/)
+  })
+
+  it('keeps the note on the intent, where the hash covers it', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    await send(client, { note: '  invoice 42 ' })
+    const plan = sink.created[0]!.plan
+    expect(plan.intent.note).toBe('invoice 42')
+    expect(plan.humanPlan.steps).toContain('Note from the request: invoice 42')
+  })
+
+  it('refuses a chain whose currency it cannot name, in a sentence, before reading anything', async () => {
+    const sink = planSink()
+    let read = 0
+    const { client } = await connected(undefined, {
+      readPortfolio: async () => {
+        read += 1
+        return baseHoldings
+      },
+      createPlan: sink.createPlan,
+    })
+    // Cronos: viem knows it, the coin-type table does not, and it does not spend ETH.
+    const res = (await send(client, {
+      asset: 'eip155:25/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      to: 'eip155:25:0x1111111111111111111111111111111111111111',
+    })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/Cronos Mainnet \(eip155:25\) is not supported for transfers yet/)
+    expect(read).toBe(0)
+    expect(sink.created).toHaveLength(0)
   })
 
   it('rejects an intent it cannot parse before touching anything', async () => {

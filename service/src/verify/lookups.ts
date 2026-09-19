@@ -1,4 +1,5 @@
 import { type Abi, type Hex, createPublicClient, http } from 'viem'
+import { normalize } from 'viem/ens'
 import { rpcUrlFor, viemChainFor } from '../core/index.js'
 
 /**
@@ -15,6 +16,12 @@ export interface SourcifyMatch {
 export interface Lookups {
   /** Runtime code at an address. "0x" for a wallet. Throws if the chain cannot be read — never guesses. */
   getCode(chainId: string, address: string): Promise<Hex>
+  /**
+   * An ENS name to its address, read from the registry on Ethereum. Null when
+   * the name has no address. Throws if Ethereum cannot be read — a recipient
+   * is never guessed.
+   */
+  resolveName(name: string): Promise<string | null>
   /** Verified source, or null. Null on any failure: unverified is the safe reading. */
   sourcify(chainId: string, address: string): Promise<SourcifyMatch | null>
   /** Text signatures for a selector, most trustworthy first. Empty on failure. */
@@ -114,6 +121,19 @@ export function httpLookups(options: HttpLookupOptions = {}): Lookups {
         return code ?? '0x'
       } catch (err) {
         throw new RpcReadError(chainId, err)
+      }
+    },
+
+    async resolveName(name) {
+      const client = createPublicClient({
+        chain: viemChainFor('eip155:1'),
+        transport: http(rpcUrlFor('eip155:1', options.rpcUrlTemplate), { timeout: rpcTimeout, fetchFn: doFetch }),
+      })
+      try {
+        const address = await client.getEnsAddress({ name: normalize(name) })
+        return address ? address.toLowerCase() : null
+      } catch (err) {
+        throw new RpcReadError('eip155:1', err)
       }
     },
 

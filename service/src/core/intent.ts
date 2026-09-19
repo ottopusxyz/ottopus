@@ -44,6 +44,12 @@ const base = {
    * the product. When present the user has overridden it.
    */
   fromAccount: accountIdSchema.optional(),
+  /**
+   * Why, in the person's words — "invoice 42", "rent". Part of the intent, so
+   * it is part of the hash and the review page shows exactly what the agent
+   * was told. Short, because it is a label, not a message.
+   */
+  note: z.string().trim().min(1).max(200).optional(),
 }
 
 /**
@@ -72,6 +78,13 @@ export const transferIntentSchema = z
     asset: assetIdSchema,
     amount: amountSchema,
     to: accountIdSchema,
+    /**
+     * The name the recipient was given as — "koshik.eth" — when `to` came
+     * from resolving one. Hashed with the rest, so the page shows the name
+     * next to the address it resolved to, and a plan cannot be re-pointed
+     * while still claiming the name.
+     */
+    toName: z.string().trim().min(1).max(255).optional(),
   })
   .refine(
     (v) =>

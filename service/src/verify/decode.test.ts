@@ -32,6 +32,9 @@ function fake(overrides: Partial<Lookups> = {}): Lookups {
     async fourByte() {
       return []
     },
+    async resolveName() {
+      return null
+    },
     ...overrides,
   }
 }
