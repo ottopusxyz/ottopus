@@ -9,7 +9,6 @@ import type { Plan, WebTransition } from '@/lib/api'
 import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
 import { getAddress } from 'viem'
 import { addressOf, truncateAddress } from '@/lib/format'
-import type { Eip1193 } from '@/lib/simulate'
 import { approvals, chainOfPlan, standingApproval } from './model'
 import { BatchAccepted, SequentialNeedsConsent, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
 import { gateFor } from './wallet-gate'
@@ -30,12 +29,13 @@ export interface SignPanelProps {
   /** The hash the service holds for a submitted plan, so a reopened page resumes the watch. */
   txHash?: string | null | undefined
   /**
-   * Run the browser's simulation again. Called immediately before the wallet
-   * is asked to sign: the plan was built minutes ago and the last thing a
-   * person should do is send a transaction the chain has already started
-   * refusing.
+   * Re-run the calls immediately before the wallet is asked to sign: the plan
+   * was built minutes ago and the last thing a person should do is send a
+   * transaction the chain has already started refusing.
+   *
+   * Untraced and read straight from the chain, never through the wallet.
    */
-  resimulate?: ((provider?: Eip1193 | null) => Promise<{ success: boolean; revertReason?: string; failedCall?: number } | null>) | undefined
+  recheck?: (() => Promise<{ success: boolean; revertReason?: string; failedCall?: number } | null>) | undefined
 }
 
 type Phase =
@@ -48,7 +48,7 @@ type Phase =
 
 const isHash = (v: unknown): v is `0x${string}` => typeof v === 'string' && /^0x[0-9a-f]{64}$/i.test(v)
 
-export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelProps) {
+export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps) {
   const router = useRouter()
   const { wallets, ready } = useWallets()
   const { connectWallet } = useConnectWallet()
@@ -165,8 +165,8 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
       // The last check before the wallet opens. A run that cannot answer says
       // nothing and does not stop anybody; one that reverts does, because the
       // alternative is a signature that burns a fee for nothing.
-      if (resimulate) {
-        const fresh = await resimulate(provider as Eip1193)
+      if (recheck) {
+        const fresh = await recheck()
         if (fresh && !fresh.success) {
           setPhase({ kind: 'idle' })
           const which = fresh.failedCall ? `Call ${fresh.failedCall}` : 'This batch'
@@ -217,7 +217,7 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
       setPhase({ kind: 'idle' })
       setProblem((err as Error).message || 'The wallet did not send it.')
     }
-  }, [wallet, gate.kind, plan, wanted, chain, move, resimulate])
+  }, [wallet, gate.kind, plan, wanted, chain, move, recheck])
 
   const cancel = useCallback(async () => {
     setCancelling(true)

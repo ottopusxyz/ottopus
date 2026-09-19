@@ -140,7 +140,7 @@ function Review({ token }: { token: string }) {
             }
           >
             {canSign(status) ? (
-              <SignPanel plan={plan} move={move} open resimulate={simulation.again} />
+              <SignPanel plan={plan} move={move} open recheck={simulation.recheck} />
             ) : status === 'submitted' ? (
               <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
             ) : (

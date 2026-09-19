@@ -1,6 +1,6 @@
 import { getAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { BatchAccepted, SequentialNeedsConsent, sendPlanCalls } from './send-calls'
+import { BatchAccepted, SequentialNeedsConsent, probeBatching, sendPlanCalls } from './send-calls'
 
 /**
  * The provider answered from memory. What is under test is the one rule that
@@ -24,7 +24,12 @@ function provider(script: Record<string, (params: unknown[]) => unknown>) {
   }
 }
 
-const batching = { wallet_getCapabilities: () => ({ '0x2105': { atomic: { status: 'supported' } } }) }
+/**
+ * Deliberately empty. Nothing asks `wallet_getCapabilities` any more: the
+ * batch is attempted and the wallet's own refusal decides. A wallet in this
+ * script that answers `wallet_sendCalls` batches; one that does not, does not.
+ */
+const batching = {}
 
 describe('an accepted batch is never sent twice', () => {
   it('does not fall back to eth_sendTransaction when the status poll throws', async () => {
@@ -133,5 +138,116 @@ describe('addresses handed to the wallet', () => {
     const p = provider({ eth_sendTransaction: () => '0x' + 'cd'.repeat(32) })
     const attempt = sendPlanCalls({ provider: p, from: 'not-an-address', chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
     await expect(attempt).rejects.toThrow(/is not an address this wallet can be given/)
+  })
+})
+
+describe('deciding whether to batch', () => {
+  /**
+   * An Ambire account that batches in other apps was told to sign one at a
+   * time. The gate was `wallet_getCapabilities`, and every way that call can
+   * go wrong — forwarded to an RPC node, not passed through by the provider,
+   * keyed differently, rate-limited — came back as a plain false and looked
+   * exactly like a wallet that cannot batch.
+   */
+  it('never asks whether the wallet can batch', async () => {
+    const p = provider({
+      wallet_sendCalls: () => ({ id: 'batch-1' }),
+      wallet_getCallsStatus: () => ({ status: 200, receipts: [{ transactionHash: '0x' + 'ab'.repeat(32) }] }),
+    })
+    const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent.method).toBe('sendCalls')
+    expect(p.calls).not.toContain('wallet_getCapabilities')
+  })
+
+  it('batches even when the wallet would have answered no', async () => {
+    const p = provider({
+      wallet_getCapabilities: () => ({}),
+      wallet_sendCalls: () => ({ id: 'batch-2' }),
+      wallet_getCallsStatus: () => ({ status: 200, receipts: [{ transactionHash: '0x' + 'cd'.repeat(32) }] }),
+    })
+    const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent.method).toBe('sendCalls')
+  })
+
+  it('falls back only when the wallet refuses the method itself', async () => {
+    const p = provider({ eth_sendTransaction: () => '0x' + 'ef'.repeat(32) })
+    const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent.method).toBe('sequential')
+    expect(p.calls[0]).toBe('wallet_sendCalls')
+  })
+
+  /** A wallet that fails for its own reasons is not a wallet that cannot batch. */
+  it('does not quietly send one at a time when the batch fails for another reason', async () => {
+    const p = provider({
+      wallet_sendCalls: () => {
+        throw Object.assign(new Error('insufficient funds'), { code: -32000 })
+      },
+      eth_sendTransaction: () => '0x' + 'ab'.repeat(32),
+    })
+    await expect(
+      sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true }),
+    ).rejects.toThrow(/insufficient funds/)
+    expect(p.calls).not.toContain('eth_sendTransaction')
+  })
+})
+
+/**
+ * Read for the label and nothing else. It was a boolean gating the send path,
+ * and every way the call can fail collapsed into "cannot batch" and took the
+ * feature with it. Three states keep "could not ask" apart from "no".
+ */
+describe('asking the wallet whether it batches', () => {
+  const caps = (body: unknown) => provider({ wallet_getCapabilities: () => body })
+
+  it('reads yes from either spelling, and from a 7702 account that would upgrade', async () => {
+    for (const body of [
+      { '0x2105': { atomic: { status: 'supported' } } },
+      { '0x2105': { atomic: { status: 'ready' } } },
+      { '0x2105': { atomicBatch: { supported: true } } },
+      // Keyed in decimal by a wallet that writes it that way.
+      { '8453': { atomic: { status: 'supported' } } },
+      // Answered flat, for the one chain it was asked about.
+      { atomic: { status: 'supported' } },
+    ]) {
+      expect(await probeBatching(caps(body), FROM, CHAIN), JSON.stringify(body)).toBe('yes')
+    }
+  })
+
+  it('reads no only when the wallet actually said no', async () => {
+    expect(await probeBatching(caps({ '0x2105': { atomic: { status: 'unsupported' } } }), FROM, CHAIN)).toBe('no')
+    expect(await probeBatching(caps({ '0x2105': { atomicBatch: { supported: false } } }), FROM, CHAIN)).toBe('no')
+  })
+
+  it('says unknown rather than no when it could not be asked', async () => {
+    expect(await probeBatching(provider({}), FROM, CHAIN)).toBe('unknown')
+    expect(await probeBatching(caps({}), FROM, CHAIN)).toBe('unknown')
+    expect(await probeBatching(caps({ '0xa4b1': { atomic: { status: 'supported' } } }), FROM, CHAIN)).toBe('unknown')
+  })
+
+  /** The casing that made a Safe refuse `wallet_sendCalls` outright. */
+  it('asks with a checksummed address', async () => {
+    let asked: unknown[] = []
+    const p = {
+      async request({ params = [] }: { method: string; params?: unknown[] }) {
+        asked = params
+        return { '0x2105': { atomic: { status: 'supported' } } }
+      },
+    }
+    await probeBatching(p, FROM, CHAIN)
+    expect(asked[0]).toBe(getAddress(FROM))
+    expect(asked[1]).toEqual(['0x2105'])
+  })
+
+  it('is not consulted when sending', async () => {
+    const p = provider({
+      wallet_getCapabilities: () => ({ '0x2105': { atomic: { status: 'unsupported' } } }),
+      wallet_sendCalls: () => ({ id: 'batch-3' }),
+      wallet_getCallsStatus: () => ({ status: 200, receipts: [{ transactionHash: '0x' + 'ab'.repeat(32) }] }),
+    })
+    // The wallet says no and the batch is offered anyway; its refusal, not
+    // its opinion, is what decides.
+    const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent.method).toBe('sendCalls')
+    expect(p.calls).not.toContain('wallet_getCapabilities')
   })
 })

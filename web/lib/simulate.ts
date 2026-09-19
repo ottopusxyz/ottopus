@@ -1,4 +1,4 @@
-import { type Hex, type Transport, createPublicClient, custom, ethAddress, http, zeroAddress } from 'viem'
+import { type Hex, type Transport, createPublicClient, ethAddress, http, zeroAddress } from 'viem'
 import { simulateCalls } from 'viem/actions'
 import type { AssetDelta, Plan, Simulation } from './api'
 import { rawChain } from './chains'
@@ -27,8 +27,8 @@ import { addressOf } from './format'
  * that arrived after the plan was bound.
  */
 
-/** Where the browser sent its simulation. A wallet's own node, or the chain's public one. */
-export type SimulationVia = 'public' | 'wallet'
+/** Where the browser sent its simulation. The chain's own public RPC, always. */
+export type SimulationVia = 'public'
 
 export interface BrowserSimulation extends Simulation {
   via: SimulationVia
@@ -45,11 +45,6 @@ export class SimulationFailed extends Error {
   }
 }
 
-/** An EIP-1193 provider, as Privy hands it over. */
-export interface Eip1193 {
-  request(args: { method: string; params?: unknown[] }): Promise<unknown>
-}
-
 /** What the page knows about the chain's own currency. From the service, never guessed here. */
 export interface NativeWords {
   nativeAssetId: string | null
@@ -58,8 +53,15 @@ export interface NativeWords {
 }
 
 export interface SimulateOptions {
-  /** The connected wallet's provider. Tried first when present: its node, no CORS, no third party. */
-  provider?: Eip1193 | null
+  /**
+   * Read the account's balances either side of the run.
+   *
+   * On by default, and worth turning off for the check immediately before
+   * signing. Tracing costs about six requests, because it means
+   * state-overridden simulate calls plus balance reads on both sides, and
+   * that check only needs to know whether the calls still succeed.
+   */
+  trace?: boolean
   /** For tests. */
   now?: () => Date
 }
@@ -94,27 +96,32 @@ export async function simulatePlan(
   }))
 
   /**
-   * Every node worth asking, in order of preference.
+   * Every public node the chain lists, and never the wallet's.
    *
-   * More than one public endpoint because a traced simulation is about six
-   * requests, and free endpoints rate-limit: measured a clean run and then a
-   * refusal from the same host seconds later under load. One 429 should cost
-   * the reader a slower answer, not the feature.
+   * The wallet's own provider used to be tried first, on the reasoning that
+   * it is the person's own node and depends on nothing new. That was wrong:
+   * a wallet provider is not a bulk-read endpoint. A traced run is about six
+   * requests, and firing them through the wallet on the way to asking it to
+   * sign earned a 429 from the public node it forwards to and left the
+   * wallet's own pipeline in a state where batching stopped being offered.
+   * Reads go straight to the chain; the wallet is for signing and receipts.
+   *
+   * More than one endpoint where a chain lists more than one, because free
+   * endpoints rate-limit and one 429 should cost a slower answer, not the
+   * feature.
    */
-  const attempts: { via: SimulationVia; transport: Transport }[] = [
-    ...(options.provider ? [{ via: 'wallet' as const, transport: custom(options.provider as never) }] : []),
-    ...chain.rpcUrls.default.http.map((url) => ({
-      via: 'public' as const,
-      transport: http(url, { timeout: 15_000 }),
-    })),
-  ]
+  const attempts: { via: SimulationVia; transport: Transport }[] = chain.rpcUrls.default.http.map((url) => ({
+    via: 'public' as const,
+    transport: http(url, { timeout: 15_000 }),
+  }))
 
   let last: unknown
   for (const attempt of attempts) {
     try {
       const client = createPublicClient({ chain, transport: attempt.transport })
-      const result = await simulateCalls(client, { account, calls, traceAssetChanges: true })
-      return read(result, { chainId, via: attempt.via, native, now: options.now?.() ?? new Date() })
+      const trace = options.trace !== false
+      const result = await simulateCalls(client, { account, calls, traceAssetChanges: trace })
+      return read(result, { chainId, via: attempt.via, native, trace, now: options.now?.() ?? new Date() })
     } catch (err) {
       last = err
     }
@@ -143,18 +150,19 @@ export interface RawChange {
 
 export function read(
   result: SimulationAnswer,
-  context: { chainId: string; via: SimulationVia; native: NativeWords; now: Date },
+  context: { chainId: string; via: SimulationVia; native: NativeWords; trace?: boolean; now: Date },
 ): BrowserSimulation {
   const failedIndex = result.results.findIndex((r) => r.status === 'failure')
   const failed = failedIndex >= 0 ? result.results[failedIndex] : undefined
   const gasUsed = result.results.reduce((total, r) => total + (r.gasUsed ?? 0n), 0n)
   return {
-    provider: context.via === 'wallet' ? 'eth_simulateV1 · your wallet’s node' : 'eth_simulateV1 · public RPC',
+    provider: 'eth_simulateV1 · public RPC',
     via: context.via,
     chainId: context.chainId,
     blockNumber: (result.block.number ?? 0n).toString(),
     success: failedIndex < 0,
-    assetChanges: deltas(result.assetChanges, context.chainId, context.native),
+    assetChanges: context.trace === false ? [] : deltas(result.assetChanges, context.chainId, context.native),
+    tracedAssets: context.trace !== false,
     gasUsed: gasUsed.toString(),
     // The dollar figure belongs to the plan: it was priced when the plan was
     // built and hashed with it. The browser has no price feed and must not

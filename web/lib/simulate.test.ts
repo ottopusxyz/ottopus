@@ -59,9 +59,21 @@ describe('reading a browser simulation', () => {
     expect(run.revertReason).toBe('ERC20: transfer amount exceeds balance')
   })
 
-  it('names the wallet’s own node when that is what answered', () => {
-    const run = read(answer(), { chainId: BASE, via: 'wallet', native: ETH_NATIVE, now: NOW })
-    expect(run.provider).toContain('your wallet')
+  /**
+   * Reads never go through the wallet. Firing six requests at it on the way
+   * to asking it to sign earned a 429 from the node it forwards to, and
+   * batching stopped being offered.
+   */
+  it('always names the chain’s own RPC, because that is the only place it reads', () => {
+    expect(read(answer(), { chainId: BASE, via: 'public', native: ETH_NATIVE, now: NOW }).provider).toBe(
+      'eth_simulateV1 · public RPC',
+    )
+  })
+
+  it('says when it did not trace, so an empty list is not read as "nothing moved"', () => {
+    const untraced = read(answer(), { chainId: BASE, via: 'public', native: ETH_NATIVE, trace: false, now: NOW })
+    expect(untraced).toMatchObject({ tracedAssets: false, assetChanges: [] })
+    expect(read(answer(), { chainId: BASE, via: 'public', native: ETH_NATIVE, now: NOW }).tracedAssets).toBe(true)
   })
 
   /** The dollar figure was priced and hashed with the plan. The browser has no feed. */

@@ -5,8 +5,8 @@ import { addressOf } from '@/lib/format'
 /**
  * Handing the plan's calls to the wallet, and nothing else.
  *
- * EIP-5792 first: `wallet_getCapabilities` says whether the wallet batches on
- * this chain, and `wallet_sendCalls` sends the whole plan as one request.
+ * EIP-5792 first: `wallet_sendCalls` is offered the whole plan as one
+ * request, and a wallet that will not take it says so with an error.
  * Otherwise one `eth_sendTransaction` per call, in order, and only when
  * partial completion is acceptable. For a single transfer it always is. For a
  * plan with an approval it is a question with a consequence, so this module
@@ -100,18 +100,39 @@ function isUnsupported(err: unknown): boolean {
   return e?.code === 4200 || e?.code === -32601 || e?.code === -32603 || /not supported|unsupported|not found/i.test(e?.message ?? '')
 }
 
-/** Whether the wallet batches on this chain. Any failure reads as no. */
-export async function supportsSendCalls(provider: Eip1193, from: string, chainId: string): Promise<boolean> {
+/**
+ * What the wallet says about batching, for the page to say so too.
+ *
+ * Three states, and that is the whole point. This used to be a boolean that
+ * gated the send path, so every way the call can fail — forwarded to an RPC
+ * node, not passed through by the provider, keyed unexpectedly,
+ * rate-limited — collapsed into "cannot batch" and took the feature with it.
+ *
+ * Nothing acts on this. `sendPlanCalls` offers the batch regardless and lets
+ * the wallet's own refusal decide. A wrong answer here costs a label.
+ */
+export type Batching = 'yes' | 'no' | 'unknown'
+
+export async function probeBatching(provider: Eip1193, from: string, chainId: string): Promise<Batching> {
+  const key = hexChain(chainId)
   try {
-    const caps = (await provider.request({ method: 'wallet_getCapabilities', params: [from, [hexChain(chainId)]] })) as
-      | Record<string, { atomic?: { status?: string }; atomicBatch?: { supported?: boolean } }>
-      | undefined
-    const forChain = caps?.[hexChain(chainId)] ?? caps?.[String(Number(chainId.split(':')[1]))]
-    if (!forChain) return false
-    const status = forChain.atomic?.status
-    return status === 'supported' || status === 'ready' || forChain.atomicBatch?.supported === true
+    const caps = (await provider.request({
+      method: 'wallet_getCapabilities',
+      params: [forWallet(from), [key]],
+    })) as Record<string, { atomic?: { status?: string }; atomicBatch?: { supported?: boolean } }> | undefined
+    // Keyed by hex chain id per EIP-5792, with a decimal fallback for wallets
+    // that write it the other way, and a flat object for those that answer
+    // for the one chain they were asked about.
+    const forChain = caps?.[key] ?? caps?.[String(Number(chainId.split(':')[1]))] ?? (caps as never)
+    const status = (forChain as { atomic?: { status?: string } } | undefined)?.atomic?.status
+    const legacy = (forChain as { atomicBatch?: { supported?: boolean } } | undefined)?.atomicBatch?.supported
+    // `ready` means a 7702 account that will upgrade when asked, which is a
+    // yes to the person even though it is not one yet.
+    if (status === 'supported' || status === 'ready' || legacy === true) return 'yes'
+    if (status !== undefined || legacy !== undefined) return 'no'
+    return 'unknown'
   } catch {
-    return false
+    return 'unknown'
   }
 }
 
@@ -191,21 +212,35 @@ async function sendSequential(input: SendInput): Promise<`0x${string}`> {
 }
 
 export async function sendPlanCalls(input: SendInput): Promise<Sent> {
-  if (await supportsSendCalls(input.provider, input.from, input.chainId)) {
-    let batchId: string | null = null
-    try {
-      batchId = await submitBatch(input)
-    } catch (err) {
-      if (isUserRejection(err)) throw new UserRejected('You declined in your wallet.')
-      if (!isUnsupported(err)) throw err
-      // Claimed support, then refused the method before accepting anything.
-      // Only here is the sequential path still safe: nothing was sent.
-    }
-    if (batchId !== null) {
-      // Accepted. Whatever happens now, the calls are the wallet's and are
-      // never offered again through another method.
-      return { txHash: await awaitBatch(input.provider, batchId), method: 'sendCalls' }
-    }
+  /**
+   * Ask the wallet to batch, rather than asking whether it can.
+   *
+   * This used to gate on `wallet_getCapabilities`, and every way that call
+   * could go wrong — a wallet that forwards it to an RPC node, a provider
+   * that does not pass it through, a response keyed differently than
+   * expected, a rate-limited endpoint — came back as a plain false and was
+   * indistinguishable from "this wallet cannot batch". An Ambire account
+   * that batches happily in other apps was told to sign one at a time
+   * because of it.
+   *
+   * Attempting costs nothing: an unsupported method is a JSON-RPC error, not
+   * a prompt. And the safety property is unchanged and lives below, not
+   * here — only a refusal *before* anything was accepted falls through to
+   * sequential, and an accepted batch is never offered again by any route.
+   */
+  let batchId: string | null = null
+  try {
+    batchId = await submitBatch(input)
+  } catch (err) {
+    if (isUserRejection(err)) throw new UserRejected('You declined in your wallet.')
+    if (!isUnsupported(err)) throw err
+    // Refused the method before accepting anything. Only here is the
+    // sequential path still safe: nothing was sent.
+  }
+  if (batchId !== null) {
+    // Accepted. Whatever happens now, the calls are the wallet's and are
+    // never offered again through another method.
+    return { txHash: await awaitBatch(input.provider, batchId), method: 'sendCalls' }
   }
   if (!input.sequentialIsSafe) {
     throw new SequentialNeedsConsent('This wallet cannot send these calls together.')

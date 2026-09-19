@@ -516,6 +516,8 @@ export interface Simulation {
   blockNumber: string
   success: boolean
   assetChanges: AssetDelta[]
+  /** Whether balances were read at all, as opposed to read and found unchanged. */
+  tracedAssets?: boolean
   gasUsed: string
   gasUsd: string
   revertReason?: string

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Plan } from '@/lib/api'
-import { type BrowserSimulation, type Eip1193, type NativeWords, simulatePlan } from '@/lib/simulate'
+import { type BrowserSimulation, type NativeWords, simulatePlan } from '@/lib/simulate'
 
 /**
  * The page's own simulation, run in the browser when the plan is opened.
@@ -40,8 +40,18 @@ export interface UseSimulation {
   state: SimulationState
   /** The live run, or null while there is none. */
   run: BrowserSimulation | null
-  /** Run it again. Resolves to the run, or null if the chain would not answer. */
-  again: (provider?: Eip1193 | null) => Promise<BrowserSimulation | null>
+  /** Run it again, traced, and show the result. */
+  again: () => Promise<BrowserSimulation | null>
+  /**
+   * The check immediately before the wallet opens.
+   *
+   * Untraced, because it only needs to know whether the calls still succeed,
+   * and tracing is about six requests fired at the exact moment the wallet is
+   * about to be asked to sign. It does not publish either: replacing a traced
+   * run with an untraced one would wipe the asset rows off the page the
+   * instant somebody pressed Sign.
+   */
+  recheck: () => Promise<BrowserSimulation | null>
 }
 
 export function useSimulation(
@@ -62,23 +72,29 @@ export function useSimulation(
     }
   }, [])
 
-  const go = useCallback(
-    async (provider?: Eip1193 | null): Promise<BrowserSimulation | null> => {
-      if (!plan || !chainId || !native) return null
-      setState({ kind: 'running' })
-      try {
-        const run = await simulatePlan(plan, chainId, native, { provider: provider ?? null })
-        if (live.current) setState({ kind: 'done', run })
-        return run
-      } catch {
-        // A chain that will not answer says nothing about the plan. The page
-        // falls back to what the service stored and says which it is showing.
-        if (live.current) setState({ kind: 'unavailable' })
-        return null
-      }
-    },
-    [plan, chainId, native],
-  )
+  const go = useCallback(async (): Promise<BrowserSimulation | null> => {
+    if (!plan || !chainId || !native) return null
+    setState({ kind: 'running' })
+    try {
+      const run = await simulatePlan(plan, chainId, native)
+      if (live.current) setState({ kind: 'done', run })
+      return run
+    } catch {
+      // A chain that will not answer says nothing about the plan. The page
+      // falls back to what the service stored and says which it is showing.
+      if (live.current) setState({ kind: 'unavailable' })
+      return null
+    }
+  }, [plan, chainId, native])
+
+  const recheck = useCallback(async (): Promise<BrowserSimulation | null> => {
+    if (!plan || !chainId || !native) return null
+    try {
+      return await simulatePlan(plan, chainId, native, { trace: false })
+    } catch {
+      return null
+    }
+  }, [plan, chainId, native])
 
   useEffect(() => {
     if (!plan || !chainId || !native) return
@@ -87,5 +103,5 @@ export function useSimulation(
     void go()
   }, [plan, chainId, native, go])
 
-  return { state, run: state.kind === 'done' ? state.run : null, again: go }
+  return { state, run: state.kind === 'done' ? state.run : null, again: go, recheck }
 }
