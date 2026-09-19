@@ -21,7 +21,7 @@ import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatDelta, formatMoney, formatMoneyFlat, formatShare } from '@/lib/format'
 import {
-  NetworkFilter, TokenTable, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
+  Holdings, NetworkFilter, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
   type PortfolioState,
 } from '@/components/portfolio'
 import { selectPortfolio } from '@/components/portfolio/select-portfolio'
@@ -133,7 +133,7 @@ export function Frame({
   const hasReading = !!portfolio?.arms.some((arm) => arm.status === 'ok')
   const money = selected && hasReading ? formatMoney(selected.total, selected.currency) : null
   const delta = selected && hasReading
-    ? formatDelta(selected.change1d, selected.gross, selected.currency)
+    ? formatDelta(selected.change1d, selected.total, selected.currency)
     : null
   const balanceFailure = portfolioState?.status === 'failed' ? portfolioFailureText(portfolioState.reason) : null
   const balancesLoading = wallets.length > 0 && (!portfolioState || portfolioState.status === 'loading')
@@ -158,6 +158,7 @@ export function Frame({
             {delta?.text ?? 'No change today'}
             {selectedNetwork ? ` · ${portfolio?.chains.find((chain) => chain.chainId === selectedNetwork)?.name}` : ''}
             {missing.length > 0 ? ' · Partial total' : ''}
+            {selected && selected.unpriced > 0 ? ` · ${selected.unpriced} unpriced` : ''}
             {portfolioState?.status === 'failed' ? ' · Last successful reading' : ''}
           </span>
         )}
@@ -246,7 +247,7 @@ export function Frame({
               <div className="relative flex min-h-0 flex-1">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   {balancesLoading ? <SkeletonShelf rows={3} avatar={36} className="m-4 sm:m-[22px]" /> : hasReading && selected ? (
-                    <TokenTable rows={selected.assets} chains={selected.chains} currency={selected.currency} wallets={wallets} />
+                    <Holdings portfolio={selected} wallets={wallets} />
                   ) : (
                     // S4's error state, not a sentence. The last line is the
                     // one that matters on a surface that moves money: naming

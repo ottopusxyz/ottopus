@@ -25,11 +25,15 @@ export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
         groups,
         value: groups.reduce((sum, group) => sum + group.value, 0),
         change1d: groups.reduce((sum, group) => sum + group.change1d, 0),
+        unpriced: groups.reduce((sum, group) => sum + group.unpriced, 0),
       }
     })
     .filter((app) => app.groups.length > 0)
 
   const walletValue = assets.reduce((sum, row) => sum + row.value, 0)
+  const walletUnpriced = assets.reduce(
+    (sum, row) => sum + row.holdings.filter((holding) => holding.value === null).length, 0)
+  const unpriced = walletUnpriced + protocols.reduce((sum, app) => sum + app.unpriced, 0)
   const total = walletValue + protocols.reduce((sum, app) => sum + app.value, 0)
   const change1d =
     assets.reduce((sum, row) => sum + row.change1d, 0) +
@@ -59,9 +63,11 @@ export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
     ...portfolio,
     total,
     change1d,
-    wallet: { value: walletValue, share: shareOf(walletValue, total) },
+    unpriced,
+    wallet: { value: walletValue, share: shareOf(walletValue, total), unpriced: walletUnpriced },
     assets: assets.map((row) => ({ ...row, share: shareOf(row.value, total) })),
-    protocols: protocols.map((app) => ({ ...app, share: shareOf(app.value, total) })),
+    // A partly priced card has no honest share: its value is a floor, not a figure.
+    protocols: protocols.map((app) => ({ ...app, share: app.unpriced > 0 ? 0 : shareOf(app.value, total) })),
     arms,
   }
 }

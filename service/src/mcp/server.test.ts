@@ -66,6 +66,7 @@ const PORTFOLIO: Portfolio = {
       holdings: [{ walletId: 'w1', amount: '1258100000000000000', value: 2000 }],
     },
   ],
+  unpriced: 0,
   protocols: [],
 }
 

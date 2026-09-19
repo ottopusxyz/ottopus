@@ -22,24 +22,24 @@ function holding(walletId: string, chainId: string, positionType: ProtocolHoldin
 
 /** A lending market on Base for wallet-0, and a vault on Ethereum for wallet-1. */
 const fluid: ProtocolRow = {
-  id: 'fluid', name: 'Fluid', iconUrl: null, url: null, value: 80, change1d: 1, share: 0,
+  id: 'fluid', name: 'Fluid', iconUrl: null, url: null, value: 80, change1d: 1, share: 0, unpriced: 0,
   groups: [
     {
-      id: 'm', chainId: 'eip155:8453', name: 'Fluid Lending', module: 'lending', value: 80, change1d: 1,
+      id: 'm', chainId: 'eip155:8453', name: 'Fluid Lending', module: 'lending', value: 80, change1d: 1, unpriced: 0,
       holdings: [holding('wallet-0', 'eip155:8453', 'deposit', 100), holding('wallet-0', 'eip155:8453', 'loan', 20)],
     },
   ],
 }
 const morpho: ProtocolRow = {
-  id: 'morpho', name: 'Morpho', iconUrl: null, url: null, value: 30, change1d: -2, share: 0,
+  id: 'morpho', name: 'Morpho', iconUrl: null, url: null, value: 30, change1d: -2, share: 0, unpriced: 0,
   groups: [
-    { id: 'v', chainId: 'eip155:1', name: 'WETH Vault', module: 'yield', value: 30, change1d: -2, holdings: [holding('wallet-1', 'eip155:1', 'deposit', 30)] },
+    { id: 'v', chainId: 'eip155:1', name: 'WETH Vault', module: 'yield', value: 30, change1d: -2, unpriced: 0, holdings: [holding('wallet-1', 'eip155:1', 'deposit', 30)] },
   ],
 }
 
 const portfolio: Portfolio = {
   provider: 'zerion', currency: 'usd', asOf: '2026-09-08T00:00:00Z',
-  total: 260, change1d: 3, chains: [],
+  total: 260, change1d: 3, unpriced: 0, chains: [],
   byType: { wallet: 150, deposit: 130, loan: 20, locked: 0, staked: 0, reward: 0, investment: 0 },
   assets: [row('eip155:1', [100, 50], 5), row('eip155:8453', [0], -1)],
   protocols: [fluid, morpho],
@@ -55,7 +55,8 @@ describe('portfolio network selection', () => {
     const selected = selectPortfolio(portfolio, null)
     expect(selected.total).toBe(260)
     expect(selected.change1d).toBe(3)
-    expect(selected.wallet).toEqual({ value: 150, share: 150 / 260 })
+    expect(selected.wallet).toEqual({ value: 150, share: 150 / 260, unpriced: 0 })
+    expect(selected.unpriced).toBe(0)
     expect(selected.protocols.map((app) => app.share)).toEqual([80 / 260, 30 / 260])
     expect(selected.assets.map((asset) => asset.share)).toEqual([150 / 260, 0])
     // Wallet plus every card is the whole.
@@ -78,6 +79,25 @@ describe('portfolio network selection', () => {
     expect(selected.arms.map((arm) => arm.total)).toEqual([80, 0, 0])
     expect(portfolio.protocols[1]?.groups).toHaveLength(1)
     expect(portfolio.arms[0]?.total).toBe(180)
+  })
+
+  it('counts what has no price and denies a partly priced card a share', () => {
+    const unpricedToken = { ...row('eip155:1', [0]), assetId: 'eip155:1/erc20:dust', holdings: [{ walletId: 'wallet-0', amount: '1', value: null }] }
+    const partial: Portfolio = {
+      ...portfolio,
+      assets: [...portfolio.assets, unpricedToken],
+      protocols: [
+        { ...fluid, unpriced: 1, groups: [{ ...fluid.groups[0]!, unpriced: 1, holdings: [{ ...holding('wallet-0', 'eip155:8453', 'deposit', 0), value: null }, holding('wallet-0', 'eip155:8453', 'loan', 20)] }] },
+        morpho,
+      ],
+    }
+    const selected = selectPortfolio(partial, null)
+    expect(selected.wallet.unpriced).toBe(1)
+    expect(selected.unpriced).toBe(2)
+    expect(selected.protocols[0]).toMatchObject({ id: 'fluid', unpriced: 1, share: 0 })
+    expect(selected.protocols[1]?.share).toBeGreaterThan(0)
+    // Narrowed to a network with no unpriced holding, the count goes with it.
+    expect(selectPortfolio(partial, 'eip155:1').unpriced).toBe(1)
   })
 
   it('handles a debt-only network and an empty network without invalid percentages', () => {

@@ -166,13 +166,16 @@ export interface PortfolioSummary {
   protocols: {
     id: string
     name: string
-    /** Net across every position: deposits less debt. */
+    /** Net across every position: deposits less debt. A floor when `unpriced` is above zero. */
     value: number
+    /** Holdings with no price, left out of `value`. */
+    unpriced: number
     positions: {
       name: string
       chain: string
-      /** Net for this group. */
+      /** Net for this group, with any unpriced holding counted as nothing. */
       value: number
+      unpriced: number
       holdings: {
         symbol: string
         amount: string
@@ -254,10 +257,12 @@ export function summarisePortfolio(
       id: app.id,
       name: app.name,
       value: app.value,
+      unpriced: app.unpriced,
       positions: app.groups.map((group) => ({
         name: group.name,
         chain: chains.get(group.chainId) ?? group.chainId,
         value: group.value,
+        unpriced: group.unpriced,
         holdings: group.holdings.map((holding) => ({
           symbol: holding.asset.symbol,
           amount: humanAmount(holding.amount, holding.asset.decimals),
@@ -335,9 +340,15 @@ export function portfolioText(summary: PortfolioSummary): string {
           ...summary.protocols.flatMap((app) =>
             app.positions.map((group) => {
               const parts = group.holdings.map(
-                (h) => `${h.amount} ${h.symbol} ${h.held}${h.value === null ? '' : ` (${usd(h.value)})`} in ${h.wallet.name}`,
+                (h) => `${h.amount} ${h.symbol} ${h.held}${h.value === null ? ' (no price)' : ` (${usd(h.value)})`} in ${h.wallet.name}`,
               )
-              return `- ${app.name} — ${group.name} on ${group.chain}: ${parts.join(', ')}; net ${usd(group.value)}`
+              // A net with an unpriced holding in it is not a net. Say what is
+              // known and that something is not, rather than a figure that reads
+              // as the whole.
+              const net = group.unpriced > 0
+                ? `priced part ${usd(group.value)}, ${group.unpriced} holding${group.unpriced === 1 ? '' : 's'} unpriced`
+                : `net ${usd(group.value)}`
+              return `- ${app.name} — ${group.name} on ${group.chain}: ${parts.join(', ')}; ${net}`
             }),
           ),
         ].join('\n')

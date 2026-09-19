@@ -253,9 +253,11 @@ export interface PositionGroup {
   chainId: string
   name: string
   module: ProtocolModule | null
-  /** Net: deposits less loans. Negative for debt with nothing beside it. */
+  /** Net: deposits less loans. Negative for debt with nothing beside it. A floor when `unpriced` is above zero. */
   value: number
   change1d: number
+  /** Holdings with no price. They count as nothing in `value`. */
+  unpriced: number
   holdings: ProtocolHolding[]
 }
 
@@ -267,8 +269,10 @@ export interface ProtocolRow {
   /** Net across every group. */
   value: number
   change1d: number
-  /** Fraction of the net total, 0..1. Zero when net debt. */
+  /** Fraction of the net total, 0..1. Zero when net debt or partly unpriced. */
   share: number
+  /** Unpriced holdings across every group. */
+  unpriced: number
   groups: PositionGroup[]
 }
 
@@ -292,6 +296,8 @@ export interface Portfolio {
   total: number
   change1d: number
   byType: ValueByType
+  /** Holdings with no price anywhere. `total` leaves them out. */
+  unpriced: number
   arms: ArmSummary[]
   chains: ChainRow[]
   /** Loose balances only. */

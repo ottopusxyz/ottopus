@@ -115,6 +115,12 @@ export interface PositionGroup {
   /** Net: deposits less loans. Negative for debt with no collateral beside it. */
   value: number
   change1d: number
+  /**
+   * Holdings the provider could not price. They count as zero in `value`, so
+   * a group with any is a partial figure — and debt against unpriced
+   * collateral is not net debt, it is unknown.
+   */
+  unpriced: number
   holdings: ProtocolHolding[]
 }
 
@@ -127,8 +133,10 @@ export interface ProtocolRow {
   /** Net across every group. */
   value: number
   change1d: number
-  /** Fraction of the net total, 0..1. Zero for a protocol that is net debt. */
+  /** Fraction of the net total, 0..1. Zero for a protocol that is net debt or partly unpriced. */
   share: number
+  /** Unpriced holdings across every group. See `PositionGroup.unpriced`. */
+  unpriced: number
   groups: PositionGroup[]
 }
 
@@ -160,6 +168,8 @@ export interface Portfolio {
    * not positive there is nothing to be a share of, and every share is zero.
    */
   byType: ValueByType
+  /** Holdings with no price anywhere in the portfolio. `total` leaves them out. */
+  unpriced: number
   arms: ArmSummary[]
   chains: ChainRow[]
   assets: AssetRow[]
@@ -238,6 +248,7 @@ export function aggregate(
   const arms: ArmSummary[] = []
   const byType = Object.fromEntries(POSITION_TYPES.map((type) => [type, 0])) as ValueByType
   const chainValues = new Map<string, number>()
+  let unpriced = 0
 
   for (const { arm, positions, status } of reads) {
     let armTotal = 0
@@ -246,6 +257,7 @@ export function aggregate(
     for (const position of positions) {
       const sign = signOf(position.positionType)
       const value = position.value ?? 0
+      if (position.value === null) unpriced++
       armTotal += sign * value
       armChange += sign * (position.change1d ?? 0)
       byType[position.positionType] += value
@@ -293,6 +305,7 @@ export function aggregate(
           value: 0,
           change1d: 0,
           share: 0,
+          unpriced: 0,
           groups: [],
         }
         protocols.set(dappId, protocol)
@@ -313,6 +326,7 @@ export function aggregate(
           module: position.protocolModule,
           value: 0,
           change1d: 0,
+          unpriced: 0,
           holdings: [],
         }
         groups.set(groupKey, group)
@@ -321,6 +335,10 @@ export function aggregate(
       group.module ??= position.protocolModule
       group.value += sign * value
       group.change1d += sign * (position.change1d ?? 0)
+      if (position.value === null) {
+        group.unpriced++
+        protocol.unpriced++
+      }
       group.holdings.push({
         walletId: arm.walletId,
         assetId: position.assetId,
@@ -365,7 +383,8 @@ export function aggregate(
   }
 
   for (const row of assets) row.share = shareOf(row.value, total)
-  for (const app of apps) app.share = shareOf(app.value, total)
+  // A partly priced card has no honest share: its value is a floor, not a figure.
+  for (const app of apps) app.share = app.unpriced > 0 ? 0 : shareOf(app.value, total)
 
   const chains: ChainRow[] = [...chainValues.entries()]
     .map(([chainId, value]) => ({
@@ -384,6 +403,7 @@ export function aggregate(
     total,
     change1d,
     byType,
+    unpriced,
     arms,
     chains,
     assets,

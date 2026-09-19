@@ -78,6 +78,7 @@ const portfolio: Portfolio = {
   asOf: '2026-09-09T10:00:00Z',
   total: 2816.91 + 1898,
   change1d: -8.26,
+  unpriced: 1,
   byType: { wallet: 2816.91, deposit: 3100, loan: 1202, locked: 0, staked: 0, reward: 0, investment: 0 },
   arms: [
     { walletId: 'w1', address: '0xd8da…', status: 'ok', total: 2800, change1d: -8, positionCount: 3 },
@@ -135,6 +136,7 @@ const portfolio: Portfolio = {
       value: 1898,
       change1d: 0,
       share: 0.4,
+      unpriced: 0,
       groups: [
         {
           id: 'g-fluid',
@@ -143,6 +145,7 @@ const portfolio: Portfolio = {
           module: 'lending',
           value: 1898,
           change1d: 0,
+          unpriced: 0,
           holdings: [
             {
               walletId: 'w1',
@@ -199,11 +202,13 @@ describe('a portfolio in words', () => {
         id: 'fluid',
         name: 'Fluid',
         value: 1898,
+        unpriced: 0,
         positions: [
           {
             name: 'Fluid Lending (#9468)',
             chain: 'Base',
             value: 1898,
+            unpriced: 0,
             holdings: [
               { symbol: 'ETH', amount: '1.2398', held: 'deposited', value: 3100, wallet: { id: 'w1', name: 'Main' } },
               { symbol: 'USDC', amount: '1,202.0213', held: 'borrowed', value: 1202, wallet: { id: 'w1', name: 'Main' } },
@@ -214,6 +219,23 @@ describe('a portfolio in words', () => {
     ])
     expect(portfolioText(summary)).toContain(
       '- Fluid — Fluid Lending (#9468) on Base: 1.2398 ETH deposited ($3,100.00) in Main, 1,202.0213 USDC borrowed ($1,202.00) in Main; net $1,898.00',
+    )
+  })
+
+  it('never calls a partly priced group a net', () => {
+    const fluid = portfolio.protocols[0]!
+    const group = fluid.groups[0]!
+    const partial = {
+      ...portfolio,
+      protocols: [{
+        ...fluid, unpriced: 1,
+        groups: [{ ...group, value: -1202, unpriced: 1, holdings: [{ ...group.holdings[0]!, value: null }, group.holdings[1]!] }],
+      }],
+    }
+    const summary = summarisePortfolio(partial, arms, 2)
+    expect(summary.protocols[0]).toMatchObject({ unpriced: 1, positions: [{ unpriced: 1, value: -1202 }] })
+    expect(portfolioText(summary)).toContain(
+      '1.2398 ETH deposited (no price) in Main, 1,202.0213 USDC borrowed ($1,202.00) in Main; priced part -$1,202.00, 1 holding unpriced',
     )
   })
 

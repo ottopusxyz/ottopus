@@ -1,3 +1,5 @@
+export { Holdings } from './holdings'
 export { NetworkFilter } from './network-filter'
+export { ProtocolCard } from './protocol-card'
 export { TokenTable } from './token-table'
 export { usePortfolio, portfolioOf, portfolioFailureText, unreadArms, type PortfolioState } from './use-portfolio'

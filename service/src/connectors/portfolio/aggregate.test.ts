@@ -274,6 +274,53 @@ describe('a protocol is one card, grouped the way the app groups it', () => {
   })
 })
 
+describe('a price the provider does not have', () => {
+  const unpricedDeposit = pos({
+    symbol: 'FARM-LP', value: null, price: null, change1d: null,
+    positionType: 'deposit', protocol: 'Farm', protocolModule: 'farming', positionName: 'Farm LP', groupId: 'g-farm',
+  })
+  const pricedLoan = pos({ value: 50, positionType: 'loan', protocol: 'Farm', protocolModule: 'farming', positionName: 'Farm LP', groupId: 'g-farm' })
+
+  it('is counted, not invented as zero, on the group, the card and the whole', async () => {
+    const portfolio = await readPortfolio(fake({ '0xaa': [unpricedDeposit] }), [DAILY])
+
+    expect(portfolio.unpriced).toBe(1)
+    expect(portfolio.protocols[0]).toMatchObject({ value: 0, unpriced: 1, share: 0 })
+    expect(portfolio.protocols[0]!.groups[0]).toMatchObject({ value: 0, unpriced: 1 })
+    expect(portfolio.protocols[0]!.groups[0]!.holdings[0]!.value).toBeNull()
+  })
+
+  it('leaves a partly priced card without a share, even when its figure is positive', async () => {
+    const portfolio = await readPortfolio(
+      fake({ '0xaa': [pos({ value: 100 }), unpricedDeposit, pos({ value: 30, positionType: 'staked', protocol: 'Farm', groupId: 's' })] }),
+      [DAILY],
+    )
+
+    const farm = portfolio.protocols[0]!
+    expect(farm.value).toBe(30)
+    expect(farm.unpriced).toBe(1)
+    expect(farm.share).toBe(0)
+    expect(portfolio.assets[0]!.share).toBeCloseTo(100 / 130)
+  })
+
+  it('marks debt against unpriced collateral as partial rather than as net debt', async () => {
+    const portfolio = await readPortfolio(fake({ '0xaa': [unpricedDeposit, pricedLoan] }), [DAILY])
+
+    expect(portfolio.protocols[0]).toMatchObject({ value: -50, unpriced: 1, share: 0 })
+    expect(portfolio.total).toBe(-50)
+    expect(portfolio.unpriced).toBe(1)
+  })
+
+  it('counts an unpriced wallet token in the whole too', async () => {
+    const portfolio = await readPortfolio(
+      fake({ '0xaa': [pos({ symbol: 'WAT', value: null, price: null })], '0xbb': [pos({ value: 5 })] }),
+      [DAILY, VAULT],
+    )
+    expect(portfolio.unpriced).toBe(1)
+    expect(portfolio.total).toBe(5)
+  })
+})
+
 describe('what is held, by type', () => {
   it('totals each way of holding as a magnitude, and the whole as net', async () => {
     const portfolio = await readPortfolio(
@@ -437,7 +484,7 @@ describe('the totals a page renders', () => {
 
   it('is empty, not unknown, when there are no arms at all', async () => {
     const portfolio = await readPortfolio(fake({}), [])
-    expect(portfolio).toMatchObject({ total: 0, change1d: 0, arms: [], assets: [], protocols: [], chains: [] })
+    expect(portfolio).toMatchObject({ total: 0, change1d: 0, unpriced: 0, arms: [], assets: [], protocols: [], chains: [] })
   })
 
   it('keeps an unpriced holding visible without inventing a value for it', async () => {
