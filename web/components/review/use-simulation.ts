@@ -25,6 +25,17 @@ export type SimulationState =
   /** The chain would not answer. Not a verdict, and never shown as one. */
   | { kind: 'unavailable' }
 
+/**
+ * The live run as a component takes it: the state it is in, what it found,
+ * and how to ask again. Declared beside the hook so a component can name the
+ * shape without importing the hook itself.
+ */
+export interface LiveSimulation {
+  kind: SimulationState['kind']
+  run: BrowserSimulation | null
+  again: () => void
+}
+
 export interface UseSimulation {
   state: SimulationState
   /** The live run, or null while there is none. */

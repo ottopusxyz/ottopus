@@ -1,5 +1,4 @@
 import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning, Simulation } from '@/lib/api'
-import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
 
 /**
@@ -66,7 +65,7 @@ export interface AssetChange {
  * The simulation's traced balances when there are any, because those were
  * observed; the intent when there are not, because a plan on a chain nobody
  * simulates still has to say what it will do. The two are not interchangeable
- * and the page labels which one it is showing — `observedChanges` is how it
+ * and the page labels which one it is showing — `changeSource` is how it
  * knows.
  *
  * The simulation traces the signing account's balances, so every row is about
@@ -109,11 +108,6 @@ export function changeSource(plan: Plan, live?: Simulation | null): ChangeSource
   if ((live?.assetChanges.length ?? 0) > 0) return 'live'
   if ((plan.simulation?.assetChanges.length ?? 0) > 0) return 'stored'
   return 'request'
-}
-
-/** Whether the rows were observed at all, however long ago. */
-export function observedChanges(plan: Plan, live?: Simulation | null): boolean {
-  return changeSource(plan, live) !== 'request'
 }
 
 export const SOURCE_LABEL: Readonly<Record<ChangeSource, string>> = {
@@ -183,29 +177,6 @@ export interface Fact {
   mono?: boolean
 }
 
-/** The rows under the asset changes. Five at most, and only what is known. */
-export function facts(plan: Plan): Fact[] {
-  const chain = chainOfPlan(plan)
-  const signer = plan.resolution.account
-  const rows: Fact[] = [
-    {
-      label: 'Signing with',
-      value: signer.label ?? truncateAddress(addressOf(signer.caip10)),
-      detail: signer.label ? truncateAddress(addressOf(signer.caip10)) : undefined,
-    },
-    { label: 'Network', value: chainName(chain), detail: 'no bridge' },
-  ]
-  if (plan.humanPlan.feesUsd && plan.humanPlan.feesUsd !== 'unknown') {
-    rows.push({ label: 'Network fee (est.)', value: `$${plan.humanPlan.feesUsd}`, mono: true })
-  } else {
-    rows.push({ label: 'Network fee', value: 'Your wallet will show it', detail: 'estimated at signing' })
-  }
-  if (plan.intent.kind === 'transfer' && plan.intent.note) {
-    rows.push({ label: 'Note', value: plan.intent.note })
-  }
-  return rows
-}
-
 /** The approvals a plan carries, for the callout. */
 export function approvals(plan: Plan): { spender: string; amount: string; unlimited: boolean }[] {
   return plan.decodedActions.flatMap((a) =>
@@ -267,4 +238,62 @@ export function countdown(expiresAt: string, now = Date.now()): string {
 /** Who prepared it, for the details. */
 export function preparedBy(plan: Plan): string {
   return plan.createdVia === 'agent' ? 'An agent, over MCP' : 'You, in Ottopus'
+}
+
+/**
+ * Where the plan has got to, for the bar at the top of the card.
+ *
+ * Three stops, not five. A person opening a review link is answering one
+ * question and then watching one thing happen; "awaiting_signature" and
+ * "awaiting_review" are the same moment to them, and the wallet is what
+ * tells them about signing. Fewer stops also means the bar fits on one line
+ * beside the countdown, which is what keeps the outcome above the fold.
+ */
+export const STAGES = ['Review', 'Sent', 'Confirmed'] as const
+export type Stage = (typeof STAGES)[number]
+
+export interface Progress {
+  /** How many stops are behind us, 0-based. */
+  at: number
+  /** Stopped here for good — cancelled, expired, reverted. The bar greys out ahead. */
+  stopped: boolean
+}
+
+export function progressOf(status: PlanStatusName): Progress {
+  switch (status) {
+    case 'draft':
+    case 'awaiting_review':
+    case 'awaiting_signature':
+      return { at: 0, stopped: false }
+    case 'submitted':
+      return { at: 1, stopped: false }
+    case 'confirmed':
+      return { at: 2, stopped: false }
+    case 'failed':
+      return { at: 1, stopped: true }
+    default:
+      return { at: 0, stopped: true }
+  }
+}
+
+/**
+ * The rows under the amount, cut to what a person deciding actually needs.
+ *
+ * The wallet and the network moved into one line beside the amount, and the
+ * expiry into the header, so what is left is the fee and anything the person
+ * was told about the request. Everything else — hashes, provenance, decoded
+ * arguments — belongs in the advanced panel, where somebody who wants it
+ * knows to look.
+ */
+export function keyFacts(plan: Plan): Fact[] {
+  const rows: Fact[] = []
+  if (plan.humanPlan.feesUsd && plan.humanPlan.feesUsd !== 'unknown') {
+    rows.push({ label: 'Network fee', value: `$${plan.humanPlan.feesUsd}`, detail: 'estimated', mono: true })
+  } else {
+    rows.push({ label: 'Network fee', value: 'Shown by your wallet' })
+  }
+  if (plan.intent.kind === 'transfer' && plan.intent.note) {
+    rows.push({ label: 'Note', value: plan.intent.note })
+  }
+  return rows
 }

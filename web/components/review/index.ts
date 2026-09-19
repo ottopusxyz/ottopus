@@ -1,5 +1,7 @@
 export { ReviewView } from './review-view'
 export { ReviewCard, type ReviewCardProps } from './review-card'
+export { AdvancedPanel, type AdvancedPanelProps } from './advanced-panel'
+export { useSimulation, type LiveSimulation, type SimulationState } from './use-simulation'
 export { SignPanel, type SignPanelProps } from './sign-panel'
 export { gateFor, type ConnectedAccount, type Gate } from './wallet-gate'
 export * from './model'

@@ -7,7 +7,9 @@ import { Otto } from '@/components/brand'
 import { StillnessProvider } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
+import { cn } from '@/lib/cn'
 import { decoderUrl } from '@/lib/simulators'
+import { AdvancedPanel } from './advanced-panel'
 import { canSign, chainOfPlan, countdown, effectiveStatus } from './model'
 import { ReviewCard } from './review-card'
 import { ReviewSkeleton } from './review-skeleton'
@@ -89,25 +91,59 @@ function Review({ token }: { token: string }) {
   }
 
   const clock = canSign(status) ? (countdown(plan.expiresAt, now) || 'now') : <StatusChip status={status} />
+  const live = { kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }
+  const panelProps = { plan, live, decoderUrl: decoderUrl(plan) }
 
+  /**
+   * The card stays centred in the viewport and the panel hangs off its right
+   * edge, rather than the pair being centred together.
+   *
+   * The card is the page. Centring the two as a block would slide the thing
+   * everybody reads off to the left to make room for the thing most people
+   * never open, and the page would appear to move sideways the moment the
+   * panel had something to say. Absolute placement keeps the card exactly
+   * where it is at every width.
+   *
+   * The breakpoint is the arithmetic, not a guess: 440 for the card plus 16
+   * of gap plus 280 of panel, doubled around the centre, is 1032.
+   */
   return (
-    <Ground>
-      <ReviewCard
-        plan={plan}
-        reference={reference}
-        clock={clock}
-        visuals={visuals}
-        live={{ kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }}
-        visualiseUrl={decoderUrl(plan)}
-      >
-        {canSign(status) ? (
-          <SignPanel plan={plan} move={move} open resimulate={simulation.again} />
-        ) : status === 'submitted' ? (
-          <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
-        ) : (
-          <Ended status={status} />
-        )}
-      </ReviewCard>
+    <Ground wide>
+      <div className="relative mx-auto w-full max-w-[440px]">
+        <div className="w-full min-w-0">
+          <ReviewCard
+            plan={plan}
+            reference={reference}
+            clock={clock}
+            visuals={visuals}
+            live={live}
+            advanced={
+              <details className="ot-review-details border-t border-[var(--ot-border)]">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-[18px] py-3 text-[13px] font-semibold [&::-webkit-details-marker]:hidden">
+                  Advanced review
+                  <span className="ot-review-caret text-[var(--ot-text-3)]" aria-hidden>
+                    ▾
+                  </span>
+                </summary>
+                <div className="px-[18px]">
+                  <AdvancedPanel {...panelProps} bare />
+                </div>
+              </details>
+            }
+          >
+            {canSign(status) ? (
+              <SignPanel plan={plan} move={move} open resimulate={simulation.again} />
+            ) : status === 'submitted' ? (
+              <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
+            ) : (
+              <Ended status={status} />
+            )}
+          </ReviewCard>
+        </div>
+        <aside className="absolute top-0 left-full ml-4 hidden w-[280px] min-[1032px]:block">
+          <AdvancedPanel {...panelProps} />
+        </aside>
+      </div>
     </Ground>
   )
 }
@@ -123,11 +159,18 @@ function useClock(running: boolean): number {
   return now
 }
 
-function Ground({ children }: { children: ReactNode }) {
+function Ground({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <StillnessProvider held>
-      <main className="ot-canvas relative flex min-h-dvh items-start justify-center overflow-x-hidden px-0 py-0 sm:items-center sm:px-5 sm:py-11">
-        <div className="relative w-full max-w-[440px]">{children}</div>
+      <main
+        className={cn(
+          'ot-canvas relative flex min-h-dvh justify-center overflow-x-hidden px-0 py-0 sm:px-5 sm:py-11',
+          // A plan sits at the top on a wide screen because the panel beside
+          // it is taller than the card; a dead link is short and centres.
+          wide ? 'items-start' : 'items-start sm:items-center',
+        )}
+      >
+        <div className={cn('relative w-full', wide ? 'max-w-[440px] lg:max-w-[824px]' : 'max-w-[440px]')}>{children}</div>
       </main>
     </StillnessProvider>
   )

@@ -8,9 +8,9 @@ import {
   decodedRows,
   effectiveStatus,
   changeSource,
-  facts,
+  keyFacts,
   liveRefusal,
-  observedChanges,
+  progressOf,
   recipientOf,
   simulationNote,
   verificationSummary,
@@ -94,13 +94,21 @@ describe('what the page says', () => {
     expect(recipientOf(plan)).toEqual({ address: KOSHIK, name: 'koshik.eth' })
   })
 
-  it('lists the signer, the network, the fee it cannot estimate yet, and the note', () => {
-    expect(facts(plan).map((f) => [f.label, f.value])).toEqual([
-      ['Signing with', 'Main'],
-      ['Network', 'Base'],
-      ['Network fee', 'Your wallet will show it'],
+  /**
+   * Two rows, not four. The signer and the network moved onto one line beside
+   * the amount and the expiry into the header, because a person deciding
+   * whether to send 500 USDC is not reading a table.
+   */
+  it('keeps only the fee and the note as rows', () => {
+    expect(keyFacts(plan).map((f) => [f.label, f.value])).toEqual([
+      ['Network fee', 'Shown by your wallet'],
       ['Note', 'rent'],
     ])
+  })
+
+  it('drops the note row when the request carried none', () => {
+    const bare = { ...plan, intent: { ...plan.intent, note: undefined } } as Plan
+    expect(keyFacts(bare).map((f) => f.label)).toEqual(['Network fee'])
   })
 
   it('pairs each call with its decoding and keeps the raw bytes', () => {
@@ -161,15 +169,15 @@ describe('what the simulation observed', () => {
 
   it('prefers the traced balances over the request, and says which it is showing', () => {
     const page = simulated()
-    expect(observedChanges(page)).toBe(true)
+    expect(changeSource(page)).toBe('stored')
     expect(assetChanges(page)).toEqual([
       { assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
     ])
   })
 
   it('falls back to the request when nothing was traced, and admits it', () => {
-    expect(observedChanges(simulated({ assetChanges: [] }))).toBe(false)
-    expect(observedChanges(plan)).toBe(false)
+    expect(changeSource(simulated({ assetChanges: [] }))).toBe('request')
+    expect(changeSource(plan)).toBe('request')
     expect(assetChanges(simulated({ assetChanges: [] }))).toHaveLength(1)
   })
 
@@ -208,10 +216,10 @@ describe('what the simulation observed', () => {
     expect(simulationNote(plan)).toBeNull()
   })
 
-  it('shows the fee once the simulation has priced it', () => {
-    const page = { ...simulated(), humanPlan: { ...plan.humanPlan, feesUsd: '0.17' } }
-    expect(facts(page).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee (est.): $0.17')
-    expect(facts(plan).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee: Your wallet will show it')
+  it('shows the fee once something has priced it', () => {
+    const priced = { ...plan, humanPlan: { ...plan.humanPlan, feesUsd: '0.17' } }
+    expect(keyFacts(priced)[0]).toMatchObject({ label: 'Network fee', value: '$0.17', detail: 'estimated' })
+    expect(keyFacts(plan)[0]).toMatchObject({ label: 'Network fee', value: 'Shown by your wallet' })
   })
 })
 
@@ -245,10 +253,10 @@ describe('a run the browser did while the page was open', () => {
     expect(simulationNote(withStored, null)).toContain('at block 51119499')
   })
 
-  it('counts either run as observed, and the bare request as not', () => {
-    expect(observedChanges(withStored, live)).toBe(true)
-    expect(observedChanges(withStored, null)).toBe(true)
-    expect(observedChanges(plan, null)).toBe(false)
+  it('names its source, so the page never implies a fresher run than it has', () => {
+    expect(changeSource(withStored, live)).toBe('live')
+    expect(changeSource(withStored, null)).toBe('stored')
+    expect(changeSource(plan, null)).toBe('request')
   })
 
   it('falls back to the stored run when the browser could not simulate', () => {
@@ -263,5 +271,22 @@ describe('a run the browser did while the page was open', () => {
     )
     expect(liveRefusal(live)).toBeNull()
     expect(liveRefusal(null)).toBeNull()
+  })
+})
+
+describe('the progress bar', () => {
+  /** Three stops, because to a person "awaiting review" and "awaiting signature" are one moment. */
+  it('walks Review, Sent, Confirmed', () => {
+    expect(progressOf('awaiting_review')).toEqual({ at: 0, stopped: false })
+    expect(progressOf('awaiting_signature')).toEqual({ at: 0, stopped: false })
+    expect(progressOf('submitted')).toEqual({ at: 1, stopped: false })
+    expect(progressOf('confirmed')).toEqual({ at: 2, stopped: false })
+  })
+
+  it('stops where it stopped: a revert got as far as sent, a cancel did not', () => {
+    expect(progressOf('failed')).toEqual({ at: 1, stopped: true })
+    for (const status of ['cancelled', 'expired', 'blocked', 'superseded'] as const) {
+      expect(progressOf(status), status).toEqual({ at: 0, stopped: true })
+    }
   })
 })
