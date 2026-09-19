@@ -130,6 +130,7 @@ describe('assemble and parse', () => {
       decodedActions: [
         {
           target: 'eip155:8453:0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+          isContract: true,
           source: 'abi',
           verified: true,
           function: 'transfer(address,uint256)',

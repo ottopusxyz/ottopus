@@ -86,6 +86,9 @@ const EVM_NATIVE_COIN_TYPE: Readonly<Record<string, number>> = {
   '43114': 9000, // Avalanche C-Chain, AVAX
 }
 
+/** The chains the coin-type table covers, so the registry can prove it knows each. */
+export const NATIVE_COIN_TYPE_CHAINS: readonly string[] = Object.keys(EVM_NATIVE_COIN_TYPE)
+
 /** Asset namespaces whose reference is a contract address. */
 const CONTRACT_ASSET_NAMESPACES = new Set(['erc20', 'erc721', 'erc1155'])
 

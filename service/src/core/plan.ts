@@ -121,10 +121,17 @@ export const humanPlanSchema = z.object({
  */
 export const decodedActionSchema = z.strictObject({
   target: accountIdSchema,
-  /** Where the ABI came from. "unknown" means raw calldata with a warning. */
-  source: z.enum(['abi', 'sourcify', '4byte', 'unknown']),
+  /** Whether the target has code. A wallet address is not an unverified contract. */
+  isContract: z.boolean(),
+  /**
+   * Where the ABI came from. "native" is a value transfer with no calldata;
+   * "unknown" means raw calldata with a warning.
+   */
+  source: z.enum(['native', 'abi', 'sourcify', '4byte', 'unknown']),
+  /** Verified source on Sourcify. Never true for a wallet address. */
   verified: z.boolean(),
-  /** Signature, e.g. "transfer(address,uint256)", or "unknown". */
+  contractName: z.string().optional(),
+  /** Signature, e.g. "transfer(address,uint256)"; "nativeTransfer()"; or "unknown". */
   function: z.string().min(1),
   args: z.array(z.strictObject({ name: z.string(), type: z.string(), value: z.string() })),
   /** Native value, wei as a decimal string. */
