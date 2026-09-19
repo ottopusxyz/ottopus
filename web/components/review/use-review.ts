@@ -69,7 +69,15 @@ export function useReview(token: string): UseReview {
         setTick((t) => t + 1)
         return transition.status
       }
-      setState({ status: 'ready', read: { ...state.read, plan: { ...plan, status }, statusAt: new Date().toISOString() } })
+      // What this transition carried is now the latest detail — the hash on
+      // submitted and on confirmed — exactly as a re-read would report it.
+      // Without this a page that signed a plan itself reached "settled" with
+      // the detail of the event it opened on, which has no hash in it.
+      const statusDetail = 'detail' in transition && transition.detail ? transition.detail : state.read.statusDetail
+      setState({
+        status: 'ready',
+        read: { ...state.read, plan: { ...plan, status }, statusAt: new Date().toISOString(), statusDetail },
+      })
       return status
     },
     [state, credentials],

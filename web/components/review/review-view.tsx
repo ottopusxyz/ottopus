@@ -66,9 +66,10 @@ function Review({ token }: { token: string }) {
     // jump the moment the plan lands.
     return (
       <Ground wide>
-        <div className="relative mx-auto w-full max-w-[440px]">
+        <div className={WIDE_GRID}>
+          <div className={MIRROR} />
           <ReviewSkeleton />
-          <aside className="absolute top-0 left-full ml-4 hidden w-[280px] min-[1032px]:block">
+          <aside className="hidden min-[1032px]:block">
             <AdvancedSkeleton />
           </aside>
         </div>
@@ -109,22 +110,10 @@ function Review({ token }: { token: string }) {
   const live = { kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }
   const panelProps = { plan, live, decoderUrl: decoderUrl(plan) }
 
-  /**
-   * The card stays centred in the viewport and the panel hangs off its right
-   * edge, rather than the pair being centred together.
-   *
-   * The card is the page. Centring the two as a block would slide the thing
-   * everybody reads off to the left to make room for the thing most people
-   * never open, and the page would appear to move sideways the moment the
-   * panel had something to say. Absolute placement keeps the card exactly
-   * where it is at every width.
-   *
-   * The breakpoint is the arithmetic, not a guess: 440 for the card plus 16
-   * of gap plus 280 of panel, doubled around the centre, is 1032.
-   */
   return (
     <Ground wide>
-      <div className="relative mx-auto w-full max-w-[440px]">
+      <div className={WIDE_GRID}>
+        <div className={MIRROR} />
         <div className="w-full min-w-0">
           <ReviewCard
             plan={plan}
@@ -157,7 +146,7 @@ function Review({ token }: { token: string }) {
           {/* Under the card, and so under its folded advanced review, on a phone. */}
           <HeadsUpPanel plan={plan} className="mx-4 mt-4 sm:mx-0 min-[1032px]:hidden" />
         </div>
-        <aside className="absolute top-0 left-full ml-4 hidden w-[280px] flex-col gap-4 min-[1032px]:flex">
+        <aside className="hidden flex-col gap-4 min-[1032px]:flex">
           <AdvancedPanel {...panelProps} />
           <HeadsUpPanel plan={plan} />
         </aside>
@@ -165,6 +154,26 @@ function Review({ token }: { token: string }) {
     </Ground>
   )
 }
+
+/**
+ * The card stays centred in the viewport and the panels hang off its right
+ * edge, rather than the three being centred together.
+ *
+ * The card is the page. Centring card and panels as a block would slide the
+ * thing everybody reads off to the left to make room for the thing most
+ * people never open, and the page would appear to move sideways the moment a
+ * panel had something to say. So the grid has a third, empty column the width
+ * of the panels on the card's other side, and the card sits in the middle of
+ * it at every width. In-flow rather than absolutely placed, because a panel
+ * taller than the card has to lengthen the page — placed absolutely it hung
+ * out of the bottom of the water into bare page.
+ *
+ * The breakpoint is the arithmetic, not a guess: 440 for the card plus 16 of
+ * gap plus 280 of panel, doubled around the centre, is 1032.
+ */
+const WIDE_GRID =
+  'relative mx-auto w-full max-w-[440px] min-[1032px]:grid min-[1032px]:max-w-[1032px] min-[1032px]:grid-cols-[280px_440px_280px] min-[1032px]:items-start min-[1032px]:gap-4'
+const MIRROR = 'hidden min-[1032px]:block'
 
 /** A second hand for the countdown; stops when there is nothing to count. */
 function useClock(running: boolean): number {
@@ -179,13 +188,19 @@ function useClock(running: boolean): number {
 
 /**
  * The portfolio's creatures are drawn for the lower half of a tall column.
- * Here the card sits at the top and centre, so they keep to the sides: a fish
- * crossing the left gutter, a jelly rising up the right, a crab on the floor.
+ * Here the card sits at the top and centre, so they keep to the sides — the
+ * gutters are wide and there is no table of numbers to compete with, which is
+ * why this page carries twice the portfolio's count. Slow on purpose: a
+ * creature that crosses the gutter in a minute is noticed once and then
+ * becomes water. Fish face left in the drawing, so they travel left.
  */
 const GUTTER_LIFE: readonly SeaCreature[] = [
-  { species: 'fish', left: 4, top: 34, size: 22, travel: 120, lift: -12, delay: 0, duration: 52, opacity: 0.85 },
-  { species: 'jelly', left: 90, top: 58, size: 24, travel: 14, lift: -120, delay: 7, duration: 38, opacity: 0.7 },
-  { species: 'crab', left: 10, top: 93, size: 20, travel: 70, lift: 0, delay: 3, duration: 30, opacity: 0.8 },
+  { species: 'fish', left: 14, top: 26, size: 22, travel: -180, lift: -18, delay: 0, duration: 70, opacity: 0.85 },
+  { species: 'turtle', left: 82, top: 30, size: 30, travel: -220, lift: 22, delay: 12, duration: 95, opacity: 0.8 },
+  { species: 'jelly', left: 90, top: 62, size: 24, travel: 14, lift: -160, delay: 6, duration: 58, opacity: 0.7 },
+  { species: 'jelly', left: 6, top: 72, size: 17, travel: -10, lift: -120, delay: 30, opacity: 0.55, duration: 64 },
+  { species: 'fish', left: 94, top: 48, size: 15, travel: -140, lift: 10, delay: 40, duration: 80, opacity: 0.6 },
+  { species: 'crab', left: 10, top: 94, size: 20, travel: 90, lift: 0, delay: 3, duration: 46, opacity: 0.8 },
 ]
 
 function Ground({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
@@ -201,11 +216,20 @@ function Ground({ children, wide = false }: { children: ReactNode; wide?: boolea
         wide ? 'items-start' : 'items-start sm:items-center',
       )}
     >
-      <div aria-hidden className="ot-caustic" />
-      <div aria-hidden className="ot-caustic ot-caustic--b" />
-      <BubbleField pattern="canvas" />
-      <SeaLife creatures={GUTTER_LIFE} />
-      <div className={cn('relative w-full', wide ? 'max-w-[440px] lg:max-w-[824px]' : 'max-w-[440px]')}>{children}</div>
+      {/*
+        Clipped as one layer. The caustic sheets are the page's full size and
+        drift and swell as they wash, so unclipped they reached past the
+        bottom of the water by a few pixels that changed with the animation —
+        a strip of bare page that came and went. The portfolio's water clips
+        the same way.
+      */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="ot-caustic" />
+        <div className="ot-caustic ot-caustic--b" />
+        <BubbleField pattern="canvas" />
+        <SeaLife creatures={GUTTER_LIFE} />
+      </div>
+      <div className={cn('relative w-full', wide ? 'max-w-[440px] min-[1032px]:max-w-[1032px]' : 'max-w-[440px]')}>{children}</div>
     </main>
   )
 }

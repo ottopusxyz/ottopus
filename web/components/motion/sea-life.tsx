@@ -4,16 +4,17 @@ import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 import { useStillness } from './stillness'
 
-export const SEA_SPECIES = ['fish', 'jelly', 'crab'] as const
+export const SEA_SPECIES = ['fish', 'jelly', 'crab', 'turtle'] as const
 
 export type SeaSpecies = (typeof SEA_SPECIES)[number]
 
 /**
  * The cap. BubbleField draws the line at four bubbles; sea life is larger and
- * more legible than a bubble, so it stops at three. Past that a section reads
- * as an aquarium rather than as water.
+ * more legible than a bubble, so a section beside a table stops at three.
+ * Six is the ceiling for a page whose gutters are the only thing the water
+ * has to fill — past that it reads as an aquarium rather than as water.
  */
-export const MAX_SEA_LIFE = 3
+export const MAX_SEA_LIFE = 6
 
 export interface SeaCreature {
   species: SeaSpecies
@@ -68,6 +69,24 @@ const SHAPES: Record<SeaSpecies, Shape> = {
           strokeWidth="1.2"
           strokeLinecap="round"
           opacity=".7"
+        />
+      </>
+    ),
+  },
+  turtle: {
+    w: 28,
+    h: 16,
+    body: (
+      <>
+        <ellipse cx="12" cy="8" rx="8.2" ry="5.4" fill="currentColor" />
+        <circle cx="22.6" cy="8.2" r="2.7" fill="currentColor" opacity=".9" />
+        <path
+          d="M7 3.4 3.6 1.2M7 12.6 3.6 14.8M17 3.6l3.2-2.2M17 12.4l3.2 2.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          opacity=".8"
         />
       </>
     ),
@@ -139,7 +158,7 @@ export function SeaLife({ creatures = SEA_LIFE, className }: SeaLifeProps) {
             className={cn(
               'ot-sea-life',
               `ot-sea-life--${creature.species}`,
-              creature.species !== 'fish' && 'ot-sea-life--warm',
+              (creature.species === 'jelly' || creature.species === 'crab') && 'ot-sea-life--warm',
             )}
             style={{
               left: `${creature.left}%`,

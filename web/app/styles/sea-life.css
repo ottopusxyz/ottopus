@@ -33,7 +33,9 @@
 /* One direction, fading in and out at the ends of the run. Swimming out and
    back would need the silhouette to turn around, and a fish that reverses
    tail-first reads as a glitch rather than as a fish. */
-.ot-sea-life--fish {
+/* A turtle crosses the same way a fish does, only slower. */
+.ot-sea-life--fish,
+.ot-sea-life--turtle {
   animation-name: ot-swim;
   animation-duration: var(--ot-sea-dur, 48s);
   animation-timing-function: linear;

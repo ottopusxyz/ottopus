@@ -211,9 +211,9 @@ describe('bubbles', () => {
 })
 
 describe('sea life', () => {
-  it('never draws more than three', () => {
-    expect(MAX_SEA_LIFE).toBe(3)
-    expect(SEA_LIFE.length).toBeLessThanOrEqual(MAX_SEA_LIFE)
+  it('never draws more than six, and the default set keeps to three', () => {
+    expect(MAX_SEA_LIFE).toBe(6)
+    expect(SEA_LIFE.length).toBe(3)
   })
 
   it('has a shape and a keyframe for every species it can draw', () => {
