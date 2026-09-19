@@ -9,7 +9,6 @@ import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
 import { listWallets } from '../wallets/index.js'
-import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { portfolioProvider } from './portfolio-provider.js'
 import {
   authorizationServerMetadata,
@@ -83,7 +82,18 @@ if (!config.databaseUrl) {
     listWallets: (userId) => listWallets(db, userId),
     readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
     lookups: httpLookups({ rpcUrlTemplate: config.rpcUrlTemplate }),
-    simulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
+    /**
+     * Not wired: preparing a plan does not simulate.
+     *
+     * The review page runs its own simulation in the browser, against the
+     * block the person is reading at, and refuses to sign a plan that
+     * reverts there. A second run minutes earlier, on the service, bought a
+     * gate that the page already holds and cost every tool call a round trip
+     * to the chain. The adapter stays behind this line: passing
+     * `composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })])`
+     * turns it back on, and the pipeline is still tested that way.
+     */
+    simulator: null,
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
       issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),

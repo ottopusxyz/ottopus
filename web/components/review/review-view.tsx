@@ -7,11 +7,13 @@ import { Otto } from '@/components/brand'
 import { StillnessProvider } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
-import { canSign, countdown, effectiveStatus } from './model'
+import { decoderUrl } from '@/lib/simulators'
+import { canSign, chainOfPlan, countdown, effectiveStatus } from './model'
 import { ReviewCard } from './review-card'
 import { ReviewSkeleton } from './review-skeleton'
 import { SignPanel } from './sign-panel'
 import { useReview } from './use-review'
+import { useSimulation } from './use-simulation'
 
 /**
  * P4. The link is usually opened on a phone from a chat, to decide one thing.
@@ -40,6 +42,14 @@ export function ReviewView({ token }: { token: string }) {
 function Review({ token }: { token: string }) {
   const { state, move } = useReview(token)
   const now = useClock(state.status === 'ready')
+  const read = state.status === 'ready' ? state.read : null
+  const plan = read?.plan ?? null
+  const chainId = plan ? chainOfPlan(plan) : null
+  // The chain's own currency, as the service names it. The page must not work
+  // this out: the SLIP-44 table lives in core, and a guess would label BNB as
+  // ETH on the row the browser's own simulation produces.
+  const native = chainId ? (read?.visuals?.chains[chainId] ?? null) : null
+  const simulation = useSimulation(plan, chainId, native)
 
   if (state.status === 'loading') {
     return (
@@ -65,7 +75,8 @@ function Review({ token }: { token: string }) {
     )
   }
 
-  const { plan, visuals, statusDetail } = state.read
+  const { visuals, statusDetail } = state.read
+  if (!plan) return null
   const status = effectiveStatus(plan, now)
   const reference = `request #${plan.id.slice(0, 6)}`
 
@@ -81,9 +92,16 @@ function Review({ token }: { token: string }) {
 
   return (
     <Ground>
-      <ReviewCard plan={plan} reference={reference} clock={clock} visuals={visuals}>
+      <ReviewCard
+        plan={plan}
+        reference={reference}
+        clock={clock}
+        visuals={visuals}
+        live={{ kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }}
+        visualiseUrl={decoderUrl(plan)}
+      >
         {canSign(status) ? (
-          <SignPanel plan={plan} move={move} open />
+          <SignPanel plan={plan} move={move} open resimulate={simulation.again} />
         ) : status === 'submitted' ? (
           <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
         ) : (

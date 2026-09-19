@@ -7,7 +7,9 @@ import {
   countdown,
   decodedRows,
   effectiveStatus,
+  changeSource,
   facts,
+  liveRefusal,
   observedChanges,
   recipientOf,
   simulationNote,
@@ -210,5 +212,56 @@ describe('what the simulation observed', () => {
     const page = { ...simulated(), humanPlan: { ...plan.humanPlan, feesUsd: '0.17' } }
     expect(facts(page).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee (est.): $0.17')
     expect(facts(plan).map((f) => `${f.label}: ${f.value}`)).toContain('Network fee: Your wallet will show it')
+  })
+})
+
+describe('a run the browser did while the page was open', () => {
+  const stored = {
+    provider: 'eth_simulateV1',
+    chainId: BASE,
+    blockNumber: '51119499',
+    success: true,
+    assetChanges: [
+      { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+    ],
+    gasUsed: '44831',
+    gasUsd: '0.17',
+    resultHash: 'a'.repeat(64),
+    ranAt: '2026-09-10T12:00:00.000Z',
+  }
+  const withStored: Plan = { ...plan, simulation: stored }
+  const live = { ...stored, provider: 'eth_simulateV1 · public RPC', blockNumber: '51200000' }
+
+  /**
+   * The stored run describes the block the plan was built against; the live
+   * one describes the chain the person is about to sign into. When they
+   * disagree, the newer one is the one that matters.
+   */
+  it('outranks the stored run, and the page says which it is showing', () => {
+    expect(changeSource(withStored, live)).toBe('live')
+    expect(changeSource(withStored, null)).toBe('stored')
+    expect(changeSource(plan, null)).toBe('request')
+    expect(simulationNote(withStored, live)).toContain('at block 51200000')
+    expect(simulationNote(withStored, null)).toContain('at block 51119499')
+  })
+
+  it('counts either run as observed, and the bare request as not', () => {
+    expect(observedChanges(withStored, live)).toBe(true)
+    expect(observedChanges(withStored, null)).toBe(true)
+    expect(observedChanges(plan, null)).toBe(false)
+  })
+
+  it('falls back to the stored run when the browser could not simulate', () => {
+    expect(assetChanges(withStored, null)).toHaveLength(1)
+    expect(changeSource(withStored, null)).toBe('stored')
+  })
+
+  it('turns a fresh revert into the sentence that takes signing away', () => {
+    const refused = { ...live, success: false, failedCall: 1, revertReason: 'ERC20: transfer amount exceeds balance' }
+    expect(liveRefusal(refused)).toBe(
+      'Call 1 reverts against the chain as it is right now: ERC20: transfer amount exceeds balance.',
+    )
+    expect(liveRefusal(live)).toBeNull()
+    expect(liveRefusal(null)).toBeNull()
   })
 })

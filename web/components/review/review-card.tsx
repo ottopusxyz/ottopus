@@ -9,11 +9,12 @@ import type { Plan, Visuals } from '@/lib/api'
 import { chainName, explorerAddressUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { formatAmount } from '@/lib/format'
+import { type LiveSimulation, SimulationPanel } from './simulation-panel'
 import {
   approvals,
   assetChanges,
-  observedChanges,
-  simulationNote,
+  changeSource,
+  SOURCE_LABEL,
   assetWords,
   bannerWarnings,
   chainOfPlan,
@@ -38,20 +39,24 @@ export interface ReviewCardProps {
   clock: ReactNode
   /** Icons and wallet clients, looked up beside the plan. Absent draws letters and tiles. */
   visuals?: Visuals | undefined
+  /** The browser's own run, which replaces the stored one on the rows above. */
+  live?: LiveSimulation | undefined
+  /** A prefilled third-party simulator link, when the chain has one. */
+  visualiseUrl?: string | null
   children: ReactNode
 }
 
 const NO_VISUALS: Visuals = { assets: {}, chains: {}, wallets: {} }
 
-export function ReviewCard({ plan, reference, clock, visuals = NO_VISUALS, children }: ReviewCardProps) {
+export function ReviewCard({ plan, reference, clock, visuals = NO_VISUALS, live, visualiseUrl, children }: ReviewCardProps) {
   const chain = chainOfPlan(plan)
   const chainVisual = visuals.chains[chain] ?? null
   const signer = visuals.wallets[plan.resolution.account.caip10] ?? null
   const signerClient = signer ? walletClientName({ label: signer.label, walletType: signer.walletType }) : null
   const signerMark = signer ? walletMark(signer.walletType) : null
-  const changes = assetChanges(plan)
-  const observed = observedChanges(plan)
-  const note = simulationNote(plan)
+  const liveRun = live?.run ?? null
+  const changes = assetChanges(plan, liveRun)
+  const source = changeSource(plan, liveRun)
   const recipient = recipientOf(plan)
   const rows = facts(plan)
   const decoded = decodedRows(plan)
@@ -75,9 +80,7 @@ export function ReviewCard({ plan, reference, clock, visuals = NO_VISUALS, child
 
       {/* Asset changes: what the simulation watched move, or the request when nothing ran. */}
       <section className="flex flex-col gap-3.5 bg-[var(--ot-water-1)] px-[18px] py-3.5">
-        <span className="text-[11.5px] text-[var(--ot-text-3)]">
-          Asset changes ({observed ? 'as simulated' : 'from the request'})
-        </span>
+        <span className="text-[11.5px] text-[var(--ot-text-3)]">Asset changes · {SOURCE_LABEL[source]}</span>
         <div className="flex flex-col gap-3">
           {changes.map((change) => (
             <div key={`${change.direction}-${change.assetId}`} className="flex items-center gap-[11px]">
@@ -114,15 +117,7 @@ export function ReviewCard({ plan, reference, clock, visuals = NO_VISUALS, child
             <p className="m-0 text-[13px] text-[var(--ot-text-2)]">{plan.humanPlan.steps[0] ?? plan.humanPlan.summary}</p>
           ) : null}
         </div>
-        {/*
-          Never silent about the simulation. A page that shows a diff without
-          saying it is a prediction is making a safety claim the simulation
-          cannot support, and one that shows nothing without saying no
-          simulation ran lets the reader assume one did.
-        */}
-        <p className="m-0 text-[11.5px] leading-[1.45] text-[var(--ot-text-3)]">
-          {note ?? 'No simulation ran for this chain. The decoded call below is what was checked.'}
-        </p>
+        <SimulationPanel plan={plan} live={live} visualiseUrl={visualiseUrl} />
         {recipient ? (
           <div className="flex flex-col gap-1.5">
             <span className="text-[11.5px] text-[var(--ot-text-3)]">

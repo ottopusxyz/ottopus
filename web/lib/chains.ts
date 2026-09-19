@@ -52,6 +52,16 @@ export function findChain(caip2: string): ChainWords | null {
   }
 }
 
+/**
+ * The viem chain object itself, for building a client. `findChain` gives
+ * words; this gives the thing viem needs, including the default RPC the
+ * browser's own simulation reads through.
+ */
+export function rawChain(caip2: string): Chain | null {
+  const evmId = evmIdOf(caip2)
+  return (evmId === null ? undefined : BY_EVM_ID.get(evmId)) ?? null
+}
+
 export function chainName(caip2: string): string {
   return findChain(caip2)?.name ?? caip2
 }

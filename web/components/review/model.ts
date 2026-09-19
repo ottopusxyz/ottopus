@@ -1,4 +1,4 @@
-import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning } from '@/lib/api'
+import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning, Simulation } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
 
@@ -72,9 +72,9 @@ export interface AssetChange {
  * The simulation traces the signing account's balances, so every row is about
  * that wallet: what left it, and anything that arrived in it.
  */
-export function assetChanges(plan: Plan): AssetChange[] {
-  const holder = plan.resolution.account.label ?? truncateAddress(addressOf(plan.resolution.account.caip10))
-  const traced = plan.simulation?.assetChanges ?? []
+export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[] {
+  const holder = holderOf(plan)
+  const traced = (live ?? plan.simulation)?.assetChanges ?? []
   if (traced.length > 0) return traced.map((delta) => observedRow(delta, holder))
   if (plan.intent.kind !== 'transfer') return []
   const words = assetWords(plan, plan.intent.asset)
@@ -90,9 +90,36 @@ export function assetChanges(plan: Plan): AssetChange[] {
   ]
 }
 
-/** Whether the rows above were observed by a simulation or read off the request. */
-export function observedChanges(plan: Plan): boolean {
-  return (plan.simulation?.assetChanges.length ?? 0) > 0
+function holderOf(plan: Plan): string {
+  return plan.resolution.account.label ?? truncateAddress(addressOf(plan.resolution.account.caip10))
+}
+
+/**
+ * Where the rows came from, which the page has to say out loud.
+ *
+ * "live" is a simulation the browser ran while the person was looking, which
+ * is the only one that describes the chain as it is now. "stored" is the run
+ * the service did when the plan was built — true when it ran, and older than
+ * the reader. "request" is the intent, which is a promise rather than an
+ * observation.
+ */
+export type ChangeSource = 'live' | 'stored' | 'request'
+
+export function changeSource(plan: Plan, live?: Simulation | null): ChangeSource {
+  if ((live?.assetChanges.length ?? 0) > 0) return 'live'
+  if ((plan.simulation?.assetChanges.length ?? 0) > 0) return 'stored'
+  return 'request'
+}
+
+/** Whether the rows were observed at all, however long ago. */
+export function observedChanges(plan: Plan, live?: Simulation | null): boolean {
+  return changeSource(plan, live) !== 'request'
+}
+
+export const SOURCE_LABEL: Readonly<Record<ChangeSource, string>> = {
+  live: 'simulated just now',
+  stored: 'simulated when the plan was built',
+  request: 'from the request',
 }
 
 function observedRow(delta: AssetDelta, holder: string): AssetChange {
@@ -114,8 +141,8 @@ function observedRow(delta: AssetDelta, holder: string): AssetChange {
  * it is a prediction. Null when nothing ran, so the page can say that too
  * rather than implying a pass.
  */
-export function simulationNote(plan: Plan): string | null {
-  const sim = plan.simulation
+export function simulationNote(plan: Plan, live?: Simulation | null): string | null {
+  const sim = live ?? plan.simulation
   if (!sim) return null
   const where = `${sim.provider} at block ${sim.blockNumber}`
   if (!sim.success) {
@@ -123,6 +150,20 @@ export function simulationNote(plan: Plan): string | null {
     return `${where} — ${which} reverted${sim.revertReason ? `: ${sim.revertReason}` : ''}`
   }
   return `Simulated by ${where}. A prediction, not a guarantee.`
+}
+
+/**
+ * The banner a fresh simulation earns when it disagrees with the plan.
+ *
+ * The plan was built against a block that has since passed. A browser run
+ * that now reverts is the most useful thing the page can tell somebody, and
+ * the reason signing is taken away: whatever the service concluded minutes
+ * ago, this will not execute.
+ */
+export function liveRefusal(live: Simulation | null): string | null {
+  if (!live || live.success) return null
+  const which = live.failedCall ? `Call ${live.failedCall}` : 'This batch'
+  return `${which} reverts against the chain as it is right now${live.revertReason ? `: ${live.revertReason}` : ''}.`
 }
 
 export interface Recipient {
