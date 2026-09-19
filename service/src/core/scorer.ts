@@ -1,6 +1,6 @@
-import { parseAccountId } from './caip.js'
+import { parseAccountId, parseAssetId } from './caip.js'
 import { chainName } from './chains.js'
-import type { TransferIntent } from './intent.js'
+import type { SwapIntent, TransferIntent } from './intent.js'
 import type { PlanDraft } from './plan.js'
 
 /**
@@ -118,9 +118,32 @@ export function transferIneligibility(
   asset: AssetWords,
   native: boolean,
 ): string | null {
-  const need = BigInt(intent.amount)
+  return spendIneligibility(c, intent.amount, asset, native)
+}
+
+/**
+ * Why a wallet cannot spend this much of an asset, or null if it can.
+ *
+ * The same question for a transfer and for a swap's input side: enough of the
+ * asset, something to pay gas with, and a key that can sign. `amount` is null
+ * for a swap quoted by its output, where how much goes in is not known until
+ * a route comes back — then "holds some of it" is all that can be checked,
+ * and the router's own revert is the backstop.
+ */
+export function spendIneligibility(
+  c: WalletCandidate,
+  amount: string | null,
+  asset: AssetWords,
+  native: boolean,
+): string | null {
   const chain = chainName(parseAccountId(c.account))
   if (!c.canSign) return 'is watch-only and cannot sign'
+  if (amount === null) {
+    if (c.assetBalance === 0n) return `holds no ${asset.symbol} on ${chain}`
+    if (!native && c.gasBalance === 0n) return `has nothing on ${chain} to pay gas with`
+    return null
+  }
+  const need = BigInt(amount)
   if (native) {
     if (c.assetBalance <= need) {
       return c.assetBalance === 0n
@@ -183,13 +206,69 @@ function byScoreThenBalance(a: Scored, b: Scored): number {
  * checks eligibility and says so — an override is not overridden.
  */
 export function resolveTransferWallet({ intent, candidates, asset, native }: ScoreInput): ScoreOutcome {
-  const chain = chainName(parseAccountId(intent.to))
-  const need = amountWords(BigInt(intent.amount), asset)
+  return chooseWallet({
+    candidates,
+    asset,
+    native,
+    amount: intent.amount,
+    chain: chainName(parseAccountId(intent.to)),
+    verb: 'send',
+    fromAccount: intent.fromAccount ?? null,
+  })
+}
 
-  if (intent.fromAccount) {
-    const chosen = candidates.find((c) => c.account.toLowerCase() === intent.fromAccount!.toLowerCase())
-    if (!chosen) return { ok: false, reasons: [`${intent.fromAccount} is not a linked wallet on ${chain}`] }
-    const why = transferIneligibility(chosen, intent, asset, native)
+export interface SwapScoreInput {
+  intent: SwapIntent
+  candidates: readonly WalletCandidate[]
+  /** Words for the asset going in. */
+  asset: AssetWords
+  native: boolean
+}
+
+/**
+ * The same choice for a swap's input side.
+ *
+ * A route's price does not depend on which wallet signs it, so there is
+ * nothing extra to score here: whoever can afford the input and pay gas is
+ * eligible, and the same weights break the tie. What differs is the sentence,
+ * because "enough to send" is the wrong verb for a swap.
+ */
+export function resolveSwapWallet({ intent, candidates, asset, native }: SwapScoreInput): ScoreOutcome {
+  return chooseWallet({
+    candidates,
+    asset,
+    native,
+    // Quoted by its output, the input amount is not known yet.
+    amount: intent.amountIn ?? null,
+    chain: chainName(parseAssetId(intent.from)),
+    verb: 'swap',
+    fromAccount: intent.fromAccount ?? null,
+  })
+}
+
+interface ChoiceInput {
+  candidates: readonly WalletCandidate[]
+  asset: AssetWords
+  native: boolean
+  amount: string | null
+  chain: string
+  verb: 'send' | 'swap'
+  fromAccount: string | null
+}
+
+/**
+ * One wallet, why, and what lost.
+ *
+ * `fromAccount` means the person chose. The scorer then only checks
+ * eligibility and says so — an override is not overridden.
+ */
+function chooseWallet({ candidates, asset, native, amount, chain, verb, fromAccount }: ChoiceInput): ScoreOutcome {
+  const need = amount === null ? null : amountWords(BigInt(amount), asset)
+
+  if (fromAccount) {
+    const chosen = candidates.find((c) => c.account.toLowerCase() === fromAccount.toLowerCase())
+    if (!chosen) return { ok: false, reasons: [`${fromAccount} is not a linked wallet on ${chain}`] }
+    const why = spendIneligibility(chosen, amount, asset, native)
     if (why) return { ok: false, reasons: [`${candidateName(chosen)} ${why}`] }
     return {
       ok: true,
@@ -207,7 +286,7 @@ export function resolveTransferWallet({ intent, candidates, asset, native }: Sco
   const eligible: Scored[] = []
   const losers: { account: string; label?: string; reason: string }[] = []
   for (const c of candidates) {
-    const why = transferIneligibility(c, intent, asset, native)
+    const why = spendIneligibility(c, amount, asset, native)
     if (why) losers.push({ account: c.account, ...(c.label ? { label: c.label } : {}), reason: why })
     else eligible.push(scoreTransfer(c))
   }
@@ -233,7 +312,9 @@ export function resolveTransferWallet({ intent, candidates, asset, native }: Sco
     })
   }
   const because = [
-    `holds ${amountWords(winner.candidate.assetBalance, asset)} on ${chain}, enough to send ${need}`,
+    need === null
+      ? `holds ${amountWords(winner.candidate.assetBalance, asset)} on ${chain}`
+      : `holds ${amountWords(winner.candidate.assetBalance, asset)} on ${chain}, enough to ${verb} ${need}`,
     'has gas',
     ...(eligible.length > 1 ? [`of ${eligible.length} wallets that could, it holds the most`] : []),
   ]

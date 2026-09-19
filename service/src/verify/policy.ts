@@ -4,6 +4,7 @@ import {
   type DecodedAction,
   type Intent,
   type Simulation,
+  type SwapIntent,
   type TransferIntent,
   type Warning,
   accountOn,
@@ -45,6 +46,11 @@ export interface VerifyInput {
    * still gets reviewed, on the decoded intent alone.
    */
   simulation?: Simulation | null
+  /**
+   * The route's own promise, from the quote. A swap is reviewed on its floor,
+   * so the policy checks the floor is coherent before a page can show it.
+   */
+  quote?: { expectedOut?: string | undefined; minOut?: string | undefined } | undefined
 }
 
 export type Verdict =
@@ -367,6 +373,91 @@ const transferRules: Rule = (input) => {
   return findings
 }
 
+/**
+ * A swap is an approval and a router call, or just a router call.
+ *
+ * The router's calldata is not ours to read — every aggregator encodes its
+ * own — so the checks here are the ones that hold whatever the bytes say:
+ * how much is approved, to whom, that the approved spender is the contract
+ * actually called, that native value only moves when the input is native,
+ * and that the quote commits to a floor. What the calls *do* is the
+ * simulation's job, and the rule above already blocks an asset leaving that
+ * the intent never named.
+ */
+const swapRules: Rule = (input) => {
+  const intent = input.intent as SwapIntent
+  const { calls, decodedActions } = input
+  const findings: Finding[] = []
+
+  if (calls.length === 0 || calls.length > 2) {
+    return [{ block: `a swap is one router call, with an approval at most; this plan has ${calls.length}` }]
+  }
+  const router = calls[calls.length - 1]!
+  const routerAction = decodedActions[calls.length - 1]
+  const nativeIn = isNativeAsset(intent.from)
+
+  if (routerAction && !routerAction.isContract) {
+    findings.push({ block: `the swap targets ${short(router.to)}, which has no code on ${chainName(router.chainId)}` })
+  }
+
+  // The approval, if the plan carries one, read off the calldata.
+  const approval = calls.length === 2 ? approvalIn(calls[0]!) : null
+  if (calls.length === 2 && !approval) {
+    findings.push({ block: 'the first of two calls in a swap must be the approval; this one is not' })
+  }
+
+  if (nativeIn) {
+    if (approval) {
+      findings.push({ block: 'the input is the chain’s own currency, which cannot be approved and needs no allowance' })
+    }
+    if (intent.amountIn !== undefined && router.value !== intent.amountIn) {
+      findings.push({ block: `the swap sends ${router.value} wei, but the intent says ${intent.amountIn}` })
+    }
+  } else if (approval) {
+    // Exact, and for the contract we are about to call. An allowance to
+    // somewhere other than the target is the shape a drain takes.
+    if (approval.amount === 'unlimited') {
+      findings.push({ block: `an unlimited approval to ${short(approval.spender)}; a swap approves exactly what it swaps` })
+    } else if (intent.amountIn !== undefined && approval.amount !== BigInt(intent.amountIn)) {
+      findings.push({
+        block: `the plan approves ${approval.amount} but the intent swaps ${intent.amountIn}; a swap approves exactly what it swaps`,
+      })
+    }
+    if (parseAccountId(approval.spender).address !== parseAccountId(router.to).address) {
+      findings.push({
+        block: `the approval lets ${short(approval.spender)} spend, but the call goes to ${short(router.to)}`,
+      })
+    }
+    const token = parseAssetId(intent.from).assetReference
+    if (parseAccountId(calls[0]!.to).address !== token) {
+      findings.push({ block: `the approval is on ${short(calls[0]!.to)}, not on the token being swapped` })
+    }
+  }
+
+  // The floor is what the review page promises, so it has to be real.
+  const { expectedOut, minOut } = input.quote ?? {}
+  if (minOut === undefined) {
+    findings.push({ block: 'the quote gives no minimum received; a swap cannot be reviewed without a floor' })
+  } else if (BigInt(minOut) <= 0n) {
+    findings.push({ block: 'the quote’s minimum received is zero; that is not a floor' })
+  } else if (expectedOut !== undefined && BigInt(minOut) > BigInt(expectedOut)) {
+    findings.push({ block: `the quote promises at least ${minOut} but expects only ${expectedOut}` })
+  }
+
+  // What the run observed arriving, when one has run. The only check that
+  // can tell a good floor from a kept one.
+  const sim = input.simulation
+  if (sim?.success && minOut !== undefined) {
+    const arrived = sim.assetChanges.find((c) => c.assetId.toLowerCase() === intent.to.toLowerCase())
+    if (arrived && BigInt(arrived.diff) < BigInt(minOut)) {
+      findings.push({
+        block: `the simulation received ${arrived.diff}, below the ${minOut} the quote promised`,
+      })
+    }
+  }
+  return findings
+}
+
 const GLOBAL: readonly Rule[] = [
   pairing,
   evidenceMatchesCalls,
@@ -382,9 +473,9 @@ const GLOBAL: readonly Rule[] = [
 
 const BY_KIND: Readonly<Record<Intent['kind'], readonly Rule[]>> = {
   transfer: [transferRules],
-  // Swap rules land with #22; bridge and supply with #80 and #79. Until then a
-  // plan of those kinds fails closed rather than passing on global rules alone.
-  swap: [() => [{ block: 'swap plans cannot be verified yet' }]],
+  swap: [swapRules],
+  // Bridge and supply land with #80 and #79. Until then a plan of those kinds
+  // fails closed rather than passing on global rules alone.
   bridge: [() => [{ block: 'bridge plans cannot be verified yet' }]],
   supply: [() => [{ block: 'supply plans cannot be verified yet' }]],
 }
