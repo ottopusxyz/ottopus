@@ -54,7 +54,11 @@ function Review({ token }: { token: string }) {
   // this out: the SLIP-44 table lives in core, and a guess would label BNB as
   // ETH on the row the browser's own simulation produces.
   const native = chainId ? (read?.visuals?.chains[chainId] ?? null) : null
-  const simulation = useSimulation(plan, chainId, native)
+  // Only while a signature is still possible. A settled plan re-run against
+  // today's chain says "transaction too old" about a thing that already
+  // happened, which is not a finding, just a stale question.
+  const signable = plan ? canSign(effectiveStatus(plan, now)) : false
+  const simulation = useSimulation(signable ? plan : null, chainId, native)
 
   if (state.status === 'loading') {
     // `wide` so the loader stands exactly where the card will: a skeleton that
@@ -188,7 +192,10 @@ function Ground({ children, wide = false }: { children: ReactNode; wide?: boolea
   return (
     <main
       className={cn(
-        'ot-review-sea relative flex min-h-dvh justify-center overflow-x-hidden px-0 py-0 sm:px-5 sm:py-11',
+        // `clip`, not `hidden`: hidden would make this a scroll container of
+        // its own, and the panels hanging off the card's right edge would
+        // scroll inside it rather than lengthen the page.
+        'ot-review-sea relative flex min-h-dvh justify-center overflow-x-clip px-0 py-0 sm:px-5 sm:py-11',
         // A plan sits at the top on a wide screen because the panel beside
         // it is taller than the card; a dead link is short and centres.
         wide ? 'items-start' : 'items-start sm:items-center',

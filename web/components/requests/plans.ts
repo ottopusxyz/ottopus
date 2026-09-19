@@ -1,4 +1,5 @@
 import type { PlanStatusName, PlanSummary } from '@/lib/api'
+import { truncateAddress } from '@/lib/format'
 
 /**
  * The list's reading of rows, pure. The service already sorts waiting-on-you
@@ -97,5 +98,16 @@ export function filterPlans(rows: readonly PlanSummary[], status: StatusFilter, 
 
 /** "Send", "Swap"… the verb at the head of a row. */
 export function kindWord(kind: PlanSummary['kind']): string {
-  return { transfer: 'Send', swap: 'Swap', bridge: 'Bridge', supply: 'Supply' }[kind]
+  return { transfer: 'Send', swap: 'Swap', bridge: 'Bridge', supply: 'Supply', custom: 'Custom' }[kind]
+}
+
+/**
+ * The second line: what moves and where. A transfer names its recipient, a
+ * trade its other side, and a custom plan has only the agent's summary.
+ */
+export function whatLine(row: PlanSummary): string {
+  const symbol = row.asset?.symbol ?? 'Asset'
+  if (row.recipient) return `${symbol} → ${row.recipient.name ?? truncateAddress(row.recipient.address)}`
+  if (row.toAsset) return `${symbol} → ${row.toAsset.symbol ?? 'a token'}`
+  return row.summary
 }

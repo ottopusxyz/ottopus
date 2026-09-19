@@ -4,6 +4,7 @@ import { gateFor } from './wallet-gate'
 import {
   approvalAmount,
   approvals,
+  approxUsd,
   assetChanges,
   canSign,
   countdown,
@@ -66,6 +67,20 @@ const plan: Plan = {
 
 const before = new Date('2026-09-09T16:00:00Z').getTime()
 const after = new Date('2026-09-09T17:00:00Z').getTime()
+
+describe('a price beside the amount', () => {
+  it('estimates in dollars and says it is an estimate', () => {
+    expect(approxUsd('500', 1)).toBe('≈ $500.00')
+    expect(approxUsd('1,250.5', 2)).toBe('≈ $2,501.00')
+  })
+
+  it('says nothing without a price, and does not price dust', () => {
+    expect(approxUsd('500', null)).toBeNull()
+    expect(approxUsd('500', 0)).toBeNull()
+    expect(approxUsd('<0.001', 4000)).toBeNull()
+    expect(approxUsd('0.000001', 1)).toBe('< $0.01')
+  })
+})
 
 describe('status on the page', () => {
   it('reads a pending plan as expired once the clock passes, with no round trip', () => {

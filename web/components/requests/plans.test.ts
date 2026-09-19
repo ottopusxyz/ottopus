@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanSummary } from '@/lib/api'
-import { effectiveStatus, filterPlans, kindWord, sortPlans, statusCounts, walletOptions } from './plans'
+import { effectiveStatus, filterPlans, kindWord, sortPlans, statusCounts, walletOptions, whatLine } from './plans'
 
 const row = (over: Partial<PlanSummary>): PlanSummary => ({
   id: 'p',
@@ -12,6 +12,7 @@ const row = (over: Partial<PlanSummary>): PlanSummary => ({
   account: { caip10: 'eip155:8453:0x0000000000000000000000000000000000000001', label: 'Main' },
   chainId: 'eip155:8453',
   asset: null,
+  toAsset: null,
   recipient: null,
   blockedReason: null,
   createdVia: 'agent',
@@ -79,5 +80,21 @@ describe('filters', () => {
   it('names the verb', () => {
     expect(kindWord('transfer')).toBe('Send')
     expect(kindWord('swap')).toBe('Swap')
+    expect(kindWord('custom')).toBe('Custom')
+  })
+})
+
+describe('the second line', () => {
+  const usdc = { id: 'eip155:8453/erc20:0x8335', amount: '500000000', symbol: 'USDC', decimals: 6 }
+  it('names the recipient for a transfer', () => {
+    expect(whatLine(row({ asset: usdc, recipient: { address: '0x67d29520c6f9579fe4b32dcba346620846ef98d2', name: 'koshik.eth' } }))).toBe('USDC → koshik.eth')
+    expect(whatLine(row({ asset: usdc, recipient: { address: '0x67d29520c6f9579fe4b32dcba346620846ef98d2', name: null } }))).toBe('USDC → 0x67d2…98d2')
+  })
+  it('names the other side for a trade', () => {
+    expect(whatLine(row({ kind: 'swap', asset: usdc, toAsset: { id: 'eip155:8453/slip44:60', symbol: 'ETH' } }))).toBe('USDC → ETH')
+    expect(whatLine(row({ kind: 'swap', asset: usdc, toAsset: { id: 'x', symbol: null } }))).toBe('USDC → a token')
+  })
+  it('falls back to the summary for a custom plan', () => {
+    expect(whatLine(row({ kind: 'custom', summary: 'Add liquidity', asset: usdc }))).toBe('Add liquidity')
   })
 })

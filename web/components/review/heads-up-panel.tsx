@@ -57,7 +57,7 @@ export function HeadsUpPanel({ plan, className }: HeadsUpPanelProps) {
           title={grant.unlimited ? 'This spender wants unlimited token access.' : 'This plan grants an approval.'}
         >
           <span className="block">
-            Spender <code className="font-mono text-[11.5px]">{grant.spender.split(':').pop()}</code>
+            Spender <code className="font-mono text-[11.5px] break-all">{grant.spender.split(':').pop()}</code>
             {grant.spenderName ? ` · ${grant.spenderName}` : ''}
           </span>
           <span className="block">

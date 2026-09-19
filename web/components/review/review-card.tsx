@@ -10,7 +10,17 @@ import { chainName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
 import { HEADS_UP_ID } from './heads-up-panel'
-import { SOURCE_LABEL, assetChanges, chainOfPlan, changeSource, executability, headsUp, keyFacts, recipientOf } from './model'
+import {
+  SOURCE_LABEL,
+  approxUsd,
+  assetChanges,
+  chainOfPlan,
+  changeSource,
+  executability,
+  headsUp,
+  keyFacts,
+  recipientOf,
+} from './model'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -69,6 +79,7 @@ export function ReviewCard({
   const rows = keyFacts(plan)
   const alerts = headsUp(plan)
   const verdict = executability(plan, liveRun)
+  const usd = (amount: string, assetId: string) => approxUsd(amount, visuals.assets[assetId]?.priceUsd)
 
   return (
     <article className="flex flex-col overflow-hidden rounded-[26px] border border-[var(--ot-border-strong)] bg-[var(--ot-card)] shadow-[var(--ot-shadow-card)] sm:rounded-[16px] sm:border-[var(--ot-border)]">
@@ -114,16 +125,24 @@ export function ReviewCard({
                   </span>
                 ) : null}
               </span>
-              <div className="flex min-w-0 flex-col gap-px">
-                <code
-                  className={cn(
-                    'font-mono text-[19px] font-semibold tabular-nums tracking-[-0.01em]',
-                    change.direction === 'in' ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-text)]',
-                  )}
-                >
-                  {change.direction === 'out' ? '−' : '+'}
-                  {change.amount} {change.symbol}
-                </code>
+              <div className="flex min-w-0 flex-1 flex-col gap-px">
+                <span className="flex items-baseline justify-between gap-3">
+                  <code
+                    className={cn(
+                      'font-mono text-[19px] font-semibold tabular-nums tracking-[-0.01em]',
+                      change.direction === 'in' ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-text)]',
+                    )}
+                  >
+                    {change.direction === 'out' ? '−' : '+'}
+                    {change.amount} {change.symbol}
+                  </code>
+                  {/* Today's price, an estimate; the figure beside it is what gets signed. */}
+                  {usd(change.amount, change.assetId) ? (
+                    <code className="flex-none font-mono text-[12px] text-[var(--ot-text-3)] tabular-nums">
+                      {usd(change.amount, change.assetId)}
+                    </code>
+                  ) : null}
+                </span>
                 <span className="truncate text-[11.5px] text-[var(--ot-text-3)]">
                   {change.direction === 'out' && recipient
                     ? `to ${recipient.name ?? truncateAddress(recipient.address)}`

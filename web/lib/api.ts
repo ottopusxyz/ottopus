@@ -549,7 +549,8 @@ export interface Simulation {
  * must never make a plan unreadable.
  */
 export interface Visuals {
-  assets: Record<string, { symbol: string; name: string; iconUrl: string | null }>
+  /** `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. */
+  assets: Record<string, { symbol: string; name: string; iconUrl: string | null; priceUsd: number | null }>
   chains: Record<string, ChainVisual>
   wallets: Record<string, { walletType: string; label: string | null }>
 }
@@ -611,12 +612,15 @@ export interface PlanSummary {
   id: string
   version: number
   status: PlanStatusName
-  kind: 'transfer' | 'swap' | 'bridge' | 'supply'
+  kind: 'transfer' | 'swap' | 'bridge' | 'supply' | 'custom'
   summary: string
   reason: string
   account: { caip10: string; label?: string }
   chainId: string
+  /** What the plan pays. On a custom plan this is the first declared ceiling, not a figure. */
   asset: { id: string; amount: string; symbol: string | null; decimals: number | null } | null
+  /** The other side of a trade, so a row can read "USDC → ETH". */
+  toAsset: { id: string; symbol: string | null } | null
   recipient: { address: string; name: string | null } | null
   blockedReason: string | null
   createdVia: 'agent' | 'web'

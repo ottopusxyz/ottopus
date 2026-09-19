@@ -152,6 +152,22 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
   return []
 }
 
+/**
+ * "≈ $1,234.56" for a formatted amount at today's price, or null when there
+ * is no price or the amount is dust the formatter already rounded away. An
+ * estimate beside a figure that must never round — hence the ≈, and hence
+ * it is never the number the person signs.
+ */
+export function approxUsd(amount: string, priceUsd: number | null | undefined): string | null {
+  if (priceUsd === null || priceUsd === undefined || !(priceUsd > 0)) return null
+  if (amount.startsWith('<')) return null
+  const value = Number(amount.replace(/,/g, ''))
+  if (!Number.isFinite(value)) return null
+  const usd = value * priceUsd
+  if (usd < 0.01) return '< $0.01'
+  return `≈ $${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 /** The CAIP-2 chain an asset id names. */
 function chainOfAsset(assetId: string): string {
   const [namespace, rest] = assetId.split(':')

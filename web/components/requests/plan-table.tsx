@@ -19,6 +19,7 @@ import {
   sortPlans,
   statusCounts,
   walletOptions,
+  whatLine,
 } from './plans'
 
 /**
@@ -79,7 +80,7 @@ export function PlanTable({ plans, opening, onOpen, now }: PlanTableProps) {
       </header>
 
       {/* The same column header the portfolio's token table uses. */}
-      <div className="hidden grid-cols-[minmax(0,1.7fr)_150px_150px_120px] gap-4 px-[22px] pt-1 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase sm:grid">
+      <div className="hidden grid-cols-[minmax(0,2fr)_124px_128px_104px] gap-4 px-[22px] pt-1 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase sm:grid">
         <span>Request</span>
         <span className="text-right">Amount</span>
         <span>Status</span>
@@ -125,7 +126,9 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
   const amount = row.asset && row.asset.decimals !== null ? formatAmount(row.asset.amount, row.asset.decimals, { maxFractionDigits: 4 }) : null
   const walletName = row.account.label ?? row.wallet?.label ?? truncateAddress(row.account.caip10.split(':')[2] ?? '')
   const mark = row.wallet ? refFor(row.account.caip10, walletName, row.wallet.walletType) : null
-  const what = row.recipient ? `${symbol ?? 'Asset'} → ${row.recipient.name ?? truncateAddress(row.recipient.address)}` : row.summary
+  const what = whatLine(row)
+  // A custom plan's amount is the agent's ceiling, and the row must not print a bound as a figure.
+  const ceiling = row.kind === 'custom'
 
   return (
     <li className="border-t border-[var(--ot-border)]">
@@ -134,15 +137,15 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
         disabled={disabled}
         onClick={() => onOpen(row.id)}
         className={cn(
-          'grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 text-left transition-colors',
-          'sm:grid-cols-[minmax(0,1.7fr)_150px_150px_120px] sm:items-center sm:gap-4 sm:px-[22px] sm:py-[13px]',
-          'hover:bg-[var(--ot-surface-2)] focus-visible:outline-2 focus-visible:outline-[var(--ot-plan)] disabled:opacity-60',
+          'grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3 text-left transition-colors',
+          'sm:grid-cols-[minmax(0,2fr)_124px_128px_104px] sm:items-center sm:gap-4 sm:px-[22px] sm:py-[13px]',
+          'hover:bg-[var(--ot-surface-2)] focus-visible:outline-2 focus-visible:outline-[var(--ot-plan)] disabled:cursor-default disabled:opacity-60',
           opening && 'bg-[var(--ot-surface-2)]',
         )}
       >
         <span className="col-span-2 flex min-w-0 items-center gap-3 sm:col-span-1">
           <span aria-hidden className="relative h-[34px] w-[34px] flex-none">
-            <AssetIcon url={row.assetIconUrl} name={symbol ?? '?'} size={34} className="text-[12px]" />
+            <AssetIcon url={row.assetIconUrl} name={symbol ?? kindWord(row.kind)} size={34} className="text-[12px]" />
             {row.chainIconUrl ? (
               <span className="absolute -right-px -bottom-px h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[var(--ot-card)] bg-[var(--ot-card)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -151,20 +154,26 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
             ) : null}
           </span>
           <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[14px] font-semibold">{kindWord(row.kind)}</span>
-            <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--ot-text-3)]">
-              <span className="truncate">{what}</span>
-              <span aria-hidden>·</span>
-              {mark ? <WalletMark wallet={mark} size={14} className="ring-1 ring-[var(--ot-card)]" /> : null}
-              <span className="truncate">{walletName}</span>
-              <span aria-hidden>·</span>
-              <span className="whitespace-nowrap">#{row.id.slice(0, 6)}</span>
+            {/*
+              The id and the wallet share the title line, where there is room
+              for both; the second line is what moves, on its own, so a long
+              summary truncates rather than the wallet.
+            */}
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="text-[14px] font-semibold">{kindWord(row.kind)}</span>
+              <span className="font-mono text-[10.5px] text-[var(--ot-text-3)]">#{row.id.slice(0, 6)}</span>
+              <span className="flex min-w-0 items-center gap-1 text-[12px] text-[var(--ot-text-3)]">
+                {mark ? <WalletMark wallet={mark} size={14} className="flex-none ring-1 ring-[var(--ot-card)]" /> : null}
+                <span className="truncate">{walletName}</span>
+              </span>
             </span>
+            <span className="truncate text-[12px] text-[var(--ot-text-3)]">{what}</span>
           </span>
         </span>
 
         <span className="flex flex-col gap-0.5 sm:items-end sm:text-right">
           <code className="font-mono text-[14px] font-semibold tabular-nums">
+            {ceiling && (row.valueUsd !== null || amount) ? <span className="mr-1 font-sans text-[10.5px] font-medium text-[var(--ot-text-3)]">up to</span> : null}
             {row.valueUsd !== null ? `−${formatMoneyFlat(row.valueUsd)}` : amount ? `−${amount} ${symbol ?? ''}` : '—'}
           </code>
           <code className="font-mono text-[12px] text-[var(--ot-text-3)] tabular-nums">
