@@ -1,6 +1,7 @@
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import type { Plan } from '../core/index.js'
 import type { Arm } from '../wallets/index.js'
+import type { PlanSummary } from './store.js'
 
 /**
  * What the review page draws beside the plan: token icons, chain icons, and
@@ -48,4 +49,33 @@ export function visualsFor(plan: Plan, arms: readonly Arm[], portfolio: Portfoli
   }
 
   return visuals
+}
+
+/** A list row with what the portfolio and the wallets table know beside it. */
+export interface DecoratedSummary extends PlanSummary {
+  assetIconUrl: string | null
+  chainIconUrl: string | null
+  /** The asset's value in USD at today's price, when the portfolio prices it. */
+  valueUsd: number | null
+  wallet: { walletType: string; label: string | null } | null
+}
+
+export function decorateSummary(row: PlanSummary, arms: readonly Arm[], portfolio: Portfolio | null): DecoratedSummary {
+  const held = row.asset ? portfolio?.assets.find((a) => a.assetId.toLowerCase() === row.asset!.id.toLowerCase()) : undefined
+  const chain = portfolio?.chains.find((c) => c.chainId.toLowerCase() === row.chainId.toLowerCase())
+  const address = row.account.caip10.split(':')[2]?.toLowerCase()
+  const arm = arms.find((a) => a.address.toLowerCase() === address)
+  let valueUsd: number | null = null
+  if (row.asset && held?.price !== null && held?.price !== undefined) {
+    const decimals = row.asset.decimals ?? held.asset.decimals
+    valueUsd = (Number(row.asset.amount) / 10 ** decimals) * held.price
+  }
+  return {
+    ...row,
+    asset: row.asset && held ? { ...row.asset, symbol: row.asset.symbol ?? held.asset.symbol, decimals: row.asset.decimals ?? held.asset.decimals } : row.asset,
+    assetIconUrl: held?.asset.iconUrl ?? null,
+    chainIconUrl: chain?.iconUrl ?? null,
+    valueUsd,
+    wallet: arm ? { walletType: arm.walletType, label: arm.label } : null,
+  }
 }

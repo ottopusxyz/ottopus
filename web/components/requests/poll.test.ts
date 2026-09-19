@@ -4,7 +4,13 @@ import { liveRequests, pollRequests, type RequestsState } from './poll'
 
 const NOW = Date.parse('2026-09-10T12:00:00Z')
 function plan(id: string, expiresIn = 60_000, createdAgo = 0): PlanSummary {
-  return { id, version: 1, status: 'awaiting_review', summary: 'Send USDC', reason: 'Has funds', account: { caip10: 'eip155:8453:0x1' }, createdVia: 'agent', createdAt: new Date(NOW - createdAgo).toISOString(), expiresAt: new Date(NOW + expiresIn).toISOString() }
+  const createdAt = new Date(NOW - createdAgo).toISOString()
+  return {
+    id, version: 1, status: 'awaiting_review', kind: 'transfer', summary: 'Send USDC', reason: 'Has funds',
+    account: { caip10: 'eip155:8453:0x1' }, chainId: 'eip155:8453', asset: null, recipient: null, blockedReason: null,
+    createdVia: 'agent', createdAt, statusAt: createdAt, expiresAt: new Date(NOW + expiresIn).toISOString(),
+    assetIconUrl: null, chainIconUrl: null, valueUsd: null, wallet: null,
+  }
 }
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 

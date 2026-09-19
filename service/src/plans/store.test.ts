@@ -11,6 +11,8 @@ import {
   createPlan,
   findPlan,
   listPending,
+  listPlans,
+  summarise,
   mintReviewToken,
   resolveReviewToken,
   revokeReviewTokens,
@@ -280,5 +282,49 @@ describe('review link policy', () => {
     const link = await issueReviewLink(db, { planId: plan.id, version: 1, planExpiresAt: plan.expiresAt }, 'https://ottopus.test')
     await expect(supersedePlan(db, { userId: bob, planId: plan.id, version: 1 })).rejects.toMatchObject({ code: 'not_found' })
     expect(await resolveReviewToken(db, alice, link.token)).not.toBeNull()
+  })
+})
+
+describe('listPlans', () => {
+  it('lists every status, waiting-on-you first, then newest first, one row per plan', async () => {
+    const done = planFor(alice)
+    const waiting = planFor(alice)
+    const old = planFor(alice)
+    const replaced = planFor(alice)
+    for (const plan of [old, done, replaced]) {
+      await createPlan(db, { plan })
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    await createPlan(db, { plan: waiting })
+    await transition(db, { userId: alice, planId: done.id, version: 1, to: 'cancelled' })
+    await createPlan(db, { plan: planFor(alice, { id: replaced.id, version: 2 }) })
+    await transition(db, { userId: alice, planId: replaced.id, version: 1, to: 'superseded' })
+    await createPlan(db, { plan: planFor(bob) })
+
+    // Version 2 of the replaced plan is the newest row of all; the cancelled
+    // one is newer than "old" but sinks below everything still waiting.
+    const rows = await listPlans(db, alice)
+    expect(rows.map((r) => [r.plan.id, r.plan.version, r.plan.status])).toEqual([
+      [replaced.id, 2, 'awaiting_review'],
+      [waiting.id, 1, 'awaiting_review'],
+      [old.id, 1, 'awaiting_review'],
+      [done.id, 1, 'cancelled'],
+    ])
+    expect(rows.filter((r) => r.plan.id === replaced.id)).toHaveLength(1)
+    expect(rows.every((r) => r.plan.userId === alice)).toBe(true)
+  })
+
+  it('summarises a row with the words a list needs and none of the calls', async () => {
+    const plan = planFor(alice)
+    const [row] = (await createPlan(db, { plan }), await listPlans(db, alice))
+    const summary = summarise(row!)
+    expect(summary).toMatchObject({
+      kind: 'transfer',
+      chainId: 'eip155:8453',
+      asset: { id: 'eip155:8453/slip44:60', amount: '1000', symbol: null, decimals: null },
+      recipient: { address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', name: null },
+      blockedReason: null,
+    })
+    expect(JSON.stringify(summary)).not.toContain('"calls"')
   })
 })

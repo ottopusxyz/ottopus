@@ -43,6 +43,8 @@ export interface PlanRecord {
   createdAt: string
   /** When the latest event was written. */
   statusAt: string
+  /** What the latest event carried — the tx hash once submitted, a reason once failed. */
+  statusDetail: Record<string, unknown> | null
 }
 
 /** What a list row needs. No calls, no evidence — the review page has those. */
@@ -50,27 +52,58 @@ export interface PlanSummary {
   id: string
   version: number
   status: PlanStatus
+  kind: Plan['intent']['kind']
   summary: string
   reason: string
   account: { caip10: string; label?: string | undefined }
+  chainId: string
+  /** The asset that leaves, in its own words when the plan recorded them. */
+  asset: { id: string; amount: string; symbol: string | null; decimals: number | null } | null
+  recipient: { address: string; name: string | null } | null
+  /** The block reason, for a row that must say what did not happen. */
+  blockedReason: string | null
   createdVia: 'agent' | 'web'
   expiresAt: string
   createdAt: string
+  statusAt: string
 }
 
 export function summarise(record: PlanRecord): PlanSummary {
   const { plan } = record
+  const [namespace, reference] = plan.resolution.account.caip10.split(':')
+  const words = (id: string) => plan.humanPlan.assets?.find((a) => a.id.toLowerCase() === id.toLowerCase())
+  const transfer = plan.intent.kind === 'transfer' ? plan.intent : null
+  const asset = transfer
+    ? { id: transfer.asset, amount: transfer.amount, symbol: words(transfer.asset)?.symbol ?? null, decimals: words(transfer.asset)?.decimals ?? null }
+    : null
+  const recipient = transfer
+    ? { address: transfer.to.split(':')[2] ?? transfer.to, name: transfer.toName ?? null }
+    : null
   return {
     id: plan.id,
     version: plan.version,
     status: plan.status,
+    kind: plan.intent.kind,
     summary: plan.humanPlan.summary,
     reason: plan.resolution.reason,
     account: plan.resolution.account,
+    chainId: `${namespace}:${reference}`,
+    asset,
+    recipient,
+    blockedReason: plan.humanPlan.warnings.find((w) => w.severity === 'block')?.message ?? null,
     createdVia: plan.createdVia,
     expiresAt: plan.expiresAt,
     createdAt: record.createdAt,
+    statusAt: record.statusAt,
   }
+}
+
+/** Waiting on a person first, then newest first. The order every list shows. */
+export function byAttentionThenNewest(a: PlanRecord, b: PlanRecord): number {
+  const pa = isPending(a.plan.status) ? 0 : 1
+  const pb = isPending(b.plan.status) ? 0 : 1
+  if (pa !== pb) return pa - pb
+  return b.createdAt < a.createdAt ? -1 : b.createdAt > a.createdAt ? 1 : 0
 }
 
 /** A transaction hash. What `submitted` must carry. */
@@ -80,7 +113,7 @@ export const TX_HASH = /^0x[0-9a-f]{64}$/i
 const INITIAL_STATUSES: readonly PlanStatus[] = ['draft', 'awaiting_review', 'blocked']
 
 type PlanRow = typeof plans.$inferSelect
-type EventRow = Pick<typeof planEvents.$inferSelect, 'status' | 'createdAt'>
+type EventRow = Pick<typeof planEvents.$inferSelect, 'status' | 'createdAt' | 'detail'>
 
 /**
  * Status is not stored in the payload — it lives in events — and the hash does
@@ -105,12 +138,13 @@ function toRecord(row: PlanRow, event: EventRow, now = new Date()): PlanRecord {
     grantId: row.grantId,
     createdAt: row.createdAt.toISOString(),
     statusAt: event.createdAt.toISOString(),
+    statusDetail: (event.detail as Record<string, unknown> | null) ?? null,
   }
 }
 
 async function latestEvent(db: PlanDb, planId: string, version: number): Promise<EventRow | null> {
   const [row] = await db
-    .select({ status: planEvents.status, createdAt: planEvents.createdAt })
+    .select({ status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail })
     .from(planEvents)
     .where(and(eq(planEvents.planId, planId), eq(planEvents.planVersion, version)))
     .orderBy(desc(planEvents.seq))
@@ -155,7 +189,7 @@ export async function createPlan(
     const [event] = await tx
       .insert(planEvents)
       .values({ planId: plan.id, planVersion: plan.version, status: plan.status })
-      .returning({ status: planEvents.status, createdAt: planEvents.createdAt })
+      .returning({ status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail })
     return toRecord(row!, event!)
   })
 }
@@ -257,6 +291,7 @@ export async function listPending(db: PlanDb, userId: string): Promise<PlanRecor
       planVersion: planEvents.planVersion,
       status: planEvents.status,
       createdAt: planEvents.createdAt,
+      detail: planEvents.detail,
     })
     .from(planEvents)
     .where(inArray(planEvents.planId, ids))
@@ -271,6 +306,54 @@ export async function listPending(db: PlanDb, userId: string): Promise<PlanRecor
     if (isPending(record.plan.status)) records.push(record)
   }
   return records
+}
+
+/** How much history one list carries. Activity paging is #26's problem. */
+const LIST_LIMIT = 200
+
+/**
+ * Every plan of this person's, one row per plan id at its latest version,
+ * waiting-on-you first and then newest first. Superseded versions are not
+ * separate rows: the replacement is the plan, and the old version's status
+ * is history the review page can show.
+ */
+export async function listPlans(db: PlanDb, userId: string): Promise<PlanRecord[]> {
+  const now = new Date()
+  const rows = await db
+    .select()
+    .from(plans)
+    .where(eq(plans.userId, userId))
+    .orderBy(desc(plans.createdAt), desc(plans.version))
+    .limit(LIST_LIMIT * 2)
+  if (rows.length === 0) return []
+
+  const latestVersion = new Map<string, (typeof rows)[number]>()
+  for (const row of rows) {
+    const held = latestVersion.get(row.id)
+    if (!held || row.version > held.version) latestVersion.set(row.id, row)
+  }
+  const chosen = [...latestVersion.values()].slice(0, LIST_LIMIT)
+
+  const latest = await db
+    .selectDistinctOn([planEvents.planId, planEvents.planVersion], {
+      planId: planEvents.planId,
+      planVersion: planEvents.planVersion,
+      status: planEvents.status,
+      createdAt: planEvents.createdAt,
+      detail: planEvents.detail,
+    })
+    .from(planEvents)
+    .where(inArray(planEvents.planId, chosen.map((r) => r.id)))
+    .orderBy(planEvents.planId, planEvents.planVersion, desc(planEvents.seq))
+  const byVersion = new Map(latest.map((e) => [`${e.planId}:${e.planVersion}`, e]))
+
+  const records: PlanRecord[] = []
+  for (const row of chosen) {
+    const event = byVersion.get(`${row.id}:${row.version}`)
+    if (!event) throw new PlanIntegrityError(`plan ${row.id} v${row.version} has no events`)
+    records.push(toRecord(row, event, now))
+  }
+  return records.sort(byAttentionThenNewest)
 }
 
 export interface MintTokenInput {

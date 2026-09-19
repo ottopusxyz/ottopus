@@ -89,8 +89,19 @@ describe('GET /?pending=1', () => {
     expect(JSON.stringify(body)).not.toContain('"calls"')
   })
 
-  it('refuses any other listing for now', async () => {
-    expect((await app(alice).request('/')).status).toBe(400)
+  it('lists every status without the flag, pending first, with icons and prices beside each row', async () => {
+    const done = planFor(alice)
+    const waiting = planFor(alice)
+    await createPlan(db, { plan: done })
+    await transition(db, { userId: alice, planId: done.id, version: 1, to: 'cancelled' })
+    await createPlan(db, { plan: waiting })
+
+    const res = await app(alice).request('/')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { plans: { id: string; status: string; assetIconUrl: string | null; chainIconUrl: string | null; valueUsd: number | null }[]; count: number }
+    expect(body.count).toBe(2)
+    expect(body.plans.map((p) => [p.id, p.status])).toEqual([[waiting.id, 'awaiting_review'], [done.id, 'cancelled']])
+    expect(body.plans[0]).toMatchObject({ assetIconUrl: 'https://cdn/eth.png', chainIconUrl: 'https://cdn/base.png', valueUsd: 1e-15 })
   })
 })
 
@@ -228,11 +239,40 @@ describe('POST /:id/link', () => {
     expect(expiresAt).toBe(plan.expiresAt)
   })
 
-  it('refuses once the plan is no longer waiting on me', async () => {
+  it('links a settled plan too, so a history row opens to its ended state', async () => {
     const plan = planFor(alice)
     await createPlan(db, { plan })
     await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'cancelled' })
-    expect((await post(alice, `/${plan.id}/link`, {})).status).toBe(409)
+    const res = await post(alice, `/${plan.id}/link`, {})
+    expect(res.status).toBe(201)
+    const { token } = (await res.json()) as { token: string }
+    const read = await app(alice).request(`/${token}`)
+    expect(((await read.json()) as { plan: { status: string } }).plan.status).toBe('cancelled')
+  })
+
+  /** A history row for an expired plan must open, not mint a link dead on arrival. */
+  it('gives an expired plan a read-only link that outlives the plan', async () => {
+    const plan = planFor(alice, { expiresAt: inMinutes(-30) })
+    await createPlan(db, { plan })
+    const res = await post(alice, `/${plan.id}/link`, {})
+    expect(res.status).toBe(201)
+    const { token, expiresAt } = (await res.json()) as { token: string; expiresAt: string }
+    expect(Date.parse(expiresAt)).toBeGreaterThan(Date.now())
+    const read = await app(alice).request(`/${token}`)
+    expect(read.status).toBe(200)
+    expect(((await read.json()) as { plan: { status: string } }).plan.status).toBe('expired')
+  })
+
+  it('returns the transaction hash once a plan is submitted, so a reopened page can keep watching', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'awaiting_signature' })
+    const tx = `0x${'ef'.repeat(32)}`
+    await transition(db, { userId: alice, planId: plan.id, version: 1, to: 'submitted', detail: { txHash: tx } })
+    const { token } = await link(plan.id)
+    const body = (await (await app(alice).request(`/${token}`)).json()) as { plan: { status: string }; statusDetail: { txHash: string } }
+    expect(body.plan.status).toBe('submitted')
+    expect(body.statusDetail).toEqual({ txHash: tx })
   })
 
   it('is a 404 for someone else’s plan', async () => {

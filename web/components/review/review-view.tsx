@@ -4,11 +4,12 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { RequireSession, usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
-import { OttoLoader, StillnessProvider } from '@/components/motion'
+import { StillnessProvider } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
 import { canSign, countdown, effectiveStatus } from './model'
 import { ReviewCard } from './review-card'
+import { ReviewSkeleton } from './review-skeleton'
 import { SignPanel } from './sign-panel'
 import { useReview } from './use-review'
 
@@ -43,7 +44,7 @@ function Review({ token }: { token: string }) {
   if (state.status === 'loading') {
     return (
       <Ground>
-        <OttoLoader label="Otto is opening the request…" />
+        <ReviewSkeleton />
       </Ground>
     )
   }

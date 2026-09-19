@@ -1,16 +1,17 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { z } from 'zod'
 import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
-import { isPending } from '../core/index.js'
-import { visualsFor } from '../plans/visuals.js'
+import { type DecoratedSummary, decorateSummary, visualsFor } from '../plans/visuals.js'
 import { type WalletDb, listWallets } from '../wallets/index.js'
 import {
   type PlanDb,
   PlanError,
+  type PlanSummary,
   TX_HASH,
   findPlan,
   issueReviewLink,
   listPending,
+  listPlans,
   resolveReviewToken,
   summarise,
   transition,
@@ -73,6 +74,20 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
   app.use('*', session)
   const { webUrl } = deps
 
+  /** The rows' icons, prices and wallet clients. An outage costs those, not the list. */
+  const decorate = async (userId: string, rows: PlanSummary[]): Promise<DecoratedSummary[]> => {
+    if (rows.length === 0) return []
+    try {
+      const arms = await listWallets(db as unknown as WalletDb, userId)
+      const portfolio = deps.readPortfolio
+        ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
+        : null
+      return rows.map((row) => decorateSummary(row, arms, portfolio))
+    } catch {
+      return rows.map((row) => decorateSummary(row, [], null))
+    }
+  }
+
   /**
    * Icons and wallet clients for the page, looked up beside the plan and never
    * inside it. A provider outage costs the icons, not the review.
@@ -90,16 +105,16 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
   }
 
   /**
-   * Only the pending list is served today. Activity (#26) will want history,
-   * with its own paging; refusing anything else now keeps that from arriving
-   * as a silent "list everything" nobody meant to ship.
+   * The person's plans: every status, waiting-on-you first, then newest.
+   * `?pending=1` is the subset the nav badge polls. Each row carries the
+   * icon, the price and the wallet client beside it, looked up once per list
+   * from the portfolio cache; none of that is on the plan.
    */
   app.get('/', async (c) => {
-    if (c.req.query('pending') !== '1') {
-      return c.json({ error: 'unsupported', detail: 'only ?pending=1 is served' }, 400)
-    }
-    const records = await listPending(db, c.get('userId'))
-    return c.json({ plans: records.map(summarise), count: records.length })
+    const userId = c.get('userId')
+    const records = c.req.query('pending') === '1' ? await listPending(db, userId) : await listPlans(db, userId)
+    const rows = records.map(summarise)
+    return c.json({ plans: await decorate(userId, rows), count: rows.length })
   })
 
   /**
@@ -114,6 +129,7 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       plan: record.plan,
       walletId: record.walletId,
       statusAt: record.statusAt,
+      statusDetail: record.statusDetail,
       link: { expiresAt: record.linkExpiresAt },
       visuals: await visuals(c.get('userId'), record.plan),
     })
@@ -148,20 +164,20 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
   })
 
   /**
-   * A fresh link to my own plan, for the Requests row. Tokens are stored
-   * hashed, so the one the agent got cannot be read back; minting another is
-   * the honest answer. Only for a plan that is still waiting on me.
+   * A fresh link to my own plan, for a list row. Tokens are stored hashed, so
+   * the one the agent got cannot be read back; minting another is the honest
+   * answer. Any status: a settled or refused plan opens to its ended state,
+   * which is where the reasons are.
    */
   app.post('/:id/link', async (c) => {
     const id = c.req.param('id')
     if (!isUuid(id)) return c.json({ error: 'not_found' }, 404)
     const record = await findPlan(db, c.get('userId'), id)
     if (!record) return c.json({ error: 'not_found' }, 404)
-    if (!isPending(record.plan.status)) return c.json({ error: 'not_pending', status: record.plan.status }, 409)
 
     const link = await issueReviewLink(
       db,
-      { planId: record.plan.id, version: record.plan.version, planExpiresAt: record.plan.expiresAt },
+      { planId: record.plan.id, version: record.plan.version, planExpiresAt: record.plan.expiresAt, status: record.plan.status },
       webUrl,
     )
     return c.json(link, 201)

@@ -524,20 +524,37 @@ export function movePlan(
   })
 }
 
+/** A list row: what the plan is, in words, plus what the portfolio knows beside it. */
 export interface PlanSummary {
   id: string
   version: number
   status: PlanStatusName
+  kind: 'transfer' | 'swap' | 'bridge' | 'supply'
   summary: string
   reason: string
   account: { caip10: string; label?: string }
+  chainId: string
+  asset: { id: string; amount: string; symbol: string | null; decimals: number | null } | null
+  recipient: { address: string; name: string | null } | null
+  blockedReason: string | null
   createdVia: 'agent' | 'web'
   expiresAt: string
   createdAt: string
+  statusAt: string
+  assetIconUrl: string | null
+  chainIconUrl: string | null
+  valueUsd: number | null
+  wallet: { walletType: string; label: string | null } | null
 }
 
+/** Waiting on me only; what the nav badge polls. */
 export function listPendingPlans(credentials: Credentials): Promise<{ plans: PlanSummary[]; count: number }> {
   return call('/plans?pending=1', credentials)
+}
+
+/** Every status, waiting-on-me first and then newest. */
+export function listPlans(credentials: Credentials): Promise<{ plans: PlanSummary[]; count: number }> {
+  return call('/plans', credentials)
 }
 
 /** A fresh link to my own pending plan, for a Requests row. */
