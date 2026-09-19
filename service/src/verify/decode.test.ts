@@ -56,6 +56,13 @@ describe('decodeCall', () => {
     })
   })
 
+  it('names a verified contract that receives plain value, and warns on an unverified one', async () => {
+    const toUsdc = await decodeCall(call(USDC, '0x', '1'), fake())
+    expect(toUsdc).toMatchObject({ source: 'native', isContract: true, verified: true, contractName: 'FiatTokenV2_2' })
+    const toWeird = await decodeCall(call(WEIRD, '0x', '1'), fake())
+    expect(toWeird).toMatchObject({ source: 'native', isContract: true, verified: false })
+  })
+
   it('decodes an ERC-20 transfer from the shipped ABI, verified by Sourcify', async () => {
     const data = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'transfer', args: [EOA, 500_000_000n] })
     const action = await decodeCall(call(USDC, data), fake())

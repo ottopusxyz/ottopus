@@ -92,15 +92,19 @@ export async function decodeCall(call: Call, lookups: Lookups): Promise<DecodedA
   const isContract = hasContractCode(code)
   const base = { target: call.to, isContract, value: call.value }
 
+  // Verification status is about the target, not the calldata: value sent to
+  // a contract with no data still lands in code someone may or may not have
+  // published, and the page should name it either way.
+  const source = isContract ? await lookups.sourcify(call.chainId, address) : null
+  const verified = source !== null
+  const named = source?.name === undefined ? {} : { contractName: source.name }
+
   if (call.data === '0x' || call.data === '') {
-    return { ...base, source: 'native', verified: false, function: 'nativeTransfer()', args: [] }
+    return { ...base, ...named, source: 'native', verified, function: 'nativeTransfer()', args: [] }
   }
 
   const data = call.data as Hex
   const selector = data.slice(0, 10)
-  const source = isContract ? await lookups.sourcify(call.chainId, address) : null
-  const verified = source !== null
-  const named = source?.name === undefined ? {} : { contractName: source.name }
 
   const finish = (
     from: DecodedAction['source'],

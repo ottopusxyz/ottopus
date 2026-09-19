@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { CaipError, NATIVE_COIN_TYPE_CHAINS, nativeAssetOf } from './caip.js'
 import {
+  ALCHEMY_NETWORK,
   chainName,
   explorerAddressUrl,
   explorerTxUrl,
   findChain,
+  providerServes,
   isSupportedChain,
   listChains,
   requireChain,
@@ -49,6 +51,12 @@ describe('the registry', () => {
     expect(() => requireChain('eip155:99999999999')).toThrow(/eip155:99999999999/)
   })
 
+  /** viem holds HyperEVM and two retired testnets under 999. The mainnet wins. */
+  it('resolves a shared id to the mainnet, whatever order viem exports them in', () => {
+    expect(findChain('eip155:999')).toMatchObject({ name: 'HyperEVM', testnet: false })
+    expect(findChain('eip155:999')!.nativeCurrency.symbol).toBe('HYPE')
+  })
+
   it('has no opinion about non-EVM namespaces', () => {
     expect(findChain({ namespace: 'solana', reference: 'mainnet' })).toBeNull()
   })
@@ -62,6 +70,26 @@ describe('the registry', () => {
 describe('rpc resolution', () => {
   it('substitutes the chain id into a provider template', () => {
     expect(rpcUrlFor('eip155:8453', 'https://rpc.example/v1/{chainId}/KEY')).toBe('https://rpc.example/v1/8453/KEY')
+  })
+
+  it('substitutes Alchemy’s network name for a chain it serves', () => {
+    expect(rpcUrlFor('eip155:8453', 'https://{network}.g.alchemy.com/v2/KEY')).toBe('https://base-mainnet.g.alchemy.com/v2/KEY')
+    expect(rpcUrlFor('eip155:56', 'https://{network}.g.alchemy.com/v2/KEY')).toBe('https://bnb-mainnet.g.alchemy.com/v2/KEY')
+    expect(providerServes('eip155:8453', 'https://{network}.g.alchemy.com/v2/KEY')).toBe(true)
+  })
+
+  /** Fantom is in the coin-type table and not on Alchemy; it must still read. */
+  it('falls back to the public endpoint for a chain the provider does not name', () => {
+    const template = 'https://{network}.g.alchemy.com/v2/KEY'
+    expect(providerServes('eip155:250', template)).toBe(false)
+    expect(rpcUrlFor('eip155:250', template)).not.toContain('alchemy')
+    expect(rpcUrlFor('eip155:250', template)).toMatch(/^https:\/\//)
+  })
+
+  it('names only chains viem knows in the Alchemy table', () => {
+    for (const evmId of Object.keys(ALCHEMY_NETWORK)) {
+      expect(isSupportedChain(`eip155:${evmId}`), evmId).toBe(true)
+    }
   })
 
   it('falls back to the public endpoint without a template', () => {

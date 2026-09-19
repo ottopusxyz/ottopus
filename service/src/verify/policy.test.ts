@@ -116,6 +116,52 @@ describe('a transfer that is not what it says', () => {
   })
 })
 
+describe('the calldata is what is checked, not the evidence', () => {
+  /**
+   * Decode an honest transfer, then swap the calldata underneath it. The
+   * evidence still says "10 to Alice"; the bytes say "100000 to Mallory".
+   * A policy that read the evidence would pass this.
+   */
+  it('blocks calldata that the decoded action does not describe', async () => {
+    const honest = [call(USDC, transfer(ALICE, 10n))]
+    const decodedActions = await decodeCalls(honest, lookups)
+    const intent: Intent = { ...usdcIntent, amount: '10' }
+    expect(verifyPlan({ intent, calls: honest, decodedActions }).ok).toBe(true)
+
+    const swapped = [call(USDC, transfer(MALLORY, 100_000n))]
+    const verdict = verifyPlan({ intent, calls: swapped, decodedActions })
+    expect(verdict.ok).toBe(false)
+    expect(!verdict.ok && verdict.reasons.join('\n')).toMatch(/decoded action 1 shows to as 0xd8da6bf2.*but the calldata says otherwise/)
+    expect(!verdict.ok && verdict.reasons.join('\n')).toMatch(/goes to 0x9999…9999/)
+    expect(!verdict.ok && verdict.reasons.join('\n')).toMatch(/moves 100000, but the intent says 10/)
+  })
+
+  it('blocks evidence that names a different function than the bytes', async () => {
+    const calls = [call(USDC, transfer(ALICE, 500_000_000n))]
+    const [action] = await decodeCalls(calls, lookups)
+    const forged = { ...action!, function: 'approve(address,uint256)' }
+    const verdict = verifyPlan({ intent: usdcIntent, calls, decodedActions: [forged] })
+    expect(!verdict.ok && verdict.reasons.join()).toMatch(/is approve\(address,uint256\), but the calldata is transfer/)
+  })
+
+  it('blocks evidence that hides an approval the bytes carry', async () => {
+    const calls = [call(USDC, encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [MALLORY, maxUint256] }))]
+    const [action] = await decodeCalls(calls, lookups)
+    const { approval: _hidden, ...laundered } = action!
+    const verdict = verifyPlan({ intent: usdcIntent, calls, decodedActions: [laundered] })
+    expect(!verdict.ok && verdict.reasons.join()).toMatch(/unlimited approval to 0x9999…9999/)
+  })
+
+  it('blocks evidence whose target or value differs from the call', async () => {
+    const calls = [call(ALICE, '0x', '1000')]
+    const [action] = await decodeCalls(calls, lookups)
+    const wrongTarget = verifyPlan({ intent: nativeIntent, calls, decodedActions: [{ ...action!, target: `${CHAIN}:${MALLORY}` }] })
+    const wrongValue = verifyPlan({ intent: nativeIntent, calls, decodedActions: [{ ...action!, value: '1' }] })
+    expect(!wrongTarget.ok && wrongTarget.reasons.join()).toMatch(/describes 0x9999…9999, but the call targets/)
+    expect(!wrongValue.ok && wrongValue.reasons.join()).toMatch(/says 1 wei, but the call carries 1000/)
+  })
+})
+
 describe('global rules', () => {
   it('blocks an unlimited approval even to a named spender', async () => {
     const approve = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [ROUTER, maxUint256] })

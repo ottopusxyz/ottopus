@@ -21,30 +21,85 @@ export interface Lookups {
   fourByte(selector: string): Promise<string[]>
 }
 
+/**
+ * A chain could not be read. Carries the chain and the provider's one-line
+ * reason and nothing else: viem's own error prints the request URL, and with
+ * a provider template that URL has the API key in it. An error that reaches
+ * a log line or an MCP response must never carry the key.
+ */
+export class RpcReadError extends Error {
+  readonly chainId: string
+  constructor(chainId: string, cause: unknown) {
+    const details = (cause as { details?: unknown })?.details
+    const reason = typeof details === 'string' && details ? details : cause instanceof Error ? cause.name : 'unknown error'
+    super(`could not read ${chainId}: ${reason}`)
+    this.name = 'RpcReadError'
+    this.chainId = chainId
+  }
+}
+
 export interface HttpLookupOptions {
   rpcUrlTemplate?: string | undefined
   sourcifyUrl?: string
   fourByteUrl?: string
-  timeoutMs?: number
+  /** The chain read. Generous: without it nothing can be decoded. */
+  rpcTimeoutMs?: number
+  /** The two lookups. Short: a slow answer degrades to unverified or unknown, and is retried next time. */
+  lookupTimeoutMs?: number
   fetch?: typeof fetch
+  now?: () => number
 }
 
 const SOURCIFY = 'https://sourcify.dev/server'
 const FOUR_BYTE = 'https://www.4byte.directory'
 
+/** How long an answer is trusted. An outage is not an answer and is not kept at all. */
+const FOUND_TTL_MS = 60 * 60_000
+/** "Not verified" can change — people verify contracts — so it is re-asked sooner. */
+const ABSENT_TTL_MS = 10 * 60_000
+
 /**
- * The real lookups. Sourcify and 4byte answers are cached for the process —
- * a contract does not become unverified between two calls, and 4byte's answer
- * for a selector never changes. Code is not cached: a contract can be
- * deployed to an address that was empty a minute ago.
+ * A cache that keeps answers and forgets failures.
+ *
+ * A Sourcify 503 during a lookup must not pin a contract as unverified until
+ * the process restarts; the next plan asks again. Only a definite answer —
+ * found, or a definite 404 — is kept, each for as long as it can be trusted.
+ */
+class Remembered<T> {
+  private readonly entries = new Map<string, { value: Promise<T | undefined>; expires: number }>()
+  constructor(private readonly now: () => number) {}
+
+  get(key: string, load: () => Promise<{ value: T; ttlMs: number } | undefined>): Promise<T | undefined> {
+    const hit = this.entries.get(key)
+    if (hit && hit.expires > this.now()) return hit.value
+    const value = load().then((result) => {
+      if (result === undefined) {
+        this.entries.delete(key)
+        return undefined
+      }
+      this.entries.set(key, { value: Promise.resolve(result.value), expires: this.now() + result.ttlMs })
+      return result.value
+    })
+    // Held while in flight so concurrent callers share one request; replaced
+    // or evicted the moment the answer is known.
+    this.entries.set(key, { value, expires: Number.POSITIVE_INFINITY })
+    return value
+  }
+}
+
+/**
+ * The real lookups. Code is never cached: a contract can be deployed to an
+ * address that was empty a minute ago.
  */
 export function httpLookups(options: HttpLookupOptions = {}): Lookups {
   const doFetch = options.fetch ?? fetch
-  const timeout = options.timeoutMs ?? 8_000
+  const now = options.now ?? Date.now
+  const rpcTimeout = options.rpcTimeoutMs ?? 8_000
+  const lookupTimeout = options.lookupTimeoutMs ?? 3_000
   const sourcifyUrl = options.sourcifyUrl ?? SOURCIFY
   const fourByteUrl = options.fourByteUrl ?? FOUR_BYTE
-  const sourcifyCache = new Map<string, Promise<SourcifyMatch | null>>()
-  const fourByteCache = new Map<string, Promise<string[]>>()
+  const sourcify = new Remembered<SourcifyMatch | null>(now)
+  const fourByte = new Remembered<string[]>(now)
 
   const evmId = (chainId: string) => chainId.split(':')[1]!
 
@@ -52,60 +107,62 @@ export function httpLookups(options: HttpLookupOptions = {}): Lookups {
     async getCode(chainId, address) {
       const client = createPublicClient({
         chain: viemChainFor(chainId),
-        transport: http(rpcUrlFor(chainId, options.rpcUrlTemplate), { timeout }),
+        transport: http(rpcUrlFor(chainId, options.rpcUrlTemplate), { timeout: rpcTimeout, fetchFn: doFetch }),
       })
-      const code = await client.getCode({ address: address as Hex })
-      return code ?? '0x'
+      try {
+        const code = await client.getCode({ address: address as Hex })
+        return code ?? '0x'
+      } catch (err) {
+        throw new RpcReadError(chainId, err)
+      }
     },
 
-    sourcify(chainId, address) {
+    async sourcify(chainId, address) {
       const key = `${chainId}:${address.toLowerCase()}`
-      let hit = sourcifyCache.get(key)
-      if (!hit) {
-        hit = (async () => {
-          try {
-            const res = await doFetch(
-              `${sourcifyUrl}/v2/contract/${evmId(chainId)}/${address}?fields=abi,compilation`,
-              { signal: AbortSignal.timeout(timeout) },
-            )
-            if (!res.ok) return null
-            const body = (await res.json()) as {
-              abi?: Abi
-              match?: string
-              compilation?: { name?: string }
-            }
-            if (!Array.isArray(body.abi)) return null
-            return { abi: body.abi, name: body.compilation?.name, match: body.match ?? 'match' }
-          } catch {
-            return null
+      const answer = await sourcify.get(key, async () => {
+        try {
+          const res = await doFetch(
+            `${sourcifyUrl}/v2/contract/${evmId(chainId)}/${address}?fields=abi,compilation`,
+            { signal: AbortSignal.timeout(lookupTimeout) },
+          )
+          if (res.status === 404) return { value: null, ttlMs: ABSENT_TTL_MS }
+          if (!res.ok) return undefined
+          const body = (await res.json()) as {
+            abi?: Abi
+            match?: string
+            compilation?: { name?: string }
           }
-        })()
-        sourcifyCache.set(key, hit)
-      }
-      return hit
+          if (!Array.isArray(body.abi)) return undefined
+          return {
+            value: { abi: body.abi, name: body.compilation?.name, match: body.match ?? 'match' },
+            ttlMs: FOUND_TTL_MS,
+          }
+        } catch {
+          return undefined
+        }
+      })
+      return answer ?? null
     },
 
-    fourByte(selector) {
-      let hit = fourByteCache.get(selector)
-      if (!hit) {
-        hit = (async () => {
-          try {
-            // Oldest first: the earliest registration for a selector is the
-            // one real contracts use; later ones are mostly collisions.
-            const res = await doFetch(
-              `${fourByteUrl}/api/v1/signatures/?hex_signature=${selector}&ordering=created_at`,
-              { signal: AbortSignal.timeout(timeout) },
-            )
-            if (!res.ok) return []
-            const body = (await res.json()) as { results?: { text_signature: string }[] }
-            return (body.results ?? []).map((r) => r.text_signature)
-          } catch {
-            return []
-          }
-        })()
-        fourByteCache.set(selector, hit)
-      }
-      return hit
+    async fourByte(selector) {
+      const answer = await fourByte.get(selector, async () => {
+        try {
+          // Oldest first: the earliest registration for a selector is the
+          // one real contracts use; later ones are mostly collisions.
+          const res = await doFetch(
+            `${fourByteUrl}/api/v1/signatures/?hex_signature=${selector}&ordering=created_at`,
+            { signal: AbortSignal.timeout(lookupTimeout) },
+          )
+          if (!res.ok) return undefined
+          const body = (await res.json()) as { results?: { text_signature: string }[] }
+          const signatures = (body.results ?? []).map((r) => r.text_signature)
+          // No registration is a definite answer too, and one that can change.
+          return { value: signatures, ttlMs: signatures.length ? FOUND_TTL_MS : ABSENT_TTL_MS }
+        } catch {
+          return undefined
+        }
+      })
+      return answer ?? []
     },
   }
 }

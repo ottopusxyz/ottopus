@@ -1,9 +1,11 @@
+import { type Hex, decodeFunctionData, maxUint256, toFunctionSignature } from 'viem'
 import {
   type Call,
   type DecodedAction,
   type Intent,
   type TransferIntent,
   type Warning,
+  accountOn,
   chainName,
   isNativeAsset,
   parseAccountId,
@@ -12,6 +14,7 @@ import {
   sameChain,
   sourceChainOf,
 } from '../core/index.js'
+import { KNOWN_ABI, KNOWN_BY_SELECTOR } from './abi.js'
 
 /**
  * Does this plan do what the intent says?
@@ -50,11 +53,97 @@ const short = (caip10: string) => {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
+/**
+ * What the calldata says, read here and not taken from the decoded action.
+ *
+ * The decoded actions are evidence for the page. The policy must not trust
+ * them for anything it can read itself: if the actions and the calls ever
+ * disagreed — a bug, or a tampered plan — a check that read the actions
+ * would pass the calldata it never looked at. Only the shipped ABI is used,
+ * because only the shipped ABI is ours.
+ */
+interface Read {
+  signature: string
+  args: readonly unknown[]
+}
+
+function readCalldata(call: Call): Read | null {
+  if (call.data === '0x' || call.data === '') return null
+  const item = KNOWN_BY_SELECTOR.get(call.data.slice(0, 10))
+  if (!item) return null
+  try {
+    const { args } = decodeFunctionData({ abi: KNOWN_ABI, data: call.data as Hex })
+    return { signature: toFunctionSignature(item), args: args ?? [] }
+  } catch {
+    return null
+  }
+}
+
+/** An approval the calldata itself carries, by the same reading the decoder uses. */
+function approvalIn(call: Call): { spender: string; amount: bigint | 'unlimited' } | null {
+  const read = readCalldata(call)
+  if (!read) return null
+  const chain = parseChainId(call.chainId)
+  switch (read.signature) {
+    case 'approve(address,uint256)':
+    case 'increaseAllowance(address,uint256)': {
+      const amount = read.args[1] as bigint
+      return { spender: accountOn(chain, String(read.args[0])), amount: amount === maxUint256 ? 'unlimited' : amount }
+    }
+    case 'setApprovalForAll(address,bool)':
+      return read.args[1] === true ? { spender: accountOn(chain, String(read.args[0])), amount: 'unlimited' } : null
+    default:
+      return null
+  }
+}
+
 /** The calls and their decodings must pair up, or nothing below means anything. */
 const pairing: Rule = ({ calls, decodedActions }) =>
   calls.length === decodedActions.length
     ? []
     : [{ block: `${calls.length} calls but ${decodedActions.length} decoded actions; the plan cannot be checked` }]
+
+/**
+ * The evidence must describe the calls it is attached to. Where the calldata
+ * is something we can read ourselves, the decoded action has to say the same
+ * — same target, same function, same arguments. Evidence that disagrees with
+ * its calldata is either a decoder bug or a plan edited after decoding, and
+ * both are reasons to stop.
+ */
+const evidenceMatchesCalls: Rule = ({ calls, decodedActions }) => {
+  const findings: Finding[] = []
+  calls.forEach((call, i) => {
+    const action = decodedActions[i]
+    if (!action) return
+    if (action.target.toLowerCase() !== call.to.toLowerCase()) {
+      findings.push({ block: `decoded action ${i + 1} describes ${short(action.target)}, but the call targets ${short(call.to)}` })
+      return
+    }
+    if (action.value !== call.value) {
+      findings.push({ block: `decoded action ${i + 1} says ${action.value} wei, but the call carries ${call.value}` })
+    }
+    const read = readCalldata(call)
+    if (read === null) {
+      if ((call.data === '0x' || call.data === '') && action.source !== 'native') {
+        findings.push({ block: `decoded action ${i + 1} is ${action.function}, but the call carries no calldata` })
+      }
+      return
+    }
+    if (action.function !== read.signature) {
+      findings.push({ block: `decoded action ${i + 1} is ${action.function}, but the calldata is ${read.signature}` })
+      return
+    }
+    const mismatch = read.args.findIndex((v, j) => {
+      const shown = action.args[j]?.value
+      const actual = typeof v === 'bigint' ? v.toString() : typeof v === 'string' ? v.toLowerCase() : String(v)
+      return shown !== actual
+    })
+    if (mismatch !== -1) {
+      findings.push({ block: `decoded action ${i + 1} shows ${action.args[mismatch]?.name ?? `arg ${mismatch}`} as ${action.args[mismatch]?.value}, but the calldata says otherwise` })
+    }
+  })
+  return findings
+}
 
 const sameChainAsIntent: Rule = ({ intent, calls }) => {
   const chain = sourceChainOf(intent)
@@ -74,19 +163,31 @@ const noDelegatecall: Rule = ({ decodedActions }) =>
     .filter((a) => /delegat/i.test(a.function))
     .map((a) => ({ block: `${a.function} on ${short(a.target)} is a delegatecall, which is never allowed` }))
 
-const approvals: Rule = ({ decodedActions, allowedSpenders = [] }) => {
+/**
+ * Approvals are read off the calldata. The decoded action's approval is
+ * consulted only where the calldata is not ours to read, so an approval a
+ * verified ABI revealed still counts, while one the evidence merely claims
+ * cannot hide a different one in the bytes.
+ */
+const approvals: Rule = ({ calls, decodedActions, allowedSpenders = [] }) => {
   const allowed = new Set(allowedSpenders.map((s) => s.toLowerCase()))
   const findings: Finding[] = []
-  for (const action of decodedActions) {
-    if (!action.approval) continue
-    const { spender, amount } = action.approval
+  calls.forEach((call, i) => {
+    const fromCalldata = approvalIn(call)
+    const approval =
+      fromCalldata ??
+      (readCalldata(call) === null && decodedActions[i]?.approval
+        ? { spender: decodedActions[i]!.approval!.spender, amount: decodedActions[i]!.approval!.amount }
+        : null)
+    if (!approval) return
+    const { spender, amount } = approval
     if (amount === 'unlimited') {
       findings.push({ block: `an unlimited approval to ${short(spender)}; approvals are exact or nothing` })
     }
     if (!allowed.has(spender.toLowerCase())) {
       findings.push({ block: `an approval to ${short(spender)}, which the intent does not name` })
     }
-  }
+  })
   return findings
 }
 
@@ -151,7 +252,7 @@ const transferRules: Rule = (input) => {
     if (call.value !== intent.amount) {
       findings.push({ block: `the call sends ${call.value} wei, but the intent says ${intent.amount}` })
     }
-    if (action.source !== 'native') {
+    if (call.data !== '0x' && call.data !== '') {
       findings.push({ block: `a native transfer carries calldata (${action.function}); it should carry none` })
     }
     return findings
@@ -165,22 +266,27 @@ const transferRules: Rule = (input) => {
   if (!action.isContract) {
     findings.push({ block: `the token address ${short(call.to)} has no code on ${chainName(call.chainId)}` })
   }
-  if (action.function !== 'transfer(address,uint256)') {
-    findings.push({ block: `the call is ${action.function}, not transfer(address,uint256)` })
+  // Read from the bytes, with our own ABI. The decoded action is not consulted
+  // for this: it is what the page shows, and this is what the wallet sends.
+  const read = readCalldata(call)
+  if (read === null || read.signature !== 'transfer(address,uint256)') {
+    findings.push({ block: `the call is ${read?.signature ?? action.function}, not transfer(address,uint256)` })
     return findings
   }
-  const [to, amount] = action.args
-  if (to?.value !== recipient) {
-    findings.push({ block: `the transfer goes to ${short(`${call.chainId}:${to?.value}`)}, not to ${short(intent.to)}` })
+  const to = String(read.args[0]).toLowerCase()
+  const amount = String(read.args[1])
+  if (to !== recipient) {
+    findings.push({ block: `the transfer goes to ${short(`${call.chainId}:${to}`)}, not to ${short(intent.to)}` })
   }
-  if (amount?.value !== intent.amount) {
-    findings.push({ block: `the transfer moves ${amount?.value}, but the intent says ${intent.amount}` })
+  if (amount !== intent.amount) {
+    findings.push({ block: `the transfer moves ${amount}, but the intent says ${intent.amount}` })
   }
   return findings
 }
 
 const GLOBAL: readonly Rule[] = [
   pairing,
+  evidenceMatchesCalls,
   sameChainAsIntent,
   noDelegatecall,
   approvals,
