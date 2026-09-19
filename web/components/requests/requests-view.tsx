@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Otto } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
-import { Button, EmptyState, ErrorState } from '@/components/ui'
+import { Button, EmptyState, ErrorState, NOTHING_SIGNED } from '@/components/ui'
 import { ApiError } from '@/lib/api'
 import { PlanTable, PlanTableSkeleton } from './plan-table'
 import { useRequests } from './provider'
@@ -57,7 +57,7 @@ export function RequestsView() {
     return (
       <ErrorState
         title="Couldn’t read your requests"
-        description="Try again to see what is waiting on you."
+        description={`Try again to see what is waiting on you. ${NOTHING_SIGNED}`}
         action={
           <Button variant="secondary" onClick={refresh}>
             Try again
