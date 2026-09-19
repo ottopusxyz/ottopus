@@ -14,12 +14,15 @@ already known for every arm; the mark follows from that, everywhere.
 
 ## Where they came from
 
-All fifteen are the connector icons from
+The first fifteen are the connector icons from
 [rainbow-me/rainbowkit](https://github.com/rainbow-me/rainbowkit)
 (`packages/rainbowkit/src/wallets/walletConnectors/<wallet>/<wallet>.svg`),
 fetched 2026-09-09 and unmodified. The repository is MIT-licensed; each mark is
 its wallet's own trademark, used here to identify that wallet and nothing else.
 Most are on a 28×28 grid; Rainbow, Backpack, Bitget and Brave carry their own.
+
+Ambire and Infinex were added on 2026-09-12 from the wallets' own brand assets,
+on their own grids (40 and 46), since rainbowkit carries neither.
 
 A type without a file falls back to a lettered brand tile (`WALLET_AVATARS`),
 and a watch-only address shows an eye — watched, not held — regardless of

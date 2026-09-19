@@ -1,13 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { readdirSync } from 'node:fs'
 import {
   ADDRESS_RE,
   LINK_ERRORS,
+  MARKS,
   MAX_ARMS,
   WALLET_NAMES,
   armName,
   WALLET_AVATARS,
   walletClientName,
+  walletMark,
 } from './naming'
 
 const arm = (walletType: string, label: string | null = null) => ({ walletType, label })
@@ -216,5 +219,33 @@ describe("Privy's wallet client identifiers", () => {
   it.each(['rabby', 'okx', 'brave', 'bitget'])('does not use the bare spelling %s', (bare) => {
     expect(WALLET_NAMES[bare]).toBeUndefined()
     expect(WALLET_AVATARS[bare]).toBeUndefined()
+  })
+})
+
+/**
+ * A mark is drawn only for a type in MARKS, whatever is in the folder — so a
+ * file dropped into public/wallets did nothing until its type was listed
+ * here, which is exactly how Ambire and Infinex went missing. The list and
+ * the folder have to agree in both directions.
+ */
+describe('wallet marks', () => {
+  const files = readdirSync(new URL('../../public/wallets', import.meta.url))
+    .filter((f) => f.endsWith('.svg'))
+    .map((f) => f.slice(0, -4))
+    .sort()
+
+  it('lists every file in public/wallets, and nothing that is not there', () => {
+    expect([...MARKS].sort()).toEqual(files)
+  })
+
+  it('draws a mark for a listed type and none for an unlisted one', () => {
+    expect(walletMark('ambire')).toBe('/wallets/ambire.svg')
+    expect(walletMark('infinex')).toBe('/wallets/infinex.svg')
+    expect(walletMark('base_account')).toBe('/wallets/coinbase_wallet.svg')
+    expect(walletMark('watch_only')).toBeNull()
+  })
+
+  it('names every client it has a mark for', () => {
+    for (const type of MARKS) expect(WALLET_NAMES[type], type).toBeDefined()
   })
 })

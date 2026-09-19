@@ -44,6 +44,8 @@ export const WALLET_AVATARS: Readonly<Record<string, { bg: string; fg: string }>
   trust: { bg: '#306FB2', fg: '#FFF0DC' }, // 4.64, darkened from #3375BB
   uniswap: { bg: '#D60066', fg: '#FFF0DC' }, // 4.63, darkened from #FF007A
   safe: { bg: '#12FF80', fg: '#16213E' }, // 11.84
+  ambire: { bg: '#6000FF', fg: '#FFF0DC' }, // 6.20
+  infinex: { bg: '#FE6F39', fg: '#16213E' }, // 5.93
 }
 
 /**
@@ -71,6 +73,9 @@ export const WALLET_NAMES: Readonly<Record<string, string>> = {
   brave_wallet: 'Brave Wallet',
   bitget_wallet: 'Bitget Wallet',
   backpack: 'Backpack',
+  ledger: 'Ledger',
+  ambire: 'Ambire',
+  infinex: 'Infinex',
   wallet_connect: 'WalletConnect',
   walletconnect: 'WalletConnect',
   watch_only: 'Watch-only',
@@ -125,9 +130,9 @@ const MARK_ALIASES: Readonly<Record<string, string>> = {
 }
 
 /** The types with a file in public/wallets. Kept in step with that folder. */
-const MARKS = new Set([
-  'backpack', 'bitget_wallet', 'brave_wallet', 'coinbase_wallet', 'ledger', 'metamask',
-  'okx_wallet', 'phantom', 'rabby_wallet', 'rainbow', 'safe', 'trust', 'uniswap',
+export const MARKS: ReadonlySet<string> = new Set([
+  'ambire', 'backpack', 'bitget_wallet', 'brave_wallet', 'coinbase_wallet', 'infinex', 'ledger',
+  'metamask', 'okx_wallet', 'phantom', 'rabby_wallet', 'rainbow', 'safe', 'trust', 'uniswap',
   'wallet_connect', 'zerion',
 ])
 
