@@ -58,6 +58,27 @@ function toInfo(chain: Chain): ChainInfo {
 }
 
 /** The chain, or null. Non-EVM namespaces are simply not here. */
+/**
+ * A chain could not be read. Carries the chain and the provider's one-line
+ * reason and nothing else: viem's own error prints the request URL, and with
+ * a provider template that URL has the API key in it. An error that reaches
+ * a log line or an MCP response must never carry the key.
+ *
+ * It lives here, beside `rpcUrlFor`, because whoever builds the URL owns the
+ * error that must not print it — the decoder, the receipt job and the
+ * simulator all read chains, and one sanitiser has to serve them all.
+ */
+export class RpcReadError extends Error {
+  readonly chainId: string
+  constructor(chainId: string, cause: unknown) {
+    const details = (cause as { details?: unknown })?.details
+    const reason = typeof details === 'string' && details ? details : cause instanceof Error ? cause.name : 'unknown error'
+    super(`could not read ${chainId}: ${reason}`)
+    this.name = 'RpcReadError'
+    this.chainId = chainId
+  }
+}
+
 export function findChain(chain: ChainId | string): ChainInfo | null {
   const parsed = typeof chain === 'string' ? parseChainId(chain) : chain
   if (parsed.namespace !== 'eip155') return null

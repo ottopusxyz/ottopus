@@ -1,6 +1,6 @@
 import { type Abi, type Hex, createPublicClient, http } from 'viem'
 import { normalize } from 'viem/ens'
-import { rpcUrlFor, viemChainFor } from '../core/index.js'
+import { RpcReadError, rpcUrlFor, viemChainFor } from '../core/index.js'
 
 /**
  * What the decoder asks the outside world. Three questions, each behind an
@@ -26,23 +26,6 @@ export interface Lookups {
   sourcify(chainId: string, address: string): Promise<SourcifyMatch | null>
   /** Text signatures for a selector, most trustworthy first. Empty on failure. */
   fourByte(selector: string): Promise<string[]>
-}
-
-/**
- * A chain could not be read. Carries the chain and the provider's one-line
- * reason and nothing else: viem's own error prints the request URL, and with
- * a provider template that URL has the API key in it. An error that reaches
- * a log line or an MCP response must never carry the key.
- */
-export class RpcReadError extends Error {
-  readonly chainId: string
-  constructor(chainId: string, cause: unknown) {
-    const details = (cause as { details?: unknown })?.details
-    const reason = typeof details === 'string' && details ? details : cause instanceof Error ? cause.name : 'unknown error'
-    super(`could not read ${chainId}: ${reason}`)
-    this.name = 'RpcReadError'
-    this.chainId = chainId
-  }
 }
 
 export interface HttpLookupOptions {

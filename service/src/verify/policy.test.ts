@@ -1,6 +1,6 @@
 import { encodeFunctionData, maxUint256 } from 'viem'
 import { describe, expect, it } from 'vitest'
-import type { Call, DecodedAction, Intent } from '../core/index.js'
+import type { AssetDelta, Call, DecodedAction, Intent, Simulation } from '../core/index.js'
 import { KNOWN_ABI } from './abi.js'
 import { decodeCalls } from './decode.js'
 import type { Lookups } from './lookups.js'
@@ -45,9 +45,36 @@ const usdcIntent: Intent = { kind: 'transfer', asset: `${CHAIN}/erc20:${USDC}`, 
 const transfer = (to: string, amount: bigint) =>
   encodeFunctionData({ abi: KNOWN_ABI, functionName: 'transfer', args: [to, amount] })
 
-async function verify(intent: Intent, calls: Call[], allowedSpenders?: string[]) {
+async function verify(intent: Intent, calls: Call[], allowedSpenders?: string[], simulation?: Simulation | null) {
   const decodedActions = await decodeCalls(calls, lookups)
-  return verifyPlan({ intent, calls, decodedActions, ...(allowedSpenders ? { allowedSpenders } : {}) })
+  return verifyPlan({
+    intent,
+    calls,
+    decodedActions,
+    ...(allowedSpenders ? { allowedSpenders } : {}),
+    ...(simulation !== undefined ? { simulation } : {}),
+  })
+}
+
+/** A simulation that observed exactly what was asked, unless a test says otherwise. */
+function ran(over: Partial<Simulation> = {}): Simulation {
+  return {
+    provider: 'eth_simulateV1',
+    chainId: CHAIN,
+    blockNumber: '51119499',
+    success: true,
+    assetChanges: [delta(`${CHAIN}/erc20:${USDC}`, '-500000000', 'USDC', 6)],
+    gasUsed: '44831',
+    gasUsd: '0.01',
+    resultHash: 'a'.repeat(64),
+    ranAt: '2026-09-10T12:00:00.000Z',
+    ...over,
+  }
+}
+
+function delta(assetId: string, diff: string, symbol: string | null = null, decimals: number | null = null): AssetDelta {
+  const post = diff.startsWith('-') ? '0' : diff
+  return { assetId, symbol, decimals, diff, pre: diff.startsWith('-') ? diff.slice(1) : '0', post }
 }
 
 describe('a clean transfer', () => {
@@ -221,5 +248,93 @@ describe('blockWarnings', () => {
     const warnings = blockWarnings(verdict)
     expect(warnings[0]!.severity).toBe('block')
     expect(warnings.at(-1)!.code).toBe('unverified_contract')
+  })
+})
+
+describe('what the simulation observed', () => {
+  const usdcCall = () => [call(USDC, transfer(ALICE, 500_000_000n))]
+
+  it('is not required: a plan on a chain nobody simulates still passes', async () => {
+    expect(await verify(usdcIntent, usdcCall(), undefined, null)).toEqual({ ok: true, warnings: [] })
+  })
+
+  it('passes when the observed movement is exactly what the plan says', async () => {
+    expect(await verify(usdcIntent, usdcCall(), undefined, ran())).toEqual({ ok: true, warnings: [] })
+  })
+
+  it('blocks a simulation that failed, and repeats the chain’s reason', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      success: false,
+      failedCall: 1,
+      revertReason: 'ERC20: transfer amount exceeds balance',
+      assetChanges: [],
+    }))
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'the simulation failed on call 1: ERC20: transfer amount exceeds balance',
+    )
+  })
+
+  /**
+   * The rule the decoder cannot enforce. The calldata says transfer(alice,
+   * 500 USDC) and reads correctly; the token's own code takes a second asset
+   * on the way out. Only running it finds that.
+   */
+  it('blocks a second asset leaving that the plan never mentioned', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      assetChanges: [
+        delta(`${CHAIN}/erc20:${USDC}`, '-500000000', 'USDC', 6),
+        delta(`${CHAIN}/erc20:${ROUTER}`, '-9000000000000000000', 'WETH', 18),
+      ],
+    }))
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'the simulation shows WETH leaving the wallet as well, which the plan does not mention',
+    )
+  })
+
+  it('lets an asset arriving pass without comment', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      assetChanges: [
+        delta(`${CHAIN}/erc20:${USDC}`, '-500000000', 'USDC', 6),
+        delta(`${CHAIN}/slip44:60`, '5000', 'ETH', 18),
+      ],
+    }))
+    expect(verdict).toEqual({ ok: true, warnings: [] })
+  })
+
+  it('blocks more of the asset leaving than the plan promised', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      assetChanges: [delta(`${CHAIN}/erc20:${USDC}`, '-500000001', 'USDC', 6)],
+    }))
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'the simulation shows 500000001 leaving, but the plan says 500000000',
+    )
+  })
+
+  /** Fee-on-transfer tokens move less than asked. Nobody is harmed, so it warns. */
+  it('only warns when less leaves than the plan promised', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      assetChanges: [delta(`${CHAIN}/erc20:${USDC}`, '-499000000', 'USDC', 6)],
+    }))
+    expect(verdict.ok).toBe(true)
+    expect(verdict.warnings.map((w) => w.code)).toEqual(['simulation_amount_below_plan'])
+  })
+
+  it('warns when the traced balances never mention the asset being sent', async () => {
+    const verdict = await verify(usdcIntent, usdcCall(), undefined, ran({
+      assetChanges: [delta(`${CHAIN}/slip44:60`, '-21000', 'ETH', 18)],
+    }))
+    // The unmentioned outgoing asset blocks; the missing source asset warns.
+    expect(verdict.ok).toBe(false)
+    expect(verdict.warnings.map((w) => w.code)).toContain('simulation_no_source_change')
+  })
+
+  it('says nothing about balances it did not trace', async () => {
+    expect(await verify(usdcIntent, usdcCall(), undefined, ran({ assetChanges: [] }))).toEqual({
+      ok: true,
+      warnings: [],
+    })
   })
 })

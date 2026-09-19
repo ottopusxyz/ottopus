@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { RpcReadError, httpLookups } from './lookups.js'
+import { RpcReadError } from '../core/index.js'
+import { httpLookups } from './lookups.js'
 
 /**
  * The caching policy, with fetch answered from memory. Answers are kept;

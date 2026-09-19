@@ -155,18 +155,51 @@ export const decodedActionSchema = z.strictObject({
 })
 
 /**
+ * What one asset did to one balance, as a simulation observed it.
+ *
+ * Signed base units, so a row carries its own direction and nothing has to
+ * infer it from the intent: `-500000000` left, `+1200000000000000` arrived.
+ * `pre` and `post` are kept because "500 of 500 USDC" and "500 of 40,000
+ * USDC" are different sentences, and the page can only say the first if it
+ * knows what was there before.
+ *
+ * The symbol and decimals are the simulator's reading of the token, which is
+ * why they are nullable: an unlabelled contract is a real answer, and a row
+ * with no words is still a row worth showing as raw units.
+ */
+export const assetDeltaSchema = z.strictObject({
+  assetId: assetIdSchema,
+  symbol: z.string().nullable(),
+  decimals: z.number().int().min(0).max(36).nullable(),
+  /** Signed base units. Negative leaves the account. */
+  diff: z.string().regex(/^-?[0-9]+$/),
+  pre: z.string().regex(/^[0-9]+$/),
+  post: z.string().regex(/^[0-9]+$/),
+})
+
+/**
  * One simulation run. A prediction, never a guarantee, and never from the
- * provider that built the route (invariant 4). Null on a plan until #23 lands;
- * a transfer can be reviewed from its decoded intent alone.
+ * provider that built the route (invariant 4). Null on a plan whose chain no
+ * simulator serves; a transfer can still be reviewed from its decoded intent.
+ *
+ * Evidence, not payload: the hash does not cover it (see hash.ts), so a plan
+ * can be re-simulated on open and before submit — which is what #24 needs —
+ * without the review page's binding changing under the person reading it.
  */
 export const simulationSchema = z.strictObject({
   provider: z.string().min(1),
   chainId: chainIdSchema,
   blockNumber: z.string().regex(/^[0-9]+$/),
   success: z.boolean(),
-  assetChanges: z.array(z.unknown()),
+  /** Every balance the run moved, for the account that signs. */
+  assetChanges: z.array(assetDeltaSchema),
+  /** Gas units the whole batch burned. */
+  gasUsed: z.string().regex(/^[0-9]+$/),
+  /** The same in dollars, or "unknown" when no price was to hand. */
   gasUsd: z.string(),
   revertReason: z.string().optional(),
+  /** Which call reverted, 1-based, when one did. */
+  failedCall: z.number().int().positive().optional(),
   resultHash: z.string().min(1),
   ranAt: z.iso.datetime(),
 })
@@ -257,6 +290,7 @@ export type PlanDraft = z.infer<typeof planDraftSchema>
 export type Plan = z.infer<typeof planSchema>
 export type DecodedAction = z.infer<typeof decodedActionSchema>
 export type Simulation = z.infer<typeof simulationSchema>
+export type AssetDelta = z.infer<typeof assetDeltaSchema>
 export type Call = z.infer<typeof callSchema>
 export type Warning = z.infer<typeof warningSchema>
 export type Outcome = z.infer<typeof outcomeSchema>

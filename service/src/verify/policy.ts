@@ -3,6 +3,7 @@ import {
   type Call,
   type DecodedAction,
   type Intent,
+  type Simulation,
   type TransferIntent,
   type Warning,
   accountOn,
@@ -38,6 +39,12 @@ export interface VerifyInput {
    * A transfer names none, so any approval in a transfer plan is blocked.
    */
   allowedSpenders?: readonly string[]
+  /**
+   * What the simulation observed, when one ran. Null or absent is "not
+   * observed" and never counts against a plan: a chain no simulator serves
+   * still gets reviewed, on the decoded intent alone.
+   */
+  simulation?: Simulation | null
 }
 
 export type Verdict =
@@ -204,6 +211,82 @@ const nativeValue: Rule = ({ intent, calls }) => {
     .map((c) => ({ block: `${c.value} wei of native value to ${short(c.to)}, which the intent did not ask for` }))
 }
 
+/**
+ * A simulation that ran and said no.
+ *
+ * The strongest signal the policy has, and the only one that comes from
+ * executing the calls rather than reading them. Blocking here rather than
+ * warning: a plan the chain has already refused cannot be signed into
+ * anything but a wasted fee.
+ */
+const simulationOutcome: Rule = ({ simulation }) => {
+  if (!simulation || simulation.success) return []
+  const which = simulation.failedCall ? `call ${simulation.failedCall}` : 'the batch'
+  const why = simulation.revertReason ? `: ${simulation.revertReason}` : ''
+  return [{ block: `the simulation failed on ${which}${why}` }]
+}
+
+/**
+ * What the simulation saw leave, against what the plan says leaves.
+ *
+ * This is the one check that can catch a call whose bytes are honest and
+ * whose effect is not — a token whose `transfer` moves a second balance, a
+ * proxy pointing somewhere new. The decoder reads intent; this reads outcome.
+ *
+ * Asymmetric on purpose. More of the intended asset leaving than the plan
+ * promised is unambiguous and blocks. Less, or none observed, only warns:
+ * fee-on-transfer and rebasing tokens make the exact figure a bad thing to
+ * fail closed on, and nobody is harmed by a plan that moves less than they
+ * agreed to. A *different* asset leaving is always a block, whatever its
+ * size, because the person never agreed to that one at all.
+ */
+const simulationMatchesIntent: Rule = ({ intent, simulation }) => {
+  if (!simulation || !simulation.success || simulation.assetChanges.length === 0) return []
+  const sourceAsset = (intent.kind === 'swap' ? intent.from : intent.asset).toLowerCase()
+  // A swap quoted by amountOut has no fixed input, so there is no promise to
+  // measure against; the other-asset rule below still applies.
+  const promised = intent.kind === 'swap' ? (intent.amountIn ? BigInt(intent.amountIn) : null) : BigInt(intent.amount)
+  const findings: Finding[] = []
+  const mine = simulation.assetChanges.find((c) => c.assetId.toLowerCase() === sourceAsset)
+
+  for (const change of simulation.assetChanges) {
+    if (change.assetId.toLowerCase() === sourceAsset) continue
+    if (BigInt(change.diff) >= 0n) continue
+    const name = change.symbol ?? change.assetId
+    findings.push({
+      block: `the simulation shows ${name} leaving the wallet as well, which the plan does not mention`,
+    })
+  }
+
+  if (promised === null) return findings
+  if (!mine) {
+    findings.push({
+      warn: {
+        severity: 'caution' as const,
+        code: 'simulation_no_source_change',
+        message: 'the simulation did not observe the asset the plan says is being sent',
+        saferAlternative: 'Check the decoded call below before signing.',
+      },
+    })
+    return findings
+  }
+  const left = -BigInt(mine.diff)
+  if (left > promised) {
+    findings.push({
+      block: `the simulation shows ${left} leaving, but the plan says ${promised}`,
+    })
+  } else if (left < promised) {
+    findings.push({
+      warn: {
+        severity: 'caution' as const,
+        code: 'simulation_amount_below_plan',
+        message: `the simulation shows ${left} leaving where the plan says ${promised}; the token may take a fee`,
+      },
+    })
+  }
+  return findings
+}
+
 /** Not blocking, but the page must say it. */
 const unverifiedTargets: Rule = ({ decodedActions }) =>
   decodedActions
@@ -291,6 +374,8 @@ const GLOBAL: readonly Rule[] = [
   noDelegatecall,
   approvals,
   nativeValue,
+  simulationOutcome,
+  simulationMatchesIntent,
   unverifiedTargets,
   unknownCalldata,
 ]
