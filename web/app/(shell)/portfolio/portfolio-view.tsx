@@ -6,7 +6,7 @@ import { usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { BubbleField, OttoLoader, SeaLife } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
-import { Figure, FirstIntentNudge, PageHeader, TabBar } from '@/components/shell'
+import { Figure, IntentNudge, IntentNudgeOverlay, PageHeader, TabBar, promptsFor, useRailNudge } from '@/components/shell'
 import { Button, Callout, EmptyState, ErrorState } from '@/components/ui'
 import {
   ArmCard,
@@ -18,8 +18,8 @@ import {
   type WalletsFailure,
 } from '@/components/wallets'
 import type { Arm } from '@/lib/api'
-import { cn } from '@/lib/cn'
 import { formatDelta, formatMoney, formatMoneyFlat, formatShare } from '@/lib/format'
+import { useMediaQuery } from '@/lib/use-media-query'
 import {
   Holdings, NetworkFilter, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
   type PortfolioState,
@@ -78,10 +78,19 @@ function ConnectedPortfolio() {
 }
 
 /**
+ * The rail: a third of the section, within reason. A strict third is 339px on
+ * a 1280 screen and 552px on a 1920 one — the first is tighter than a card
+ * wants, the second is half the rail wasted. Only at xl: between lg and xl the
+ * column is about 760px, and a third of that holds nothing well.
+ */
+const RAIL_WIDTH = 'xl:w-[clamp(360px,33%,440px)]'
+const RAIL_MEDIA = '(min-width: 1280px)'
+
+/**
  * Where the ambient layer goes on a view that keeps a rail: in the rail, which
  * on a wide screen is the only open water there is.
  */
-const RAIL_WATER = 'xl:left-auto xl:w-[352px]'
+const RAIL_WATER = `xl:left-auto ${RAIL_WIDTH}`
 
 /**
  * The portfolio's water. Both tabs stand on it — the same canvas as the empty
@@ -139,8 +148,14 @@ export function Frame({
   const balancesLoading = wallets.length > 0 && (!portfolioState || portfolioState.status === 'loading')
   const linked = wallets.length > 0
   const free = MAX_ARMS - wallets.length
-  /** The one view that carries the nudge in its own right-hand rail. */
+  /** The one view that carries a right-hand rail. */
   const tokensView = linked && tab !== 'wallets'
+  const hasDefi = (selected?.protocols.length ?? 0) > 0
+  const prompts = useMemo(() => promptsFor(hasReading ? selected : null), [hasReading, selected])
+  // The rail exists at xl. It carries the nudge only when DeFi has not taken
+  // it; the sidebar's compact nudge steps aside exactly then, and no longer.
+  const wide = useMediaQuery(RAIL_MEDIA)
+  useRailNudge(wide && tokensView && !hasDefi)
 
   return (
     <div data-portfolio className="relative flex min-h-0 flex-1 flex-col [&>*]:shrink-0">
@@ -247,7 +262,7 @@ export function Frame({
               <div className="relative flex min-h-0 flex-1">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   {balancesLoading ? <SkeletonShelf rows={3} avatar={36} className="m-4 sm:m-[22px]" /> : hasReading && selected ? (
-                    <Holdings portfolio={selected} wallets={wallets} />
+                    <Holdings portfolio={selected} wallets={wallets} show={hasDefi ? 'wallet' : 'all'} />
                   ) : (
                     // S4's error state, not a sentence. The last line is the
                     // one that matters on a surface that moves money: naming
@@ -264,17 +279,21 @@ export function Frame({
                     />
                   )}
                 </div>
-                {/* The right-hand space. Reserved as a column of its own so the
-                    table reads left-aligned rather than adrift in the middle;
-                    the nudge is the only thing in it today. Below xl there is
-                    no room for a rail, so it stays the overlay it was — now
-                    anchored to this section rather than to the whole page. */}
-                <aside aria-label="Suggestions" className={cn(
-                  'ot-scroll absolute right-3 bottom-3 left-3 z-20 max-h-[45dvh] overflow-y-auto rounded-2xl bg-[var(--ot-card)] shadow-lg sm:left-auto sm:w-[400px]',
-                  'xl:static xl:z-auto xl:max-h-none xl:w-[352px] xl:shrink-0 xl:rounded-none xl:bg-transparent xl:pt-1 xl:shadow-none',
-                )}>
-                  <FirstIntentNudge />
-                </aside>
+                {/* The right-hand column. DeFi when there is any — the protocol
+                    cards beside the tokens, the way a portfolio app splits
+                    them — and otherwise the nudge, which is what the rail was
+                    for before. Below xl there is no room for a rail: the
+                    protocols stay in the column and the nudge is the overlay. */}
+                {hasReading && selected && hasDefi ? (
+                  <aside aria-label="DeFi positions" className={`hidden min-h-0 shrink-0 flex-col pt-1 xl:flex ${RAIL_WIDTH}`}>
+                    <Holdings portfolio={selected} wallets={wallets} show="defi" />
+                  </aside>
+                ) : (
+                  <aside aria-label="Suggestions" className={`hidden shrink-0 pt-1 xl:block ${RAIL_WIDTH}`}>
+                    <IntentNudge prompts={prompts} />
+                  </aside>
+                )}
+                <IntentNudgeOverlay prompts={prompts} className="xl:hidden" />
               </div>
             </Sea>
           )}
@@ -327,9 +346,7 @@ export function Frame({
       )}
 
       {dialog}
-      {tokensView ? null : (
-        <FirstIntentNudge className="absolute right-3 bottom-3 left-3 z-20 max-h-[45dvh] overflow-y-auto rounded-2xl bg-[var(--ot-card)] shadow-lg sm:left-auto" />
-      )}
+      {tokensView ? null : <IntentNudgeOverlay prompts={prompts} />}
     </div>
   )
 }

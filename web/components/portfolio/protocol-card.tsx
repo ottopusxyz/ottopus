@@ -12,7 +12,7 @@ import { groupKind, heldTag } from './protocol-labels'
 import { WalletMark, walletRefOf, type WalletRef } from './wallet-marks'
 
 /** The same three-then-four column grid as the token table, so the two read as one list. */
-const COLUMNS = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.75fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
+const COLUMNS = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.75fr)] @xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
 const GUTTER = 'gap-2.5 px-2.5 sm:gap-5 sm:px-3.5'
 
 /** "1 holding has no price" — the title behind a partial figure. */
@@ -131,7 +131,7 @@ function Row({ holding, module, chain, wallet, currency }: {
           <span className="block truncate font-mono text-[12px] font-medium tabular-nums sm:text-[13px]">{compact}</span>
         </DetailPopover>
       </div>
-      <span role="cell" className="hidden lg:block" />
+      <span role="cell" className="hidden @xl:block" />
       <div role="cell" className="min-w-0">
         <DetailPopover label={priced ? `${debt ? 'Owed' : 'Value'}: ${formatMoneyFlat(holding.value!, currency)}` : 'Price unavailable'}
           className="block w-full text-right" title={priced ? (debt ? 'Owed' : 'Value') : undefined}

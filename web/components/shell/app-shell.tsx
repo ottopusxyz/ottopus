@@ -1,9 +1,13 @@
+'use client'
+
 import type { ReactNode } from 'react'
 import { OttoBadge } from '@/components/brand'
 import { AccountMenu } from './account-menu'
 import { AgentCard } from './agent-card'
 import { BottomNav } from './bottom-nav'
 import { ShellNav } from './nav'
+import { IntentNudge } from './first-intent-nudge'
+import { NudgePlacementProvider, useSidebarNudge } from './nudge-placement'
 
 export interface AppShellProps {
   children: ReactNode
@@ -36,7 +40,16 @@ const COLUMN = 'bg-[var(--ot-card)] border-[var(--ot-border)] px-[14px] lg:col-s
  * Still no drawer. A bottom bar needs no trigger, no focus trap and no escape
  * key, which is exactly why it is the right answer here.
  */
-export function AppShell({ children, agent, account }: AppShellProps) {
+export function AppShell(props: AppShellProps) {
+  return (
+    <NudgePlacementProvider>
+      <Shell {...props} />
+    </NudgePlacementProvider>
+  )
+}
+
+function Shell({ children, agent, account }: AppShellProps) {
+  const sidebarNudge = useSidebarNudge()
   return (
     <div className="ot-app-shell flex min-h-dvh flex-col bg-[var(--ot-page)] p-0 sm:p-6">
       <a
@@ -96,6 +109,8 @@ export function AppShell({ children, agent, account }: AppShellProps) {
           aria-label="Account and agent"
           className={`${COLUMN} hidden flex-col gap-3 pt-4 pb-5 lg:row-start-3 lg:flex`}
         >
+          {/* Otto asks on every route, unless the portfolio's rail is already asking. */}
+          {sidebarNudge ? <IntentNudge variant="compact" /> : null}
           {agent ?? <AgentCard />}
           {/* The theme control and sign-out live inside the menu. The shell is
               the only chrome the app has, and Settings carries a second copy

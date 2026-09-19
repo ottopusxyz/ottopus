@@ -19,7 +19,14 @@ import { WalletMark, WalletMarks, holdersOf, walletRefsOf } from './wallet-marks
  * is under its protocol, so nothing in this table is ever negative and every
  * balance is one a plan could spend.
  */
-const COLUMNS = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.75fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
+/*
+ * Container queries, not viewport ones: the same table now lives in a full
+ * column and, for protocols, in a 360px rail beside it, on the same screen.
+ * `@xl` is the container's 576px — four columns have room from there, and a
+ * card in the rail keeps the three a phone gets. Whatever scrolls these rows
+ * carries `@container`.
+ */
+const COLUMNS = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.75fr)] @xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.55fr)_minmax(0,1fr)]'
 
 /** One padding value for the header and every row, or the columns drift apart. */
 const GUTTER = 'gap-2.5 px-2.5 sm:gap-5 sm:px-3.5'
@@ -73,7 +80,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
       <div role="row" className={`grid ${COLUMNS} ${GUTTER} pt-1 pb-2 text-[10px] font-semibold tracking-[0.06em] text-[var(--ot-text-2)] uppercase`}>
         <span role="columnheader">Asset</span>
         <span role="columnheader" className="text-right">Balance</span>
-        <span role="columnheader" className="hidden text-right lg:block">Share</span>
+        <span role="columnheader" className="hidden text-right @xl:block">Share</span>
         <span role="columnheader" className="text-right">Value</span>
       </div>
       <div role="rowgroup" aria-label="Assets" className="space-y-2">
@@ -121,7 +128,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
               <WalletMarks holders={holdersOf(token.holdings, walletRefs)} />
               <Balance amount={token.amount} decimals={token.asset.decimals} symbol={symbol} label="Total balance" />
             </div>
-            <span role="cell" className="hidden text-right text-[12px] text-[var(--ot-text-2)] lg:block">{formatShare(token.share)}</span>
+            <span role="cell" className="hidden text-right text-[12px] text-[var(--ot-text-2)] @xl:block">{formatShare(token.share)}</span>
             <div role="cell" onClick={stop} className="min-w-0">
               <DetailPopover label={token.priced ? `Value: ${formatMoneyFlat(token.value, currency)}` : 'Price unavailable'} className="block w-full text-right"
                 title={token.priced ? 'Value' : undefined}
@@ -130,7 +137,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
                   {token.priced ? formatMoneyFlat(token.value, currency) : '—'}
                 </span>
               </DetailPopover>
-              <span className="mt-1 block text-right text-[10px] text-[var(--ot-text-3)] lg:hidden">{formatShare(token.share)}</span>
+              <span className="mt-1 block text-right text-[10px] text-[var(--ot-text-3)] @xl:hidden">{formatShare(token.share)}</span>
             </div>
           </div>
         )
