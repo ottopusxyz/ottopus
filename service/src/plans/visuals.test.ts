@@ -35,9 +35,9 @@ const portfolio = {
 } as unknown as Portfolio
 
 describe('visuals beside the plan', () => {
-  it('finds the token, the chain and the wallet client by the ids the plan carries', () => {
+  it('finds the token, the chain and the wallet client by the ids the plan carries', async () => {
     const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
-    expect(visualsFor(plan, arms, portfolio)).toEqual({
+    expect(await visualsFor(plan, arms, portfolio)).toEqual({
       assets: { 'eip155:8453/slip44:60': { symbol: 'ETH', name: 'Ether', iconUrl: 'https://cdn/eth.png' } },
       chains: { 'eip155:8453': { name: 'Base', iconUrl: 'https://cdn/base.png', nativeAssetId: 'eip155:8453/slip44:60', nativeSymbol: 'ETH', nativeDecimals: 18 } },
       wallets: { [ACCOUNT]: { walletType: 'rabby', label: 'Main' } },
@@ -50,9 +50,9 @@ describe('visuals beside the plan', () => {
    * that comes from core, not from a balance provider. Icons are the part
    * that goes missing.
    */
-  it('keeps only what is known: the chain from core, no icons, no wallet', () => {
+  it('keeps only what is known: the chain from core, no icons, no wallet', async () => {
     const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
-    expect(visualsFor(plan, [], null)).toEqual({
+    expect(await visualsFor(plan, [], null)).toEqual({
       assets: {},
       chains: {
         'eip155:8453': {
@@ -65,5 +65,57 @@ describe('visuals beside the plan', () => {
       },
       wallets: {},
     })
+  })
+})
+
+describe('an asset the portfolio has never seen', () => {
+  /**
+   * A trade's receiving side, which nobody holds yet by definition. Without
+   * a registry the one row the person is deciding about had no name and no
+   * icon.
+   */
+  const registry = {
+    name: 'fake',
+    async byAssetId(assetId: string) {
+      return assetId.endsWith('efed')
+        ? {
+            assetId,
+            symbol: 'DEGEN',
+            name: 'Degen',
+            decimals: 18,
+            iconUrl: 'https://cdn/degen.webp',
+            priceUsd: 0.001,
+            verified: true,
+          }
+        : null
+    },
+    async find() {
+      return null
+    },
+  }
+  const swap = () =>
+    planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b', {
+      intent: {
+        kind: 'swap',
+        from: 'eip155:8453/slip44:60',
+        to: 'eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed',
+        amountIn: '1000',
+      },
+    })
+
+  it('takes the words and the icon from the registry', async () => {
+    const visuals = await visualsFor(swap(), [], null, registry)
+    expect(visuals.assets['eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed']).toEqual({
+      symbol: 'DEGEN',
+      name: 'Degen',
+      iconUrl: 'https://cdn/degen.webp',
+    })
+  })
+
+  it('leaves the row out rather than inventing one when nobody knows it', async () => {
+    const visuals = await visualsFor(swap(), [], null, { ...registry, async byAssetId() {
+      return null
+    } })
+    expect(visuals.assets).toEqual({})
   })
 })

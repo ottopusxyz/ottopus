@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
+import { chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
@@ -277,6 +278,60 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       }
       const { kind: _kind, linkExpiresAt: _link, ...structured } = outcome
       return text(body, structured)
+    },
+  )
+
+  /**
+   * Turning a token's name into something a prepare_* tool will accept.
+   *
+   * Every prepare_* tool insists on a CAIP-19 asset id and tells the agent
+   * never to guess a contract from a symbol — which left it nowhere to go
+   * for any token the person does not already hold, since get_portfolio only
+   * lists holdings. The receiving side of a swap is exactly that case. So
+   * agents went looking elsewhere, which is the one thing a tool surface
+   * should make unnecessary.
+   *
+   * No scope: this reads a public token list and nothing about the person.
+   */
+  server.registerTool(
+    'find_asset',
+    {
+      title: 'Find an asset',
+      description:
+        'Turn a token symbol or contract address into the CAIP-19 asset id that prepare_transfer and ' +
+        'prepare_trade need, with its decimals, name and price. Use it for any token the person does ' +
+        'not already hold — get_portfolio covers the ones they do. Read-only, and it reveals nothing ' +
+        'about the person. A symbol can be ambiguous, so the address it resolved to comes back too: ' +
+        'show it before spending anything.',
+      inputSchema: {
+        chain: z.string().describe('CAIP-2 chain id, e.g. eip155:8453 for Base.'),
+        query: z
+          .string()
+          .describe('A symbol like USDC or DEGEN, or a 0x contract address. The chain’s own currency by symbol works too.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ chain, query }) => {
+      if (!deps.tokens) {
+        return failure('Token lookup is not available on this deployment — no token registry is configured.')
+      }
+      const found = await deps.tokens.find(chain, query)
+      if (!found) {
+        return failure(
+          `No token matching "${query}" was found on ${chain}. Check the chain, or give the contract address instead of the symbol.`,
+        )
+      }
+      const address = found.assetId.split(':').pop() ?? ''
+      const lines = [
+        `${found.name} (${found.symbol}) on ${chainName(chain)}`,
+        `assetId ${found.assetId}`,
+        `${found.decimals} decimals — an amount of 1 ${found.symbol} is "1${'0'.repeat(found.decimals)}" in base units`,
+        ...(found.priceUsd === null ? [] : [`about $${found.priceUsd} each`]),
+        found.verified
+          ? 'Listed as verified by the token registry, which is a listing claim and not a safety check.'
+          : 'Not marked verified by the token registry. Show the address to the person before spending anything.',
+      ]
+      return text(lines.join('\n'), { ...found, address })
     },
   )
 

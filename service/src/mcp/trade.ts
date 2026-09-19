@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import { RouteError, type RouteConnector, type RouteQuote } from '../connectors/route/index.js'
+import type { TokenRegistry } from '../connectors/tokens/index.js'
 import {
   type PlanDraft,
   type TradeIntent,
@@ -55,6 +56,12 @@ export const TRADE_PLAN_TTL_MS = 5 * 60_000
 export interface SwapDeps extends PrepareDeps {
   /** Null on a deployment with no routing provider configured. */
   router: RouteConnector | null
+  /**
+   * What an asset is called when the portfolio has never seen it, which for
+   * the receiving side of a trade is the normal case. Null degrades the
+   * words, never the plan.
+   */
+  tokens: TokenRegistry | null
 }
 
 export interface PrepareTradeInput {
@@ -99,14 +106,29 @@ interface AssetWords {
   decimals: number
 }
 
-/** What to call an asset. The portfolio knows; failing that, the chain's currency or the contract. */
-function wordsFor(assetId: string, portfolio: Portfolio | null): AssetWords {
+/**
+ * What to call an asset.
+ *
+ * The portfolio first, because it is what the person actually holds and it
+ * is priced. Then the token registry, which is the only source for the side
+ * of a trade they do not have yet — and getting that wrong is not cosmetic:
+ * the summary is hashed, so a swap into an unheld token was permanently
+ * recorded as "9,500,037,168,996,562,157 units of 0x4ed4…efed" rather than
+ * "9.5 DEGEN". The last resort stays, and now means nobody at all knows this
+ * token.
+ */
+async function wordsFor(
+  assetId: string,
+  portfolio: Portfolio | null,
+  tokens: TokenRegistry | null,
+): Promise<AssetWords> {
   const held = portfolio?.assets.find((a) => a.assetId.toLowerCase() === assetId.toLowerCase())
   if (held) return { symbol: held.asset.symbol, decimals: held.asset.decimals }
+  const known = await tokens?.byAssetId(assetId)
+  if (known) return { symbol: known.symbol, decimals: known.decimals }
   const parsed = parseAssetId(assetId)
-  const chain = { namespace: parsed.namespace, reference: parsed.reference }
   if (isNativeAsset(assetId)) {
-    const info = findChain(chain)
+    const info = findChain({ namespace: parsed.namespace, reference: parsed.reference })
     return info ? { symbol: info.nativeCurrency.symbol, decimals: info.nativeCurrency.decimals } : { symbol: 'units', decimals: 0 }
   }
   return { symbol: `units of ${truncateAddress(parsed.assetReference)}`, decimals: 0 }
@@ -227,8 +249,12 @@ export async function prepareTrade(
   const portfolio = await deps.readPortfolio(
     arms.map((arm) => ({ walletId: arm.id, namespace: arm.namespace, address: arm.address })),
   )
-  const fromWords = wordsFor(intent.from, portfolio)
-  const toWords = wordsFor(intent.to, portfolio)
+  // Both sides in one round trip: the registry caches, and the receiving
+  // side is the one the portfolio cannot answer.
+  const [fromWords, toWords] = await Promise.all([
+    wordsFor(intent.from, portfolio, deps.tokens),
+    wordsFor(intent.to, portfolio, deps.tokens),
+  ])
   const native = isNativeAsset(intent.from)
   const chosen = resolveTradeWallet({
     intent,

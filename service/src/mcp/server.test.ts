@@ -119,6 +119,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   lookups,
   simulator: null,
   router: null,
+  tokens: null,
   createPlan: planSink().createPlan,
   issueReviewLink: async (planId, version) => ({
     token: 'tok',
@@ -178,11 +179,12 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers four read tools and three that write, and says which is which', async () => {
+  it('offers five read tools and three that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       'cancel_plan',
+      'find_asset',
       'get_plan',
       'get_portfolio',
       'list_wallets',
@@ -1159,5 +1161,78 @@ describe('prepare_trade', () => {
     const res = (await send(client)) as { isError?: boolean; content: { text: string }[] }
     expect(res.isError).toBe(true)
     expect(res.content[0]!.text).toContain('plans:write')
+  })
+})
+
+describe('find_asset', () => {
+  const registry = {
+    name: 'fake',
+    async byAssetId() {
+      return null
+    },
+    async find(chain: string, query: string) {
+      if (query.toUpperCase() !== 'DEGEN') return null
+      return {
+        assetId: `${chain}/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed`,
+        symbol: 'DEGEN',
+        name: 'Degen',
+        decimals: 18,
+        iconUrl: 'https://cdn/degen.webp',
+        priceUsd: 0.00104,
+        verified: true,
+      }
+    },
+  }
+
+  /**
+   * The gap this closes: every prepare_* tool demands a CAIP-19 id and tells
+   * the agent never to guess a contract from a symbol, while get_portfolio
+   * only lists holdings. For a swap's receiving side that left nowhere to go.
+   */
+  it('turns a symbol into the asset id a prepare tool will take', async () => {
+    const { client } = await connected(undefined, { tokens: registry })
+    const res = (await call(client, 'find_asset', { chain: BASE, query: 'degen' })) as Result
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0]!.text).toContain('Degen (DEGEN) on Base')
+    expect(res.content[0]!.text).toContain(`assetId ${BASE}/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed`)
+    // Decimals are the thing agents get wrong, so the base-unit example is spelled out.
+    expect(res.content[0]!.text).toContain('an amount of 1 DEGEN is "1000000000000000000" in base units')
+    expect(res.structuredContent).toMatchObject({ symbol: 'DEGEN', decimals: 18, verified: true })
+  })
+
+  /** A listing claim is not a safety check, and the wording must not imply it is. */
+  it('says what "verified" does and does not mean', async () => {
+    const { client } = await connected(undefined, { tokens: registry })
+    const ok = (await call(client, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
+    expect(ok.content[0]!.text).toContain('a listing claim and not a safety check')
+
+    const unverified = { ...registry, async find(c: string, q: string) {
+      const found = await registry.find(c, q)
+      return found ? { ...found, verified: false } : null
+    } }
+    const { client: other } = await connected(undefined, { tokens: unverified })
+    const res = (await call(other, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
+    expect(res.content[0]!.text).toContain('Show the address to the person before spending anything')
+  })
+
+  it('says plainly when nothing matches, and suggests the address', async () => {
+    const { client } = await connected(undefined, { tokens: registry })
+    const res = (await call(client, 'find_asset', { chain: BASE, query: 'ZZZNOTATOKEN' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('give the contract address instead of the symbol')
+  })
+
+  it('says so when the deployment has no registry', async () => {
+    const { client } = await connected(undefined, { tokens: null })
+    const res = (await call(client, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('no token registry is configured')
+  })
+
+  /** Public token metadata says nothing about the person, so no grant is needed. */
+  it('needs no scope at all', async () => {
+    const { client } = await connected([], { tokens: registry })
+    const res = (await call(client, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
+    expect(res.isError).toBeFalsy()
   })
 })

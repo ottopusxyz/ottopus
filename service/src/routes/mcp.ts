@@ -6,6 +6,7 @@ import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } f
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { lifiConnector } from '../connectors/route/index.js'
+import { lifiTokens } from '../connectors/tokens/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
@@ -95,6 +96,7 @@ if (!config.databaseUrl) {
      * turns it back on, and the pipeline is still tested that way.
      */
     simulator: null,
+    tokens: lifiTokens({ apiKey: config.lifiApiKey }),
     router: lifiConnector({
       apiKey: config.lifiApiKey,
       ...(config.lifiApiUrl ? { baseUrl: config.lifiApiUrl } : {}),

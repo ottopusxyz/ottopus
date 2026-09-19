@@ -1,4 +1,5 @@
 import type { Portfolio } from '../connectors/portfolio/index.js'
+import type { TokenRegistry } from '../connectors/tokens/index.js'
 import type { Plan } from '../core/index.js'
 import { findChain, nativeAssetIdOf } from '../core/index.js'
 import type { Arm } from '../wallets/index.js'
@@ -39,6 +40,12 @@ export interface ChainVisual {
 function assetIdsOf(plan: Plan): string[] {
   const ids = new Set<string>()
   if (plan.intent.kind === 'transfer') ids.add(plan.intent.asset)
+  // Both sides of a trade. The receiving side is the one that needed a
+  // registry, and the one the person is deciding about.
+  if (plan.intent.kind === 'swap' || plan.intent.kind === 'bridge') {
+    ids.add(plan.intent.from)
+    ids.add(plan.intent.to)
+  }
   for (const a of plan.humanPlan.assets ?? []) ids.add(a.id)
   // A simulation can name assets the intent never did — a swap's output, a
   // token a call moved on the side. Those rows are on the page, so their
@@ -52,13 +59,33 @@ function accountsOf(plan: Plan): string[] {
   return [plan.resolution.account.caip10, ...plan.resolution.candidatesConsidered.map((c) => c.account)]
 }
 
-export function visualsFor(plan: Plan, arms: readonly Arm[], portfolio: Portfolio | null): Visuals {
+export async function visualsFor(
+  plan: Plan,
+  arms: readonly Arm[],
+  portfolio: Portfolio | null,
+  tokens: TokenRegistry | null = null,
+): Promise<Visuals> {
   const visuals: Visuals = { assets: {}, chains: {}, wallets: {} }
 
-  for (const id of assetIdsOf(plan)) {
-    const row = portfolio?.assets.find((a) => a.assetId.toLowerCase() === id.toLowerCase())
-    if (row) visuals.assets[id] = { symbol: row.asset.symbol, name: row.asset.name, iconUrl: row.asset.iconUrl }
-  }
+  /**
+   * The portfolio first, then the token registry.
+   *
+   * A trade's receiving side is not in the portfolio by definition — nobody
+   * holds it yet — so on a swap the icon and the name were simply missing
+   * from the one row the person is deciding about. The registry is the only
+   * source for it. A lookup that fails costs an icon and nothing else.
+   */
+  await Promise.all(
+    assetIdsOf(plan).map(async (id) => {
+      const row = portfolio?.assets.find((a) => a.assetId.toLowerCase() === id.toLowerCase())
+      if (row) {
+        visuals.assets[id] = { symbol: row.asset.symbol, name: row.asset.name, iconUrl: row.asset.iconUrl }
+        return
+      }
+      const known = await tokens?.byAssetId(id)
+      if (known) visuals.assets[id] = { symbol: known.symbol, name: known.name, iconUrl: known.iconUrl }
+    }),
+  )
 
   const [namespace, reference] = plan.resolution.account.caip10.split(':')
   const chainId = `${namespace}:${reference}`
