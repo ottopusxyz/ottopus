@@ -66,8 +66,8 @@ export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
     unpriced,
     wallet: { value: walletValue, share: shareOf(walletValue, total), unpriced: walletUnpriced },
     assets: assets.map((row) => ({ ...row, share: shareOf(row.value, total) })),
-    // A partly priced card has no honest share: its value is a floor, not a figure.
-    protocols: protocols.map((app) => ({ ...app, share: app.unpriced > 0 ? 0 : shareOf(app.value, total) })),
+    // What has no price counts as nothing, and a card's share is of what it is worth.
+    protocols: protocols.map((app) => ({ ...app, share: shareOf(app.value, total) })),
     arms,
   }
 }

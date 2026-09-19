@@ -138,7 +138,10 @@ export function formatDelta(
 
 /** A 0..1 share as a percentage. Below a tenth of a percent, say so. */
 export function formatShare(share: number): string {
-  if (!Number.isFinite(share) || share <= 0) return '—'
+  // A row worth nothing is 0.0% of the whole, the same way its value reads
+  // $0.00 — a dash beside a figure of zero looked like a missing reading.
+  if (!Number.isFinite(share)) return '—'
+  if (share <= 0) return '0.0%'
   if (share < 0.001) return '<0.1%'
   return `${(share * 100).toFixed(1)}%`
 }

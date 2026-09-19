@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
-import { usePrivyAvailable } from '@/components/auth'
+import { useIdentity, usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { BubbleField, OttoLoader, SeaLife } from '@/components/motion'
 import { SkeletonShelf } from '@/components/motion/loaders'
@@ -24,7 +24,9 @@ import {
   Holdings, NetworkFilter, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
   type PortfolioState,
 } from '@/components/portfolio'
+import { balanceLine, greeting } from '@/components/portfolio/greeting'
 import { selectPortfolio } from '@/components/portfolio/select-portfolio'
+import { WalletMarks, walletRefsOf } from '@/components/portfolio/wallet-marks'
 
 /**
  * Portfolio, per P2 in the design: aggregate on top, per-wallet below.
@@ -47,6 +49,7 @@ function ConnectedPortfolio() {
   const { state, linkWallet, linking, linkError, addWatchOnly } = useWallets()
   const [linkOpen, setLinkOpen] = useState(false)
   const tab = useSearchParams().get('tab') ?? 'tokens'
+  const identity = useIdentity()
 
   const wallets = armsOf(state)
   const portfolio = usePortfolio(wallets, state.status !== 'loading')
@@ -54,6 +57,7 @@ function ConnectedPortfolio() {
   return (
     <Frame
       wallets={wallets}
+      person={identity ? { name: identity.label, mono: identity.mono ?? false } : null}
       portfolioState={portfolio.state}
       onRefresh={portfolio.refresh}
       loading={state.status === 'loading'}
@@ -112,6 +116,8 @@ function Sea({ ambient, children }: { ambient?: string; children: React.ReactNod
 
 interface FrameProps {
   wallets: Arm[]
+  /** Who is signed in, for the greeting. Null greets without a name. */
+  person?: { name: string; mono: boolean } | null
   portfolioState?: PortfolioState
   onRefresh?: () => void
   loading?: boolean
@@ -125,6 +131,7 @@ interface FrameProps {
 
 export function Frame({
   wallets,
+  person = null,
   portfolioState,
   onRefresh,
   loading = false,
@@ -135,6 +142,8 @@ export function Frame({
   dialog,
 }: FrameProps) {
   const [network, setNetwork] = useState<string | null>(null)
+  // Read once: a greeting that flips from gm to hello mid-visit is a clock, not a greeting.
+  const [hour] = useState(() => new Date().getHours())
   const portfolio = portfolioState ? portfolioOf(portfolioState) : null
   const selectedNetwork = portfolio?.chains.some((chain) => chain.chainId === network) ? network : null
   const selected = useMemo(() => portfolio ? selectPortfolio(portfolio, selectedNetwork) : null, [portfolio, selectedNetwork])
@@ -162,18 +171,26 @@ export function Frame({
       <PageHeader
         title="Portfolio"
         eyebrow={
-          linked
-            ? `Total balance · ${wallets.length} wallet${wallets.length > 1 ? 's' : ''}`
-            : 'Total balance'
+          <span className="flex flex-col gap-1">
+            <strong className="text-[15px] font-semibold text-[var(--ot-text)]">{greeting(person?.name, hour, person?.mono)}</strong>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {balanceLine(wallets.length)}
+              {linked ? <WalletMarks holders={[...walletRefsOf(wallets).values()]} /> : null}
+            </span>
+          </span>
         }
         headline={money ? <Figure {...money} /> : loading || linked || failure
           ? <Figure whole="—" /> : <Figure whole="$0" fraction="00" />}
         detail={loading ? 'Loading wallets…' : failure && !linked ? 'Wallets unavailable' : !linked ? 'No wallets linked yet.' : balancesLoading ? 'Reading balances…' : !hasReading ? 'Balances unavailable' : (
           <span>
-            {delta?.text ?? 'No change today'}
+            {/* Green up, red down: the same pair every change figure on the page uses. */}
+            {delta ? (
+              <span className={delta.direction === 'up' ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-block-text)]'}>{delta.text}</span>
+            ) : (
+              'No change today'
+            )}
             {selectedNetwork ? ` · ${portfolio?.chains.find((chain) => chain.chainId === selectedNetwork)?.name}` : ''}
             {missing.length > 0 ? ' · Partial total' : ''}
-            {selected && selected.unpriced > 0 ? ` · ${selected.unpriced} unpriced` : ''}
             {portfolioState?.status === 'failed' ? ' · Last successful reading' : ''}
           </span>
         )}

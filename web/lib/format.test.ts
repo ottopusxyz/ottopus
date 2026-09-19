@@ -146,8 +146,8 @@ describe('formatShare', () => {
     expect(formatShare(0.0002)).toBe('<0.1%')
   })
 
-  it('has nothing to show for a row with no positive value', () => {
-    expect(formatShare(0)).toBe('—')
+  it('calls a row worth nothing 0.0%, and only a non-number a dash', () => {
+    expect(formatShare(0)).toBe('0.0%')
     expect(formatShare(Number.NaN)).toBe('—')
   })
 })

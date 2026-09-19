@@ -81,7 +81,7 @@ describe('portfolio network selection', () => {
     expect(portfolio.arms[0]?.total).toBe(180)
   })
 
-  it('counts what has no price and denies a partly priced card a share', () => {
+  it('counts what has no price, and a partly priced card still gets its share', () => {
     const unpricedToken = { ...row('eip155:1', [0]), assetId: 'eip155:1/erc20:dust', holdings: [{ walletId: 'wallet-0', amount: '1', value: null }] }
     const partial: Portfolio = {
       ...portfolio,
@@ -94,7 +94,8 @@ describe('portfolio network selection', () => {
     const selected = selectPortfolio(partial, null)
     expect(selected.wallet.unpriced).toBe(1)
     expect(selected.unpriced).toBe(2)
-    expect(selected.protocols[0]).toMatchObject({ id: 'fluid', unpriced: 1, share: 0 })
+    expect(selected.protocols[0]).toMatchObject({ id: 'fluid', unpriced: 1 })
+    expect(selected.protocols[0]!.share).toBeGreaterThan(0)
     expect(selected.protocols[1]?.share).toBeGreaterThan(0)
     // Narrowed to a network with no unpriced holding, the count goes with it.
     expect(selectPortfolio(partial, 'eip155:1').unpriced).toBe(1)

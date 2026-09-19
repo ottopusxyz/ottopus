@@ -130,11 +130,11 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
             </div>
             <span role="cell" className="hidden text-right text-[12px] text-[var(--ot-text-2)] @xl:block">{formatShare(token.share)}</span>
             <div role="cell" onClick={stop} className="min-w-0">
-              <DetailPopover label={token.priced ? `Value: ${formatMoneyFlat(token.value, currency)}` : 'Price unavailable'} className="block w-full text-right"
-                title={token.priced ? 'Value' : undefined}
-                detail={<p className="break-all font-mono">{token.priced ? formatMoneyFlat(token.value, currency) : 'Price unavailable'}</p>}>
+              <DetailPopover label={`Value: ${formatMoneyFlat(token.value, currency)}`} className="block w-full text-right"
+                title="Value"
+                detail={<p className="break-all font-mono">{formatMoneyFlat(token.value, currency)}</p>}>
                 <span className="block truncate font-mono text-[12px] font-medium sm:text-[13px]">
-                  {token.priced ? formatMoneyFlat(token.value, currency) : '—'}
+                  {formatMoneyFlat(token.value, currency)}
                 </span>
               </DetailPopover>
               <span className="mt-1 block text-right text-[10px] text-[var(--ot-text-3)] @xl:hidden">{formatShare(token.share)}</span>
@@ -161,7 +161,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
           </div>
           <div className="shrink-0 text-right tabular-nums">
             <p className="font-mono text-[14px] font-semibold">
-              {selected.priced ? formatMoneyFlat(selected.value, currency) : '—'}
+              {formatMoneyFlat(selected.value, currency)}
             </p>
             <p className="font-mono text-[11px] text-[var(--ot-text-3)]">{formatShare(selected.share)} of holdings</p>
           </div>
@@ -176,7 +176,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
                 <AssetIcon url={chain?.iconUrl} name={chain?.name ?? 'Unknown network'} size={22} />
                 <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold">{chain?.name ?? 'Unknown network'}</h3>
                 <span className="shrink-0 font-mono text-[13px] font-medium">
-                  {balance.priced ? formatMoneyFlat(balance.value, currency) : 'No price'}
+                  {formatMoneyFlat(balance.value, currency)}
                 </span>
               </header>
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5 text-[12px]">
