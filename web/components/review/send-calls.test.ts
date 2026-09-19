@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BatchAccepted, UnsafeFallback, sendPlanCalls } from './send-calls'
+import { BatchAccepted, SequentialNeedsConsent, sendPlanCalls } from './send-calls'
 
 /**
  * The provider answered from memory. What is under test is the one rule that
@@ -83,7 +83,7 @@ describe('falling back is only for a wallet that refused before accepting', () =
       wallet_getCapabilities: () => ({}),
       eth_sendTransaction: () => '0x' + 'dd'.repeat(32),
     })
-    await expect(sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL, CALL], sequentialIsSafe: false })).rejects.toBeInstanceOf(UnsafeFallback)
+    await expect(sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL, CALL], sequentialIsSafe: false })).rejects.toBeInstanceOf(SequentialNeedsConsent)
     expect(p.calls).not.toContain('eth_sendTransaction')
   })
 })

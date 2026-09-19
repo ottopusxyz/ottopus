@@ -13,6 +13,7 @@ import {
   executability,
   recipientOf,
   simulationNote,
+  standingApproval,
   verificationSummary,
 } from './model'
 
@@ -301,5 +302,50 @@ describe('the mark on the card', () => {
 
   it('falls back to the stored run when the browser has none', () => {
     expect(executability({ ...plan, simulation: sim(false) }, null)).toEqual({ ok: false, label: 'May fail' })
+  })
+})
+
+describe('what a half-signed swap would leave behind', () => {
+  const ROUTER = '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae'
+  const swap = (approval: { spender: string; amount: string }): Plan => ({
+    ...plan,
+    intent: { kind: 'swap', from: `${BASE}/erc20:${USDC}`, to: `${BASE}/slip44:60`, amountIn: '500000000' },
+    humanPlan: { ...plan.humanPlan, assets: [{ id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 }] },
+    decodedActions: [
+      {
+        target: `${BASE}:${USDC}`,
+        isContract: true,
+        source: 'abi',
+        verified: true,
+        function: 'approve(address,uint256)',
+        args: [],
+        value: '0',
+        approval,
+      },
+    ],
+  })
+
+  /**
+   * The number is the whole point. "An allowance could remain" is not
+   * something anybody can weigh; "500 USDC to 0x1231…4eae" is.
+   */
+  it('names the amount in the asset’s own words and the spender', () => {
+    expect(standingApproval(swap({ spender: `${BASE}:${ROUTER}`, amount: '500000000' }))).toEqual({
+      spender: `${BASE}:${ROUTER}`,
+      amount: '500',
+      symbol: 'USDC',
+      unlimited: false,
+    })
+  })
+
+  it('says unlimited plainly, since that is a different question', () => {
+    expect(standingApproval(swap({ spender: `${BASE}:${ROUTER}`, amount: 'unlimited' }))).toMatchObject({
+      amount: 'unlimited',
+      unlimited: true,
+    })
+  })
+
+  it('has nothing to say about a plan that approves nothing', () => {
+    expect(standingApproval(plan)).toBeNull()
   })
 })

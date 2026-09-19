@@ -197,6 +197,40 @@ export interface Fact {
   mono?: boolean
 }
 
+/**
+ * What would be left standing if the person signed the approval and stopped.
+ *
+ * Named in the asset's own words, because "an allowance could remain" is not
+ * a thing anybody can weigh and "500 USDC to 0x1231…4eae" is. Null when the
+ * plan carries no approval, which is when the question does not arise.
+ */
+export interface StandingApproval {
+  spender: string
+  amount: string
+  symbol: string
+  unlimited: boolean
+}
+
+export function standingApproval(plan: Plan): StandingApproval | null {
+  const grant = approvals(plan)[0]
+  if (!grant) return null
+  const spent = sourceAssetIdOf(plan)
+  const words = spent === null ? null : assetWords(plan, spent)
+  return {
+    spender: grant.spender,
+    amount: grant.unlimited ? 'unlimited' : words ? formatAmount(grant.amount, words.decimals) : grant.amount,
+    symbol: words?.symbol ?? '',
+    unlimited: grant.unlimited,
+  }
+}
+
+/** The asset a plan spends. Mirrors the service's own reading. */
+export function sourceAssetIdOf(plan: Plan): string | null {
+  if (plan.intent.kind === 'transfer') return plan.intent.asset
+  if (plan.intent.kind === 'swap' || plan.intent.kind === 'bridge') return plan.intent.from
+  return null
+}
+
 /** The approvals a plan carries, for the callout. */
 export function approvals(plan: Plan): { spender: string; amount: string; unlimited: boolean }[] {
   return plan.decodedActions.flatMap((a) =>

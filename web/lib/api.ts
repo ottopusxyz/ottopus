@@ -447,7 +447,22 @@ export interface TransferIntent {
 }
 
 /** Other kinds arrive with later milestones; the page shows what it knows and never guesses. */
-export type PlanIntent = TransferIntent | { kind: 'swap' | 'bridge' | 'supply'; [key: string]: unknown }
+/**
+ * A swap or a bridge. Identical fields; the chains of `from` and `to` decide
+ * which it is, the same way the service decides.
+ */
+export interface TradeIntent {
+  kind: 'swap' | 'bridge'
+  from: string
+  to: string
+  amountIn?: string
+  amountOut?: string
+  slippageBps?: number
+  fromAccount?: string
+  note?: string
+}
+
+export type PlanIntent = TransferIntent | TradeIntent | { kind: 'supply'; [key: string]: unknown }
 
 export interface Plan {
   id: string

@@ -2,15 +2,15 @@
 
 import { useConnectWallet, useWallets } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Otto } from '@/components/brand'
 import { Button, Dialog } from '@/components/ui'
 import type { Plan, WebTransition } from '@/lib/api'
 import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
 import { addressOf, truncateAddress } from '@/lib/format'
 import type { Eip1193 } from '@/lib/simulate'
-import { approvals, chainOfPlan } from './model'
-import { BatchAccepted, UnsafeFallback, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
+import { approvals, chainOfPlan, standingApproval } from './model'
+import { BatchAccepted, SequentialNeedsConsent, UserRejected, sendPlanCalls, waitForReceipt } from './send-calls'
 import { gateFor } from './wallet-gate'
 
 /**
@@ -57,6 +57,21 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
   )
   const watching = useRef(false)
   const [problem, setProblem] = useState<string | null>(null)
+  /**
+   * Set when the wallet will not batch and the plan carries an approval.
+   *
+   * Not an error state. The person is told exactly what would be left
+   * standing if they stopped halfway, and chooses. Refusing on their behalf
+   * blocked every swap in every wallet without EIP-5792, which is nearly all
+   * of them on an ordinary account.
+   */
+  const [askConsent, setAskConsent] = useState(false)
+  /**
+   * Carried in a ref rather than as an argument to `sign`, so the callback
+   * keeps its identity — and so the consent survives the re-render that
+   * dismisses the prompt without racing it.
+   */
+  const consented = useRef(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const wroteAwaiting = useRef(false)
@@ -69,6 +84,9 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
     wallets.map((w) => ({ address: w.address, chainId: w.chainId })),
   )
   const wallet = wallets.find((w) => w.address.toLowerCase() === wanted.toLowerCase())
+  // Memoised: called bare in the body, it defeated the React Compiler's
+  // memoisation of every callback below it.
+  const standing = useMemo(() => standingApproval(plan), [plan])
   const signerName = plan.resolution.account.label
     ? `${plan.resolution.account.label} (${truncateAddress(wanted)})`
     : truncateAddress(wanted)
@@ -138,6 +156,7 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
   const sign = useCallback(async () => {
     if (!wallet || gate.kind !== 'ready' || plan.outcome.type !== 'calls') return
     setProblem(null)
+    setAskConsent(false)
     setPhase({ kind: 'signing' })
     let txHash: `0x${string}` | null = null
     try {
@@ -162,15 +181,21 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
         from: wanted,
         chainId: chain,
         calls: plan.outcome.calls,
-        // One by one is safe only when no call is an approval another depends on.
-        sequentialIsSafe: plan.outcome.calls.length === 1 || approvals(plan).length === 0,
+        // Nothing could be left standing, or the person has been shown what
+        // would be and said yes.
+        sequentialIsSafe: plan.outcome.calls.length === 1 || approvals(plan).length === 0 || consented.current,
       })
       txHash = sent.txHash
       await move({ status: 'submitted', detail: { txHash } })
       // The watch effect takes it from here, for this page and for any reopened one.
       setPhase({ kind: 'submitted', txHash })
     } catch (err) {
-      if (err instanceof UserRejected || err instanceof UnsafeFallback) {
+      if (err instanceof SequentialNeedsConsent) {
+        setPhase({ kind: 'idle' })
+        setAskConsent(true)
+        return
+      }
+      if (err instanceof UserRejected) {
         setPhase({ kind: 'idle' })
         setProblem(err.message)
         return
@@ -293,12 +318,46 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
         </p>
       ) : null}
 
+      {/*
+        The wallet will not batch. Say exactly what stopping halfway would
+        leave behind, then let the person decide — an allowance for a named
+        amount to the router this plan already shows is a risk somebody can
+        weigh, and refusing on their behalf just ended the flow.
+      */}
+      {askConsent ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-[10px] bg-[var(--ot-warn-bg)] px-3 py-2.5">
+          <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-warn-text)]">
+            This wallet cannot send both steps together, so you would approve first and swap second.
+            {standing
+              ? standing.unlimited
+                ? ` If you stop after the first, an unlimited allowance to ${truncateAddress(addressOf(standing.spender))} would remain.`
+                : ` If you stop after the first, an allowance for ${standing.amount} ${standing.symbol} to ${truncateAddress(addressOf(standing.spender))} would remain — nothing more, and only to that address.`
+              : ''}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setAskConsent(false)}>
+              Not now
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                consented.current = true
+                void sign()
+              }}
+            >
+              Sign one at a time
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex gap-2">
         <Button variant="secondary" size="lg" fullWidth disabled={busy} onClick={() => setConfirmCancel(true)}>
           Cancel
         </Button>
         {gate.kind === 'ready' ? (
-          <Button variant="primary" size="lg" fullWidth disabled={busy || !ready} onClick={sign}>
+          <Button variant="primary" size="lg" fullWidth disabled={busy || !ready} onClick={() => void sign()}>
             {phase.kind === 'signing' ? 'Check your wallet…' : 'Sign'}
           </Button>
         ) : gate.kind === 'wrong_chain' ? (

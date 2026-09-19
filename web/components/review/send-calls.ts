@@ -7,9 +7,11 @@ import { addressOf } from '@/lib/format'
  *
  * EIP-5792 first: `wallet_getCapabilities` says whether the wallet batches on
  * this chain, and `wallet_sendCalls` sends the whole plan as one request.
- * Otherwise one `eth_sendTransaction` per call, in order — and only when the
- * caller says partial completion is safe, which for a single transfer it
- * always is and for a plan with an approval is not.
+ * Otherwise one `eth_sendTransaction` per call, in order, and only when
+ * partial completion is acceptable. For a single transfer it always is. For a
+ * plan with an approval it is a question with a consequence, so this module
+ * refuses until the caller says the person has been told what that
+ * consequence is and agreed to it.
  *
  * This module never sees a key. It asks the provider the wallet gave us, and
  * the wallet asks the person.
@@ -25,7 +27,10 @@ export interface SendInput {
   /** CAIP-2 of the plan. */
   chainId: string
   calls: readonly PlanCall[]
-  /** True when sending the calls one by one could not leave a dangling approval. */
+  /**
+   * Whether one-at-a-time may go ahead: true when nothing could be left
+   * standing, or when the person has been shown what would be and said yes.
+   */
   sequentialIsSafe: boolean
 }
 
@@ -37,7 +42,19 @@ export interface Sent {
 }
 
 export class UserRejected extends Error {}
-export class UnsafeFallback extends Error {}
+/**
+ * The wallet will not batch, and one at a time would leave an approval
+ * standing if the person stopped halfway.
+ *
+ * Not a failure: a question. It used to be a refusal telling people to go and
+ * find a different wallet, which blocked every swap in every wallet that does
+ * not implement EIP-5792 — nearly all of them on an ordinary account. The
+ * risk it was protecting against is real but bounded and nameable, because
+ * Ottopus encodes the approval itself for exactly the input amount to the
+ * spender the route named. So the caller states the consequence and asks,
+ * rather than deciding on someone's behalf.
+ */
+export class SequentialNeedsConsent extends Error {}
 /**
  * The wallet accepted the batch and then we lost sight of it. The calls may
  * be on chain; they must never be sent again. Carries the batch id so the
@@ -162,9 +179,7 @@ export async function sendPlanCalls(input: SendInput): Promise<Sent> {
     }
   }
   if (!input.sequentialIsSafe) {
-    throw new UnsafeFallback(
-      'This wallet cannot send these calls together, and sending them one by one could leave an approval standing. Use a wallet that supports batching.',
-    )
+    throw new SequentialNeedsConsent('This wallet cannot send these calls together.')
   }
   try {
     return { txHash: await sendSequential(input), method: 'sequential' }
