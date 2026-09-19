@@ -1,4 +1,4 @@
-import { createPublicClient, custom, toHex } from 'viem'
+import { createPublicClient, custom, getAddress, toHex } from 'viem'
 import type { PlanCall } from '@/lib/api'
 import { addressOf } from '@/lib/format'
 
@@ -16,6 +16,27 @@ import { addressOf } from '@/lib/format'
  * This module never sees a key. It asks the provider the wallet gave us, and
  * the wallet asks the person.
  */
+
+/**
+ * An address in the form a wallet will accept.
+ *
+ * Everything inside Ottopus stores EVM addresses lowercased — the database
+ * has a check constraint saying so, because checksum casing in a lookup key
+ * turns one wallet linked twice into two. That is right for storage and
+ * wrong at this boundary: a strict EIP-55 validator rejects an
+ * unchecksummed address outright, and a Safe answered `wallet_sendCalls`
+ * with "Invalid from address" for exactly that reason.
+ *
+ * Checksummed is accepted everywhere; lowercase is not. So the casing is put
+ * back on the way out, and only on the way out.
+ */
+function forWallet(address: string): `0x${string}` {
+  try {
+    return getAddress(address)
+  } catch {
+    throw new Error(`${address} is not an address this wallet can be given`)
+  }
+}
 
 export interface Eip1193 {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>
@@ -109,9 +130,9 @@ async function submitBatch(input: SendInput): Promise<string> {
       {
         version: '2.0.0',
         chainId: hexChain(chainId),
-        from,
+        from: forWallet(from),
         atomicRequired: false,
-        calls: calls.map((c) => ({ to: addressOf(c.to), value: toHex(BigInt(c.value)), data: c.data })),
+        calls: calls.map((c) => ({ to: forWallet(addressOf(c.to)), value: toHex(BigInt(c.value)), data: c.data })),
       },
     ],
   })) as { id?: string } | string
@@ -146,7 +167,15 @@ async function sendSequential(input: SendInput): Promise<`0x${string}`> {
   for (const [i, call] of calls.entries()) {
     const hash = (await provider.request({
       method: 'eth_sendTransaction',
-      params: [{ from, to: addressOf(call.to), value: toHex(BigInt(call.value)), data: call.data, chainId: hexChain(chainId) }],
+      params: [
+        {
+          from: forWallet(from),
+          to: forWallet(addressOf(call.to)),
+          value: toHex(BigInt(call.value)),
+          data: call.data,
+          chainId: hexChain(chainId),
+        },
+      ],
     })) as `0x${string}`
     last = hash
     // Each call must land before the next is offered: the second may depend

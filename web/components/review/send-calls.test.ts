@@ -1,3 +1,4 @@
+import { getAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
 import { BatchAccepted, SequentialNeedsConsent, sendPlanCalls } from './send-calls'
 
@@ -85,5 +86,52 @@ describe('falling back is only for a wallet that refused before accepting', () =
     })
     await expect(sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL, CALL], sequentialIsSafe: false })).rejects.toBeInstanceOf(SequentialNeedsConsent)
     expect(p.calls).not.toContain('eth_sendTransaction')
+  })
+})
+
+/**
+ * A Safe answered `wallet_sendCalls` with "Invalid from address".
+ *
+ * Everything inside Ottopus stores EVM addresses lowercased, which is right
+ * for a lookup key and wrong for a wallet: a strict EIP-55 validator rejects
+ * an unchecksummed address outright. Checksummed is accepted everywhere.
+ */
+describe('addresses handed to the wallet', () => {
+  const TOKEN = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+
+  it('are checksummed in a batch, both the sender and every target', async () => {
+    let sent: { from?: string; calls?: { to?: string }[] } | undefined
+    const p = provider({
+      ...batching,
+      wallet_sendCalls: (params) => {
+        sent = params[0] as typeof sent
+        return { id: 'batch-1' }
+      },
+      wallet_getCallsStatus: () => ({ status: 200, receipts: [{ transactionHash: '0x' + 'ab'.repeat(32) }] }),
+    })
+    await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+
+    expect(sent?.from).toBe(getAddress(FROM))
+    expect(sent?.from).not.toBe(FROM)
+    expect(sent?.calls?.[0]?.to).toBe(getAddress(TOKEN))
+  })
+
+  it('are checksummed one at a time too, which is the same wallet’s other path', async () => {
+    let sent: { from?: string; to?: string } | undefined
+    const p = provider({
+      eth_sendTransaction: (params) => {
+        sent = params[0] as typeof sent
+        return '0x' + 'cd'.repeat(32)
+      },
+    })
+    await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent?.from).toBe(getAddress(FROM))
+    expect(sent?.to).toBe(getAddress(TOKEN))
+  })
+
+  it('refuse to hand over something that is not an address at all', async () => {
+    const p = provider({ eth_sendTransaction: () => '0x' + 'cd'.repeat(32) })
+    const attempt = sendPlanCalls({ provider: p, from: 'not-an-address', chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    await expect(attempt).rejects.toThrow(/is not an address this wallet can be given/)
   })
 })

@@ -4,6 +4,7 @@ import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
+import { zerionTokens } from '../connectors/tokens/index.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
 import { planRoutes } from './plans.js'
@@ -129,6 +130,12 @@ if (ready) {
     planRoutes(db, session, {
       webUrl: config.webUrl,
       readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+      tokens: config.zerionApiKey
+        ? zerionTokens({
+            apiKey: config.zerionApiKey,
+            ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
+          })
+        : null,
     }),
   )
 

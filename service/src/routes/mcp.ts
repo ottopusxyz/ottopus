@@ -6,7 +6,7 @@ import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } f
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { lifiConnector } from '../connectors/route/index.js'
-import { lifiTokens } from '../connectors/tokens/index.js'
+import { zerionTokens } from '../connectors/tokens/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
@@ -96,7 +96,15 @@ if (!config.databaseUrl) {
      * turns it back on, and the pipeline is still tested that way.
      */
     simulator: null,
-    tokens: lifiTokens({ apiKey: config.lifiApiKey }),
+    // Same provider as the portfolio, so a token has one logo and one price
+    // whether or not the person holds it. No key means no registry, and the
+    // words fall back rather than the plan failing.
+    tokens: config.zerionApiKey
+      ? zerionTokens({
+          apiKey: config.zerionApiKey,
+          ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
+        })
+      : null,
     router: lifiConnector({
       apiKey: config.lifiApiKey,
       ...(config.lifiApiUrl ? { baseUrl: config.lifiApiUrl } : {}),

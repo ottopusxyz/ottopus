@@ -1,4 +1,5 @@
 import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning, Simulation } from '@/lib/api'
+import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
 
 /**
@@ -75,18 +76,64 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
   const holder = holderOf(plan)
   const traced = (live ?? plan.simulation)?.assetChanges ?? []
   if (traced.length > 0) return traced.map((delta) => observedRow(delta, holder))
-  if (plan.intent.kind !== 'transfer') return []
-  const words = assetWords(plan, plan.intent.asset)
-  if (!words) return []
-  return [
-    {
-      direction: 'out',
-      amount: formatAmount(plan.intent.amount, words.decimals),
-      symbol: words.symbol,
-      where: `leaves ${holder}`,
-      assetId: plan.intent.asset,
-    },
-  ]
+
+  if (plan.intent.kind === 'transfer') {
+    const words = assetWords(plan, plan.intent.asset)
+    if (!words) return []
+    return [
+      {
+        direction: 'out',
+        amount: formatAmount(plan.intent.amount, words.decimals),
+        symbol: words.symbol,
+        where: `leaves ${holder}`,
+        assetId: plan.intent.asset,
+      },
+    ]
+  }
+
+  /**
+   * A trade, read off the request when no simulation has been observed.
+   *
+   * Without this a swap showed no asset rows at all until a simulation
+   * landed — so the amounts, and the icons that hang off them, were simply
+   * absent on the page whose whole job is to say what moves. The card labels
+   * these as coming from the request, which is what they are: the quote's
+   * expectation, not an observation.
+   */
+  if (plan.intent.kind === 'swap' || plan.intent.kind === 'bridge') {
+    const { from, to, amountIn } = plan.intent
+    const rows: AssetChange[] = []
+    const paid = assetWords(plan, from)
+    if (paid && amountIn) {
+      rows.push({
+        direction: 'out',
+        amount: formatAmount(amountIn, paid.decimals),
+        symbol: paid.symbol,
+        where: `leaves ${holder}`,
+        assetId: from,
+      })
+    }
+    const got = assetWords(plan, to)
+    const expected = plan.quote.expectedOut
+    if (got && expected) {
+      const crossing = chainOfAsset(to) !== chainOfAsset(from)
+      rows.push({
+        direction: 'in',
+        amount: formatAmount(expected, got.decimals),
+        symbol: got.symbol,
+        where: crossing ? `arrives on ${chainName(chainOfAsset(to))}` : `arrives in ${holder}`,
+        assetId: to,
+      })
+    }
+    return rows
+  }
+  return []
+}
+
+/** The CAIP-2 chain an asset id names. */
+function chainOfAsset(assetId: string): string {
+  const [namespace, rest] = assetId.split(':')
+  return `${namespace}:${rest?.split('/')[0] ?? ''}`
 }
 
 function holderOf(plan: Plan): string {

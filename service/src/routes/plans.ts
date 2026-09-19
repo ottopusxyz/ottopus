@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { z } from 'zod'
 import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
+import type { TokenRegistry } from '../connectors/tokens/index.js'
 import { type DecoratedSummary, decorateSummary, visualsFor } from '../plans/visuals.js'
 import { type WalletDb, listWallets } from '../wallets/index.js'
 import {
@@ -67,6 +68,12 @@ export interface PlanRouteDeps {
   webUrl: string
   /** Null when no balance provider is configured; the page then draws no icons. */
   readPortfolio: ((arms: readonly ArmRef[]) => Promise<Portfolio>) | null
+  /**
+   * Words and icons for assets the portfolio has never seen — which is the
+   * receiving side of every trade, by definition. Null costs those rows their
+   * icon and nothing else.
+   */
+  tokens?: TokenRegistry | null
 }
 
 export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRouteDeps): Hono {
@@ -98,9 +105,9 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       const portfolio = deps.readPortfolio
         ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
         : null
-      return visualsFor(plan, arms, portfolio)
+      return visualsFor(plan, arms, portfolio, deps.tokens ?? null)
     } catch {
-      return visualsFor(plan, [], null)
+      return visualsFor(plan, [], null, deps.tokens ?? null)
     }
   }
 

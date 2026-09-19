@@ -7,6 +7,7 @@ import { Otto } from '@/components/brand'
 import { Button, Dialog } from '@/components/ui'
 import type { Plan, WebTransition } from '@/lib/api'
 import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
+import { getAddress } from 'viem'
 import { addressOf, truncateAddress } from '@/lib/format'
 import type { Eip1193 } from '@/lib/simulate'
 import { approvals, chainOfPlan, standingApproval } from './model'
@@ -365,7 +366,7 @@ export function SignPanel({ plan, move, open, txHash, resimulate }: SignPanelPro
             {phase.kind === 'switching' ? 'Switching…' : `Switch to ${chainName(chain)}`}
           </Button>
         ) : (
-          <Button variant="primary" size="lg" fullWidth disabled={!ready} onClick={() => connectWallet({ suggestedAddress: wanted })}>
+          <Button variant="primary" size="lg" fullWidth disabled={!ready} onClick={() => connectWallet({ suggestedAddress: getAddress(wanted) })}>
             Connect wallet
           </Button>
         )}
