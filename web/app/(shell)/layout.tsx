@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { SessionAgentCard } from '@/components/agents'
 import { RequireSession, SessionAccountMenu } from '@/components/auth'
+import { RequestsProvider } from '@/components/requests/provider'
 import { AppShell } from '@/components/shell'
 
 /**
@@ -12,9 +13,11 @@ import { AppShell } from '@/components/shell'
 export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     <RequireSession>
-      <AppShell agent={<SessionAgentCard />} account={<SessionAccountMenu />}>
-        {children}
-      </AppShell>
+      <RequestsProvider>
+        <AppShell agent={<SessionAgentCard />} account={<SessionAccountMenu />}>
+          {children}
+        </AppShell>
+      </RequestsProvider>
     </RequireSession>
   )
 }

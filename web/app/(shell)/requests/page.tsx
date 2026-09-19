@@ -1,21 +1,8 @@
-import { Otto } from '@/components/brand'
 import { PageColumn, PageHeader } from '@/components/shell'
-import { EmptyState } from '@/components/ui'
+import { RequestsView } from '@/components/requests/requests-view'
 
 export const metadata = { title: 'Requests · Ottopus' }
 
-/** #54 fills this. The shell and the empty state are what the route needs today. */
 export default function Requests() {
-  return (
-    <PageColumn>
-      <PageHeader title="Requests" detail="Plans waiting on you." />
-      <div className="px-5 py-10 sm:px-[26px]">
-        <EmptyState
-          title="Calm waters"
-          description="Nothing is waiting. Otto surfaces here when your agent asks for something."
-          illustration={<Otto pose="base" size={150} animated />}
-        />
-      </div>
-    </PageColumn>
-  )
+  return <PageColumn><PageHeader title="Requests" detail="Plans waiting on you." /><RequestsView /></PageColumn>
 }

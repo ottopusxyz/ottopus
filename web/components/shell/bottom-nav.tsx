@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { RequestsBadge } from '@/components/requests/provider'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/cn'
 import { NavIcon } from './nav-icon'
@@ -64,7 +65,7 @@ export function BottomNav() {
                     active ? 'font-semibold' : 'font-medium',
                   )}
                 >
-                  {route.label}
+                  {route.label}{route.href === '/requests' ? <RequestsBadge /> : null}
                 </span>
               </Link>
             </li>

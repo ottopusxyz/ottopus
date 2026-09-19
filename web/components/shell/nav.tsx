@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { RequestsBadge } from '@/components/requests/provider'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/cn'
 import { SHELL_ROUTES, isActive } from './routes'
@@ -35,7 +36,7 @@ export function ShellNav({ className }: { className?: string }) {
                 : 'font-medium text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
             )}
           >
-            {label}
+            {label}{href === '/requests' ? <RequestsBadge /> : null}
           </Link>
         )
       })}

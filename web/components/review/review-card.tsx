@@ -2,8 +2,10 @@
 
 import type { ReactNode } from 'react'
 import { Otto } from '@/components/brand'
+import { AssetIcon } from '@/components/portfolio/asset-icon'
 import { AddressChip, Badge, Callout } from '@/components/ui'
-import type { Plan } from '@/lib/api'
+import { walletClientName, walletMark } from '@/components/wallets/naming'
+import type { Plan, Visuals } from '@/lib/api'
 import { chainName, explorerAddressUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { formatAmount } from '@/lib/format'
@@ -32,11 +34,20 @@ export interface ReviewCardProps {
   reference: string
   /** The countdown, or a status word when there is nothing to count. */
   clock: ReactNode
+  /** Icons and wallet clients, looked up beside the plan. Absent draws letters and tiles. */
+  visuals?: Visuals | undefined
   children: ReactNode
 }
 
-export function ReviewCard({ plan, reference, clock, children }: ReviewCardProps) {
+const NO_VISUALS: Visuals = { assets: {}, chains: {}, wallets: {} }
+
+export function ReviewCard({ plan, reference, clock, visuals = NO_VISUALS, children }: ReviewCardProps) {
   const chain = chainOfPlan(plan)
+  const chainVisual = visuals.chains[chain] ?? null
+  const signer = visuals.wallets[plan.resolution.account.caip10] ?? null
+  const signerClient = signer ? walletClientName({ label: signer.label, walletType: signer.walletType }) : null
+  const signerMark = signer ? walletMark(signer.walletType) : null
+  const assetVisual = plan.intent.kind === 'transfer' ? (visuals.assets[plan.intent.asset] ?? null) : null
   const changes = assetChanges(plan)
   const recipient = recipientOf(plan)
   const rows = facts(plan)
@@ -65,11 +76,15 @@ export function ReviewCard({ plan, reference, clock, children }: ReviewCardProps
         <div className="flex flex-col gap-3">
           {changes.map((change) => (
             <div key={`${change.direction}-${change.symbol}`} className="flex items-center gap-[11px]">
-              <span
-                aria-hidden
-                className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[var(--ot-navy-soft)] font-bold text-[var(--ot-text)]"
-              >
-                {change.symbol.slice(0, 1)}
+              <span aria-hidden className="relative h-9 w-9 flex-none">
+                <AssetIcon url={assetVisual?.iconUrl ?? null} name={change.symbol} size={36} className="text-[13px]" />
+                {chainVisual?.iconUrl ? (
+                  <span className="absolute -right-px -bottom-px h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[var(--ot-card)] bg-[var(--ot-card)]">
+                    {/* Provider CDN, same as the portfolio's icons. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={chainVisual.iconUrl} alt="" className="h-full w-full object-cover" />
+                  </span>
+                ) : null}
               </span>
               <div className="flex min-w-0 flex-col gap-px">
                 <code
@@ -111,15 +126,30 @@ export function ReviewCard({ plan, reference, clock, children }: ReviewCardProps
       </section>
 
       <div className="flex flex-col px-[18px] pt-0.5">
-        {rows.map((fact) => (
-          <div key={fact.label} className="flex items-center justify-between gap-3 border-t border-[var(--ot-border)] py-[11px]">
-            <span className="text-[13.5px] text-[var(--ot-text-2)]">{fact.label}</span>
-            <span className="flex min-w-0 flex-col items-end gap-px text-right">
-              <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>{fact.value}</span>
-              {fact.detail ? <span className="text-[11.5px] text-[var(--ot-text-3)]">{fact.detail}</span> : null}
-            </span>
-          </div>
-        ))}
+        {rows.map((fact) => {
+          const tile =
+            fact.label === 'Signing with' ? (
+              <Tile mark={signerMark} fallback="◈" tone="bg-[var(--ot-navy-soft)] text-[var(--ot-text)]" />
+            ) : fact.label === 'Network' ? (
+              <Tile mark={chainVisual?.iconUrl ?? null} fallback={fact.value.slice(0, 1)} tone="bg-[var(--ot-surface-3)] text-[var(--ot-text-2)]" />
+            ) : null
+          // "Main · Rabby" with a label; "Rabby" over the address without one.
+          const named = fact.label === 'Signing with' && signerClient
+          const value = named ? (signer?.label ? `${signer.label} · ${signerClient}` : signerClient) : fact.value
+          const detail = named && !signer?.label ? fact.value : fact.detail
+          return (
+            <div key={fact.label} className="flex items-center justify-between gap-3 border-t border-[var(--ot-border)] py-[11px]">
+              <span className="flex min-w-0 items-center gap-2.5">
+                {tile}
+                <span className="text-[13.5px] text-[var(--ot-text-2)]">{fact.label}</span>
+              </span>
+              <span className="flex min-w-0 flex-col items-end gap-px text-right">
+                <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>{value}</span>
+                {detail ? <span className="text-[11.5px] text-[var(--ot-text-3)]">{detail}</span> : null}
+              </span>
+            </div>
+          )
+        })}
         <div className="flex items-center justify-between gap-3 border-t border-[var(--ot-border)] py-[11px]">
           <span className="text-[13.5px] text-[var(--ot-text-2)]">Expires</span>
           <span className="font-mono text-[13.5px] font-semibold tabular-nums">{clock}</span>
@@ -220,6 +250,7 @@ export function ReviewCard({ plan, reference, clock, children }: ReviewCardProps
             >
               <span className="block">
                 Spender <code className="font-mono text-[12px]">{grant.spender.split(':').pop()}</code>
+                {spenderName(plan, grant.spender) ? ` · ${spenderName(plan, grant.spender)}` : ''}
               </span>
               <span className="block">
                 Amount{' '}
@@ -251,4 +282,27 @@ export function ReviewCard({ plan, reference, clock, children }: ReviewCardProps
 function approvalAmount(plan: Plan, amount: string): string {
   const asset = plan.intent.kind === 'transfer' ? assetWords(plan, plan.intent.asset) : null
   return asset ? `${formatAmount(amount, asset.decimals)} ${asset.symbol}` : amount
+}
+
+/** The 26px square at the head of a fact row: a logo when there is one, a glyph when not. */
+function Tile({ mark, fallback, tone }: { mark: string | null; fallback: string; tone: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('flex h-[26px] w-[26px] flex-none items-center justify-center overflow-hidden rounded-[8px] text-[12px] font-bold', tone)}
+    >
+      {mark ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={mark} alt="" className="h-full w-full object-cover" />
+      ) : (
+        fallback
+      )}
+    </span>
+  )
+}
+
+/** The name the decoder found for a spender, when it is one of the plan's own targets. */
+function spenderName(plan: Plan, spender: string): string | null {
+  const hit = plan.decodedActions.find((a) => a.target.toLowerCase() === spender.toLowerCase())
+  return hit?.contractName ?? null
 }

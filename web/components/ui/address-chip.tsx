@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { getAddress, isAddress } from 'viem'
 import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
 
@@ -22,12 +23,14 @@ export interface AddressChipProps {
  * checked rather than merely recognised — a transfer recipient, an approval
  * spender.
  *
- * Casing is shown as given. Checksummed display needs keccak, which arrives
- * with the wallet work; storage and comparison stay lowercase either way.
+ * Shown checksummed (EIP-55): mixed case is a checksum a person can compare
+ * against their wallet, and a wrong character breaks it visibly. Storage and
+ * comparison stay lowercase; only what is drawn and copied is checksummed.
  */
 export function AddressChip({ address, full = false, copyable = true, className }: AddressChipProps) {
   const [copied, setCopied] = useState(false)
-  const bare = addressOf(address)
+  const raw = addressOf(address)
+  const bare = isAddress(raw) ? getAddress(raw) : raw
   const shown = full ? bare : truncateAddress(bare)
 
   async function copy() {

@@ -481,11 +481,23 @@ export interface Plan {
   simulation: unknown | null
 }
 
+/**
+ * What the page draws beside the plan, looked up by the ids the plan carries.
+ * Never inside the plan: the hash is over the plan alone, and a missing icon
+ * must never make a plan unreadable.
+ */
+export interface Visuals {
+  assets: Record<string, { symbol: string; name: string; iconUrl: string | null }>
+  chains: Record<string, { name: string; iconUrl: string | null }>
+  wallets: Record<string, { walletType: string; label: string | null }>
+}
+
 export interface ReviewRead {
   plan: Plan
   walletId: string | null
   statusAt: string
   link: { expiresAt: string }
+  visuals?: Visuals
 }
 
 /** The plan behind a review link. A dead or foreign token is a 404, and says nothing more. */
