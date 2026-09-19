@@ -3,6 +3,7 @@ import {
   amountSchema,
   bridgeIntentSchema,
   crossesChains,
+  customIntentSchema,
   destinationChainOf,
   sourceChainOf,
   swapIntentSchema,
@@ -209,5 +210,67 @@ describe('note', () => {
     expect(transferIntentSchema.parse(base).note).toBeUndefined()
     expect(() => transferIntentSchema.parse({ ...base, note: 'x'.repeat(201) })).toThrow()
     expect(() => transferIntentSchema.parse({ ...base, note: '   ' })).toThrow()
+  })
+})
+
+describe('custom intent', () => {
+  const BASE = 'eip155:8453'
+  const ME = `${BASE}:0xd8da6bf26964af9d7eed9e03e53415d37aa96045`
+  const USDC = `${BASE}/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`
+  const WETH = `${BASE}/erc20:0x4200000000000000000000000000000000000006`
+  const PM = `${BASE}:0x03a520b32c04bf3beef7beb72e919cf822ed34f1`
+
+  const honest = {
+    kind: 'custom' as const,
+    fromAccount: ME,
+    chainId: BASE,
+    summary: 'Add 1 USDC and the matching WETH to the USDC/WETH 0.05% pool',
+    expectedChanges: [
+      { asset: USDC, maxOut: '1000000' },
+      { asset: WETH, maxOut: '1208327299744937' },
+    ],
+    approvals: [{ asset: USDC, spender: PM, amount: '1000000' }],
+  }
+
+  it('is a declaration: what leaves, at most, and what gets approved, exactly', () => {
+    const intent = customIntentSchema.parse(honest)
+    expect(intent.expectedChanges).toHaveLength(2)
+    expect(intent.approvals[0]?.amount).toBe('1000000')
+    expect(sourceChainOf(intent)).toEqual({ namespace: 'eip155', reference: '8453' })
+    // Nothing crosses a chain: the calls and the account are all on one.
+    expect(crossesChains(intent)).toBe(false)
+    expect(destinationChainOf(intent)).toEqual(sourceChainOf(intent))
+  })
+
+  it('cannot say "unlimited" — the shape only takes an exact amount', () => {
+    const unlimited = { ...honest, approvals: [{ asset: USDC, spender: PM, amount: 'unlimited' }] }
+    expect(() => customIntentSchema.parse(unlimited)).toThrow()
+    const max = { ...honest, approvals: [{ asset: USDC, spender: PM, amount: '0x' + 'f'.repeat(64) }] }
+    expect(() => customIntentSchema.parse(max)).toThrow()
+  })
+
+  /** The calls bind a wallet, so there is nothing to recommend; the account is an input. */
+  it('requires the account', () => {
+    const { fromAccount: _omit, ...none } = honest
+    expect(() => customIntentSchema.parse(none)).toThrow()
+  })
+
+  it('holds every identifier to the one chain', () => {
+    const otherAccount = { ...honest, fromAccount: 'eip155:1:0xd8da6bf26964af9d7eed9e03e53415d37aa96045' }
+    expect(() => customIntentSchema.parse(otherAccount)).toThrow(/same chain/)
+    const otherAsset = { ...honest, expectedChanges: [{ asset: 'eip155:1/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', maxOut: '1' }] }
+    expect(() => customIntentSchema.parse(otherAsset)).toThrow(/same chain/)
+    const otherSpender = { ...honest, approvals: [{ asset: USDC, spender: 'eip155:1:0x03a520b32c04bf3beef7beb72e919cf822ed34f1', amount: '1' }] }
+    expect(() => customIntentSchema.parse(otherSpender)).toThrow(/same chain/)
+  })
+
+  it('needs words, and not too many of them', () => {
+    expect(() => customIntentSchema.parse({ ...honest, summary: '   ' })).toThrow()
+    expect(() => customIntentSchema.parse({ ...honest, summary: 'x'.repeat(281) })).toThrow()
+  })
+
+  it('may declare nothing leaving at all, for a claim or a revoke', () => {
+    const intent = customIntentSchema.parse({ ...honest, expectedChanges: [], approvals: [] })
+    expect(intent.expectedChanges).toEqual([])
   })
 })

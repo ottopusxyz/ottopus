@@ -6,6 +6,7 @@ import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } f
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { lifiConnector } from '../connectors/route/index.js'
+import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { zerionTokens } from '../connectors/tokens/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
@@ -96,6 +97,18 @@ if (!config.databaseUrl) {
      * turns it back on, and the pipeline is still tested that way.
      */
     simulator: null,
+    /**
+     * Wired, for prepare_custom alone.
+     *
+     * The reasoning above does not carry to agent-authored calls. The
+     * browser run is asymmetric — it can only take signing away — and a
+     * custom plan is *granted* by its simulation: the check of what the run
+     * saw leave against what the agent declared is the reason the plan is
+     * allowed to exist. A grant has to come from a run the service made,
+     * against a block it recorded, before a link is minted. The other tools
+     * never read this field, so the decision above stands for them.
+     */
+    customSimulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
     // Same provider as the portfolio, so a token has one logo and one price
     // whether or not the person holds it. No key means no registry, and the
     // words fall back rather than the plan failing.

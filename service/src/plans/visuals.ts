@@ -46,6 +46,12 @@ function assetIdsOf(plan: Plan): string[] {
     ids.add(plan.intent.from)
     ids.add(plan.intent.to)
   }
+  // Everything the agent declared may leave. What arrives is only known
+  // once a simulation has run, and those ids are picked up below.
+  if (plan.intent.kind === 'custom') {
+    for (const c of plan.intent.expectedChanges) ids.add(c.asset)
+    for (const a of plan.intent.approvals) ids.add(a.asset)
+  }
   for (const a of plan.humanPlan.assets ?? []) ids.add(a.id)
   // A simulation can name assets the intent never did — a swap's output, a
   // token a call moved on the side. Those rows are on the page, so their

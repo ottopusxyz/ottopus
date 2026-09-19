@@ -1,6 +1,8 @@
 import { type Hex, decodeFunctionData, maxUint256, toFunctionSignature } from 'viem'
 import {
+  type BuiltIntent,
   type Call,
+  type CustomIntent,
   type DecodedAction,
   type Intent,
   type Simulation,
@@ -123,7 +125,7 @@ function approvalIn(call: Call): { spender: string; amount: bigint | 'unlimited'
  * How much goes in, when the intent fixes it. Null for a trade quoted by its
  * output, and for anything with no fixed input to measure against.
  */
-function amountInOf(intent: Intent): bigint | null {
+function amountInOf(intent: BuiltIntent): bigint | null {
   if (intent.kind === 'swap' || intent.kind === 'bridge') {
     return intent.amountIn === undefined ? null : BigInt(intent.amountIn)
   }
@@ -230,6 +232,9 @@ const approvals: Rule = ({ calls, decodedActions, allowedSpenders = [] }) => {
  * to send.
  */
 const nativeValue: Rule = ({ intent, calls, quote }) => {
+  // A custom intent declares its own native value and the custom tier holds
+  // the calls to that; this rule is about a route's fee against a built intent.
+  if (intent.kind === 'custom') return []
   if (isNativeAsset(sourceAssetOf(intent))) return []
   const declared = quote?.nativeFee ? BigInt(quote.nativeFee) : 0n
   const findings: Finding[] = []
@@ -290,6 +295,9 @@ const simulationOutcome: Rule = ({ simulation }) => {
  * size, because the person never agreed to that one at all.
  */
 const simulationMatchesIntent: Rule = ({ intent, simulation }) => {
+  // A custom intent has a list of bounds rather than one source asset; the
+  // custom tier compares the run against the declaration instead.
+  if (intent.kind === 'custom') return []
   if (!simulation || !simulation.success || simulation.assetChanges.length === 0) return []
   const sourceAsset = sourceAssetOf(intent).toLowerCase()
   // A trade quoted by amountOut has no fixed input, so there is no promise to
@@ -509,6 +517,132 @@ const tradeRules: Rule = (input) => {
   return findings
 }
 
+/**
+ * The heightened tier for calls the agent authored.
+ *
+ * A route provider is untrusted but bounded: it builds one shape, and the
+ * intent says what that shape must do. An agent authoring calls is untrusted
+ * and unbounded, so the declaration takes the intent's place and the rules
+ * tighten in four ways. The bytes must be readable from published source,
+ * not named from a selector. Every approval must be one the declaration
+ * named, at the amount it named, on the token it named. Native value must be
+ * what was declared, spent once. And a simulation must have run, traced
+ * balances, and seen nothing leave that the declaration did not allow.
+ *
+ * The asset check is an upper bound per asset, not an equality: slippage puts
+ * the true figure inside a band, and "exactly declared" would ink honest
+ * plans. Declaring more than leaves is loose but safe; declaring less is the
+ * lie this tier exists to catch. Unlimited approvals and undeclared spenders
+ * are already blocks in the global `approvals` rule, which `verifyPlan`
+ * feeds the declared spenders.
+ */
+const customRules: Rule = (input) => {
+  const intent = input.intent as CustomIntent
+  const { calls, decodedActions, simulation } = input
+  const findings: Finding[] = []
+
+  decodedActions.forEach((a, i) => {
+    if (a.source === 'native') return
+    if (!a.isContract) {
+      findings.push({ block: `call ${i + 1} sends calldata to ${short(a.target)}, which has no code` })
+      return
+    }
+    if (!a.verified) {
+      findings.push({
+        block: `${short(a.target)} has no verified source; an agent-authored plan may only call contracts whose code is published`,
+      })
+    }
+    if (a.source === '4byte') {
+      findings.push({
+        block: `call ${i + 1} to ${short(a.target)} was named from a selector database, not from source; a guess is not enough for an agent-authored call`,
+      })
+    } else if (a.source === 'unknown') {
+      findings.push({ block: `call ${i + 1} to ${short(a.target)} could not be read at all` })
+    }
+  })
+
+  // Every approval the bytes make, against the one the declaration made.
+  const declared = intent.approvals.map((a) => ({
+    token: parseAssetId(a.asset).assetReference.toLowerCase(),
+    spender: parseAccountId(a.spender).address.toLowerCase(),
+    amount: BigInt(a.amount),
+  }))
+  const matched = new Set<number>()
+  for (const call of calls) {
+    const approval = approvalIn(call)
+    // Unlimited is the global rule's block; nothing to compare it to here.
+    if (!approval || approval.amount === 'unlimited') continue
+    const token = parseAccountId(call.to).address.toLowerCase()
+    const spender = parseAccountId(approval.spender).address.toLowerCase()
+    const at = declared.findIndex((d) => d.token === token && d.spender === spender)
+    if (at === -1) {
+      // The global rule passes a declared spender whatever the token; the
+      // declaration named a pairing, and this is not it.
+      findings.push({
+        block: `an approval on ${short(call.to)} to ${short(approval.spender)}, which the declaration does not name for that token`,
+      })
+      continue
+    }
+    matched.add(at)
+    if (approval.amount !== declared[at]!.amount) {
+      findings.push({
+        block: `the plan approves ${approval.amount} to ${short(approval.spender)}, but the declaration says ${declared[at]!.amount}`,
+      })
+    }
+  }
+  intent.approvals.forEach((a, i) => {
+    if (matched.has(i)) return
+    findings.push({
+      warn: {
+        severity: 'caution' as const,
+        code: 'declared_approval_absent',
+        message: `the declaration names an approval to ${short(a.spender)} that no call makes`,
+      },
+    })
+  })
+
+  // Native value: declared, held to, and spent once across the batch.
+  let allowance = intent.nativeValue ? BigInt(intent.nativeValue) : 0n
+  for (const call of calls) {
+    if (call.value === '0') continue
+    const value = BigInt(call.value)
+    if (value <= allowance) {
+      allowance -= value
+      continue
+    }
+    findings.push({
+      block: intent.nativeValue
+        ? `${call.value} wei of native value to ${short(call.to)}, above the ${intent.nativeValue} the declaration allows`
+        : `${call.value} wei of native value to ${short(call.to)}, which the declaration does not mention`,
+    })
+  }
+
+  // The simulation is not optional here, and neither is the trace.
+  if (!simulation) {
+    findings.push({ block: 'no simulation ran; an agent-authored plan cannot be reviewed on its bytes alone' })
+    return findings
+  }
+  if (!simulation.success) return findings // simulationOutcome already said why
+  if (simulation.tracedAssets !== true) {
+    findings.push({ block: 'the simulation did not trace balances, so nothing can be said about what leaves' })
+    return findings
+  }
+  const bounds = new Map(intent.expectedChanges.map((c) => [c.asset.toLowerCase(), BigInt(c.maxOut)]))
+  for (const change of simulation.assetChanges) {
+    const diff = BigInt(change.diff)
+    if (diff >= 0n) continue
+    const left = -diff
+    const name = change.symbol ?? change.assetId
+    const max = bounds.get(change.assetId.toLowerCase())
+    if (max === undefined) {
+      findings.push({ block: `the simulation shows ${name} leaving, which the declaration does not mention` })
+    } else if (left > max) {
+      findings.push({ block: `the simulation shows ${left} ${name} leaving, above the ${max} the declaration allows` })
+    }
+  }
+  return findings
+}
+
 const GLOBAL: readonly Rule[] = [
   pairing,
   evidenceMatchesCalls,
@@ -531,9 +665,14 @@ const BY_KIND: Readonly<Record<Intent['kind'], readonly Rule[]>> = {
   // Supply lands with #79. Until then it fails closed rather than passing on
   // the global rules alone.
   supply: [() => [{ block: 'supply plans cannot be verified yet' }]],
+  custom: [customRules],
 }
 
-export function verifyPlan(input: VerifyInput): Verdict {
+export function verifyPlan(raw: VerifyInput): Verdict {
+  // For a custom intent the declaration is the source of truth for spenders.
+  // The tool does not repeat it, and could not contradict it.
+  const input: VerifyInput =
+    raw.intent.kind === 'custom' ? { ...raw, allowedSpenders: raw.intent.approvals.map((a) => a.spender) } : raw
   const findings: Finding[] = []
   for (const rule of GLOBAL) findings.push(...rule(input))
   // Intent rules index into the pairing; if the pairing is broken they would

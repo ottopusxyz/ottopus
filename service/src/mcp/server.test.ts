@@ -118,6 +118,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   readPortfolio: async () => PORTFOLIO,
   lookups,
   simulator: null,
+  customSimulator: null,
   router: null,
   tokens: null,
   createPlan: planSink().createPlan,
@@ -179,7 +180,7 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers five read tools and three that write, and says which is which', async () => {
+  it('offers five read tools and four that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -188,12 +189,13 @@ describe('the tool surface', () => {
       'get_plan',
       'get_portfolio',
       'list_wallets',
+      'prepare_custom',
       'prepare_trade',
       'prepare_transfer',
       'whoami',
     ])
     for (const tool of tools) {
-      const readOnly = !['prepare_transfer', 'prepare_trade', 'cancel_plan'].includes(tool.name)
+      const readOnly = !['prepare_transfer', 'prepare_trade', 'prepare_custom', 'cancel_plan'].includes(tool.name)
       expect(tool.annotations?.readOnlyHint, `${tool.name} read-only=${readOnly}`).toBe(readOnly)
       expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }
@@ -1234,5 +1236,230 @@ describe('find_asset', () => {
     const { client } = await connected([], { tokens: registry })
     const res = (await call(client, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
     expect(res.isError).toBeFalsy()
+  })
+})
+
+/**
+ * prepare_custom: the agent's calls, held to the agent's declaration.
+ *
+ * The shape is the one Uniswap's LP API hands back for a v3 position —
+ * an approval and a mint — because that is the scenario it was built
+ * against (#97), and because the vendor's own approval is unlimited,
+ * which makes the honest and the forwarded-verbatim versions two real
+ * plans rather than a contrived pair.
+ */
+describe('prepare_custom', () => {
+  const PM = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1'
+  const ME = WALLETS[0]!.address
+  const USDC_ID = `${BASE}/erc20:${USDC}`
+  const CLAIM_ABI = [{ type: 'function', name: 'claimFees', inputs: [], outputs: [], stateMutability: 'nonpayable' }] as const
+  const MINT_ABI = [
+    {
+      type: 'function',
+      name: 'mint',
+      stateMutability: 'payable',
+      outputs: [],
+      inputs: [
+        {
+          name: 'params',
+          type: 'tuple',
+          components: [
+            { name: 'token0', type: 'address' },
+            { name: 'amount0Desired', type: 'uint256' },
+            { name: 'recipient', type: 'address' },
+            { name: 'deadline', type: 'uint256' },
+          ],
+        },
+      ],
+    },
+  ] as const
+
+  /** USDC and the position manager verified; the router has code and no source. */
+  const customLookups: Lookups = {
+    ...lookups,
+    async getCode(c, address) {
+      return address.toLowerCase() === PM ? '0x6080' : lookups.getCode(c, address)
+    },
+    async sourcify(c, address) {
+      if (address.toLowerCase() === PM) {
+        return { abi: [...CLAIM_ABI, ...MINT_ABI] as never, name: 'NonfungiblePositionManager', match: 'exact_match' }
+      }
+      return lookups.sourcify(c, address)
+    },
+  }
+
+  /** Holds 10 USDC and some ETH on Base, so the declaration's bounds are coverable. */
+  const basePortfolio = async (): Promise<Portfolio> => ({
+    ...PORTFOLIO,
+    assets: [
+      {
+        assetId: USDC_ID,
+        chainId: BASE,
+        asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
+        amount: '10000000',
+        value: 10,
+        price: 1,
+        change1d: 0,
+        share: 0.5,
+        holdings: [{ walletId: 'w1', amount: '10000000', value: 10 }],
+      },
+      {
+        assetId: `${BASE}/slip44:60`,
+        chainId: BASE,
+        asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
+        amount: '1000000000000000',
+        value: 4,
+        price: 4000,
+        change1d: 0,
+        share: 0.5,
+        holdings: [{ walletId: 'w1', amount: '1000000000000000', value: 4 }],
+      },
+    ],
+  })
+
+  const approve = (spender: string, amount: bigint) =>
+    encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [spender, amount] })
+  const claim = encodeFunctionData({ abi: CLAIM_ABI, functionName: 'claimFees' })
+
+  /** What a run against the honest plan sees: 1 USDC out, nothing else. */
+  const sawUsdcLeave = (diff = '-1000000') =>
+    stubSimulator({
+      tracedAssets: true,
+      assetChanges: [{ assetId: USDC_ID, symbol: 'USDC', decimals: 6, diff, pre: '10000000', post: String(10_000_000n + BigInt(diff)) }],
+    })
+
+  const honest = {
+    account: `${BASE}:${ME}`,
+    chainId: BASE,
+    calls: [
+      { to: USDC, data: approve(PM, 1_000_000n) },
+      { to: PM, data: claim },
+    ],
+    summary: 'Approve 1 USDC to the position manager and claim fees',
+    expectedChanges: [{ asset: USDC_ID, maxOut: '1000000' }],
+    approvals: [{ asset: USDC_ID, spender: `${BASE}:${PM}`, amount: '1000000' }],
+  }
+
+  const ready = (over: Partial<ToolDeps> = {}) =>
+    connected(undefined, { lookups: customLookups, readPortfolio: basePortfolio, customSimulator: sawUsdcLeave(), ...over })
+
+  it('builds an agent-crafted plan when the bytes, the approval and the run all match the declaration', async () => {
+    const sink = planSink()
+    const { client } = await ready({ createPlan: sink.createPlan })
+    const result = await call(client, 'prepare_custom', honest)
+
+    expect(result.isError).toBeFalsy()
+    expect(result.structuredContent).toMatchObject({ status: 'awaiting_review', summary: honest.summary })
+    expect(result.content[0]!.text).toMatch(/Agent-crafted/)
+    expect(result.content[0]!.text).toMatch(/saw leave: 1000000 USDC/)
+
+    const plan = sink.created[0]!.plan
+    expect(plan.provenance).toBe('agent_crafted')
+    expect(plan.intent.kind).toBe('custom')
+    // No recommendation happened, and the plan says so rather than implying one.
+    expect(plan.resolution.candidatesConsidered).toEqual([])
+    expect(plan.resolution.reason).toMatch(/Chosen by the agent/)
+    expect(plan.status).toBe('awaiting_review')
+    expect(plan.humanPlan.steps).toEqual(['approve on FiatTokenV2_2', 'claimFees on NonfungiblePositionManager'])
+  })
+
+  /** The LP API's own approval, forwarded verbatim. This is the demo's refusal. */
+  it('refuses the vendor’s unlimited approval, and records the refusal', async () => {
+    const sink = planSink()
+    const { client } = await ready({ createPlan: sink.createPlan })
+    const forwarded = { ...honest, calls: [{ to: USDC, data: approve(PM, maxUint256) }, { to: PM, data: claim }] }
+    const result = await call(client, 'prepare_custom', forwarded)
+
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({ status: 'blocked' })
+    expect(result.content[0]!.text).toMatch(/unlimited approval/)
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+  })
+
+  it('inks a declaration that understates what leaves, and passes one that overstates it', async () => {
+    const { client: lying } = await ready({ customSimulator: sawUsdcLeave('-5000000') })
+    const understated = await call(lying, 'prepare_custom', honest)
+    expect(understated.isError).toBe(true)
+    expect(understated.content[0]!.text).toMatch(/5000000 USDC leaving, above the 1000000/)
+
+    const { client: loose } = await ready()
+    const overstated = await call(loose, 'prepare_custom', { ...honest, expectedChanges: [{ asset: USDC_ID, maxOut: '9000000' }] })
+    expect(overstated.isError).toBeFalsy()
+  })
+
+  it('normalises a vendor-shaped call: hex value, bare address', async () => {
+    const sink = planSink()
+    const { client } = await ready({ createPlan: sink.createPlan, customSimulator: sawUsdcLeave('-1000000') })
+    const vendorShaped = {
+      ...honest,
+      calls: [
+        { to: USDC.toUpperCase().replace('0X', '0x'), data: approve(PM, 1_000_000n), value: '0x00' },
+        { to: PM, data: claim, value: '0x3e8' },
+      ],
+      nativeValue: '1000',
+    }
+    const result = await call(client, 'prepare_custom', vendorShaped)
+    expect(result.isError).toBeFalsy()
+    const calls = (sink.created[0]!.plan.outcome as { calls: { to: string; value: string }[] }).calls
+    expect(calls[0]).toMatchObject({ to: `${BASE}:${USDC}`, value: '0' })
+    expect(calls[1]).toMatchObject({ to: `${BASE}:${PM}`, value: '1000' })
+  })
+
+  it('caps the plan at a deadline in the calldata, and refuses one already past', async () => {
+    const sink = planSink()
+    const { client } = await ready({ createPlan: sink.createPlan, customSimulator: sawUsdcLeave('-1000000') })
+    const soon = Math.floor(Date.now() / 1000) + 120
+    const mint = (deadline: number) =>
+      encodeFunctionData({
+        abi: MINT_ABI,
+        functionName: 'mint',
+        args: [{ token0: USDC, amount0Desired: 1_000_000n, recipient: ME, deadline: BigInt(deadline) }],
+      })
+    const capped = await call(client, 'prepare_custom', { ...honest, calls: [{ to: USDC, data: approve(PM, 1_000_000n) }, { to: PM, data: mint(soon) }] })
+    expect(capped.isError).toBeFalsy()
+    expect(Date.parse(sink.created[0]!.plan.expiresAt)).toBeLessThanOrEqual(soon * 1000)
+
+    const past = await call(client, 'prepare_custom', { ...honest, calls: [{ to: PM, data: mint(soon - 600) }] })
+    expect(past.isError).toBe(true)
+    expect(past.content[0]!.text).toMatch(/deadline .* has passed/)
+  })
+
+  it('checks the wallet can sign and covers the declaration, and recommends nothing', async () => {
+    const { client } = await ready()
+    const watchOnly = await call(client, 'prepare_custom', { ...honest, account: `${BASE}:${WALLETS[1]!.address}` })
+    expect(watchOnly.isError).toBe(true)
+    expect(watchOnly.content[0]!.text).toMatch(/watch-only/)
+
+    const stranger = await call(client, 'prepare_custom', { ...honest, account: `${BASE}:0x1111111111111111111111111111111111111111` })
+    expect(stranger.isError).toBe(true)
+    expect(stranger.content[0]!.text).toMatch(/not a wallet linked/)
+
+    const tooMuch = await call(client, 'prepare_custom', { ...honest, expectedChanges: [{ asset: USDC_ID, maxOut: '50000000' }] })
+    expect(tooMuch.isError).toBe(true)
+    expect(tooMuch.content[0]!.text).toMatch(/short of 50 USDC/)
+  })
+
+  it('cannot be prepared on a deployment with no simulator', async () => {
+    const { client } = await ready({ customSimulator: null })
+    const result = await call(client, 'prepare_custom', honest)
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toMatch(/no simulator/)
+  })
+
+  it('inks, rather than refuses, when the simulator will not answer for this chain', async () => {
+    const sink = planSink()
+    const silent: Simulator = { name: 'stub', serves: () => false, simulate: async () => { throw new Error('never asked') } }
+    const { client } = await ready({ createPlan: sink.createPlan, customSimulator: silent })
+    const result = await call(client, 'prepare_custom', honest)
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toMatch(/no simulation ran/)
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+  })
+
+  it('needs the plans:write scope', async () => {
+    const { client } = await connected(['wallets:read', 'plans:read'])
+    const result = await call(client, 'prepare_custom', honest)
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toMatch(/plans:write/)
   })
 })

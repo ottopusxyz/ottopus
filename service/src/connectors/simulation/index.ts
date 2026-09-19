@@ -82,6 +82,9 @@ export function asSimulation(run: SimulationRun, pricing: Pricing = {}): Simulat
     blockNumber: run.blockNumber,
     success: run.success,
     assetChanges: run.assetChanges,
+    // Carried, not dropped: an empty diff means two different things, and
+    // the custom tier refuses a run that never looked.
+    tracedAssets: run.tracedAssets,
     gasUsed: run.gasUsed,
     gasUsd: gasUsd(run.gasUsed, pricing),
     ...(run.revertReason ? { revertReason: run.revertReason } : {}),

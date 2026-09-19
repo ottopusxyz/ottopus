@@ -124,7 +124,7 @@ describe('pricing the gas', () => {
 })
 
 describe('shaping a run for the plan', () => {
-  it('keeps the conclusions, prices the gas, and drops the vendor’s body', () => {
+  it('keeps the conclusions and the trace flag, prices the gas, and drops the vendor’s body', () => {
     const simulation = asSimulation(
       run({ raw: { resultHash: 'b'.repeat(64), baseFeePerGas: '1000000000' } }),
       { gasPriceWei: '1000000000', nativePriceUsd: 4000, nativeDecimals: 18 },
@@ -135,6 +135,8 @@ describe('shaping a run for the plan', () => {
       blockNumber: '51119499',
       success: true,
       assetChanges: [],
+      // Carried through, not dropped: the custom tier refuses a run that never looked.
+      tracedAssets: true,
       gasUsed: '21000',
       gasUsd: '0.08',
       resultHash: 'b'.repeat(64),

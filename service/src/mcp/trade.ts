@@ -117,7 +117,7 @@ interface AssetWords {
  * "9.5 DEGEN". The last resort stays, and now means nobody at all knows this
  * token.
  */
-async function wordsFor(
+export async function wordsFor(
   assetId: string,
   portfolio: Portfolio | null,
   tokens: TokenRegistry | null,

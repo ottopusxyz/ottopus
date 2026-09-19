@@ -174,11 +174,83 @@ export const supplyIntentSchema = z
     { message: SAME_CHAIN },
   )
 
+/**
+ * What the agent expects one asset to do: an upper bound on what leaves.
+ *
+ * A bound and not a figure, because anything quoted with slippage lands
+ * somewhere inside a band — a v3 mint carries `amountMin` several percent
+ * below `amountDesired` on each leg — and "exactly this" would ink honest
+ * plans. "No more than this" is the promise a person can hold the agent to.
+ * Only the outgoing side is declared: it is the side the simulation can
+ * check, and the side a lying agent would drain.
+ */
+const expectedChangeSchema = z.strictObject({
+  asset: assetIdSchema,
+  /** The most that may leave the account, in base units. */
+  maxOut: amountSchema,
+})
+
+/** An allowance the calls will create. Exact by construction: this shape cannot say "unlimited". */
+const declaredApprovalSchema = z.strictObject({
+  asset: assetIdSchema,
+  spender: accountIdSchema,
+  amount: amountSchema,
+})
+
+/**
+ * A custom intent: calls the agent authored itself, with a declaration of
+ * what they do.
+ *
+ * The escape hatch for what the built-in tools cannot express — claim fees,
+ * add liquidity, stake, revoke. No route provider stood behind these calls,
+ * so the agent takes the provider's place and makes the provider's promise:
+ * here is what leaves, here is what gets approved, here is what it means.
+ * Verify then holds the calls, and an independent simulation, to that
+ * promise, and a plan whose bytes or whose effect disagree with it is inked
+ * before anyone sees it.
+ *
+ * The declaration *is* the intent — it is what gets hashed, so the summary
+ * on the review page is the one the agent committed to, not one it could
+ * quietly revise. `fromAccount` is required rather than recommended: the
+ * calls already bind a wallet, so there is nothing for the scorer to choose.
+ */
+export const customIntentSchema = z
+  .object({
+    note: base.note,
+    kind: z.literal('custom'),
+    fromAccount: accountIdSchema,
+    chainId: chainIdSchema,
+    /** In the agent's own words. Hashed, shown beside what the simulation saw. */
+    summary: z.string().trim().min(1).max(280),
+    expectedChanges: z.array(expectedChangeSchema),
+    approvals: z.array(declaredApprovalSchema),
+    /**
+     * Native value the calls send in total, in wei. Declared so verify can
+     * hold the calls to it and spend it once — the same arrangement as a
+     * route's `nativeFee`. Absent means none, and any is then a block.
+     */
+    nativeValue: z.string().regex(/^[0-9]+$/).optional(),
+  })
+  .refine(
+    (v) => {
+      const chain = parseChainId(v.chainId)
+      return (
+        sameChain(chain, chainOf(parseAccountId(v.fromAccount))) &&
+        v.expectedChanges.every((c) => sameChain(chain, chainOf(parseAssetId(c.asset)))) &&
+        v.approvals.every(
+          (a) => sameChain(chain, chainOf(parseAssetId(a.asset))) && sameChain(chain, chainOf(parseAccountId(a.spender))),
+        )
+      )
+    },
+    { message: SAME_CHAIN },
+  )
+
 export const intentSchema = z.union([
   transferIntentSchema,
   swapIntentSchema,
   bridgeIntentSchema,
   supplyIntentSchema,
+  customIntentSchema,
 ])
 
 export type TransferIntent = z.infer<typeof transferIntentSchema>
@@ -191,24 +263,40 @@ export type BridgeIntent = z.infer<typeof bridgeIntentSchema>
  */
 export type TradeIntent = SwapIntent | BridgeIntent
 export type SupplyIntent = z.infer<typeof supplyIntentSchema>
+export type CustomIntent = z.infer<typeof customIntentSchema>
 export type Intent = z.infer<typeof intentSchema>
+/**
+ * An intent Ottopus built the calls for, as opposed to one the agent did.
+ * These have a single asset that leaves; a custom intent has a list of
+ * bounds instead, and anything that wants "the" source asset has to say
+ * which of the two it means.
+ */
+export type BuiltIntent = Exclude<Intent, CustomIntent>
 
 /**
  * The chain an intent executes on.
  *
  * For a bridge that is the source chain — the calls that need signing happen
- * there, and the destination is where value arrives afterwards.
+ * there, and the destination is where value arrives afterwards. A custom
+ * intent names its chain outright, since nothing else in it could imply one.
  *
  * This is what binds a plan to the intent it claims to fulfil: the resolved
  * account and every call must be on this chain, or the plan executes something
  * other than what was asked for.
  */
 export function sourceChainOf(intent: Intent): ChainId {
+  if (intent.kind === 'custom') return parseChainId(intent.chainId)
   return chainOf(parseAssetId(sourceAssetOf(intent)))
 }
 
-/** The asset that leaves. `from` for a trade, `asset` for everything else. */
-export function sourceAssetOf(intent: Intent): string {
+/**
+ * The asset that leaves. `from` for a trade, `asset` for everything else.
+ *
+ * Built intents only, by type: a custom intent may move several assets or
+ * none, and a caller that reaches for its "source asset" has asked a
+ * question with no answer. Narrow first and read `expectedChanges`.
+ */
+export function sourceAssetOf(intent: BuiltIntent): string {
   return 'from' in intent ? intent.from : intent.asset
 }
 
@@ -220,6 +308,7 @@ export function sourceAssetOf(intent: Intent): string {
  * no way for the two to disagree.
  */
 export function destinationChainOf(intent: Intent): ChainId {
+  if (intent.kind === 'custom') return parseChainId(intent.chainId)
   // Keyed on the kind, not on whether a `to` exists: a transfer has one too,
   // and it is a CAIP-10 account rather than a CAIP-19 asset. Reading it as an
   // asset threw on every transfer.

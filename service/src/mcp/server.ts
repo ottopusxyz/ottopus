@@ -5,6 +5,7 @@ import { chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
+import { type CustomDeps, customText, prepareCustom } from './custom.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
 
@@ -45,7 +46,7 @@ export interface ToolContext {
  * rather than copied here — one list per capability, and no chance of this
  * one drifting from what the pipeline actually asks for.
  */
-export interface ToolDeps extends StatusDeps, SwapDeps {
+export interface ToolDeps extends StatusDeps, SwapDeps, CustomDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
 }
@@ -386,6 +387,67 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       const outcome = await prepareTrade({ userId: ctx.userId, grantId: ctx.grantId }, deps, input)
       const body = tradeText(outcome)
       if (outcome.kind === 'invalid' || outcome.kind === 'no_wallet' || outcome.kind === 'no_route') {
+        return failure(body)
+      }
+      if (outcome.kind === 'blocked') {
+        return {
+          ...text(body, { planId: outcome.planId, status: 'blocked', summary: outcome.summary, reasons: outcome.reasons }),
+          isError: true,
+        }
+      }
+      const { kind: _kind, linkExpiresAt: _link, ...structured } = outcome
+      return text(body, structured)
+    },
+  )
+
+  server.registerTool(
+    'prepare_custom',
+    {
+      title: 'Prepare calls you authored, against a declaration',
+      description:
+        'The escape hatch for what prepare_transfer and prepare_trade cannot express — add liquidity, ' +
+        'claim fees, stake, revoke. Use those first. Here you author the calls yourself and declare what ' +
+        'they do; Ottopus decodes them, simulates them independently, and refuses the plan if the bytes ' +
+        'or the simulated effect disagree with the declaration. The rules: `expectedChanges` are upper ' +
+        'bounds — the simulation may show less of an asset leaving, never more, and never an asset you ' +
+        'did not list. `approvals` are exact and yours — write approve(spender, amount) yourself; a ' +
+        'vendor’s unlimited approval is refused. Declare from the calldata you are submitting, not from ' +
+        'a vendor’s response body. Every contract must have published source. `account` is the wallet ' +
+        'the calls already bind; Ottopus checks it can sign and holds what may leave, and recommends ' +
+        'nothing. A refusal names what disagreed: fix the calls or the declaration and resubmit.',
+      inputSchema: {
+        account: z.string().describe('CAIP-10 of the linked wallet that will sign. The calls already bind it.'),
+        chainId: z.string().describe('CAIP-2, e.g. eip155:8453. Every call, asset and spender must be on it.'),
+        calls: z
+          .array(
+            z.object({
+              to: z.string().describe('Contract address, bare 0x or CAIP-10.'),
+              data: z.string().describe('0x calldata. "0x" for a plain value transfer.'),
+              value: z.string().optional().describe('Wei, decimal or 0x hex. Omit for none.'),
+            }),
+          )
+          .min(1)
+          .max(8)
+          .describe('In execution order. An approval before the call that spends it.'),
+        summary: z.string().max(280).describe('What this does, in one sentence. Hashed, and shown beside what the simulation actually saw.'),
+        expectedChanges: z
+          .array(z.object({ asset: z.string(), maxOut: z.string().regex(/^[0-9]+$/) }))
+          .optional()
+          .describe('The most of each asset that may leave the account, in base units. Omit an asset and the plan is refused if it leaves.'),
+        approvals: z
+          .array(z.object({ asset: z.string(), spender: z.string(), amount: z.string().regex(/^[0-9]+$/) }))
+          .optional()
+          .describe('Every allowance the calls create: token, spender, exact amount. Never unlimited.'),
+        nativeValue: z.string().regex(/^[0-9]+$/).optional().describe('Total wei of native value the calls send. Omit for none.'),
+        note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async (input) => {
+      if (!hasScope(ctx.scopes, 'plans:write')) return denied('plans:write')
+      const outcome = await prepareCustom({ userId: ctx.userId, grantId: ctx.grantId }, deps, input)
+      const body = customText(outcome)
+      if (outcome.kind === 'invalid' || outcome.kind === 'no_wallet' || outcome.kind === 'unavailable') {
         return failure(body)
       }
       if (outcome.kind === 'blocked') {
