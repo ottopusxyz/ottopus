@@ -17,6 +17,7 @@ import {
   type Batching,
   SequentialNeedsConsent,
   UserRejected,
+  describeWalletError,
   probeBatching,
   sendPlanCalls,
   waitForReceipt,
@@ -271,7 +272,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         return
       }
       setPhase({ kind: 'idle' })
-      setProblem((err as Error).message || 'The wallet did not send it.')
+      setProblem(describeWalletError(err))
     }
   }, [wallet, gate.kind, plan, wanted, chain, move, recheck])
 

@@ -101,10 +101,42 @@ export function isUserRejection(err: unknown): boolean {
   return e?.code === 4001 || /user (rejected|denied)|rejected the request/i.test(e?.message ?? '')
 }
 
-/** "Method not found" and "unsupported", in the shapes wallets actually send. */
+/**
+ * The reason a wallet gave, including the one it hid.
+ *
+ * MetaMask-lineage wallets wrap a failure as -32603 "Internal JSON-RPC
+ * error" and put the real cause one level down, in `data.message` or
+ * `data.originalError`. Shown without it the person sees the wrapper and
+ * nothing else, which is how "Internal JSON-RPC error" became a support
+ * ticket rather than an answer.
+ */
+export function describeWalletError(err: unknown): string {
+  const e = err as { message?: string; data?: { message?: string; originalError?: { message?: string } } | string } | null
+  const top = (e?.message ?? '').trim() || 'The wallet did not send it.'
+  const data = e?.data
+  const nested = typeof data === 'string' ? data : (data?.message ?? data?.originalError?.message ?? '')
+  return nested && !top.includes(nested) ? `${top} (${nested})` : top
+}
+
+/**
+ * "Method not found" and "unsupported", in the shapes wallets actually send.
+ *
+ * "Internal JSON-RPC error" is here in both of its shapes. Coded -32603 it
+ * always was. Binance Wallet answers with the same words and no code at all
+ * — a bare string from its background script, for any method it has no
+ * handler for — and without this line every plan died on the batch attempt,
+ * one call or many, with the `eth_sendTransaction` it would have accepted
+ * never offered. Both are the wallet failing before it took anything; a
+ * wallet that had accepted would have returned an id.
+ */
 function isUnsupported(err: unknown): boolean {
   const e = err as { code?: number; message?: string } | null
-  return e?.code === 4200 || e?.code === -32601 || e?.code === -32603 || /not supported|unsupported|not found/i.test(e?.message ?? '')
+  return (
+    e?.code === 4200 ||
+    e?.code === -32601 ||
+    e?.code === -32603 ||
+    /not supported|unsupported|not found|internal json-rpc error/i.test(e?.message ?? '')
+  )
 }
 
 /**

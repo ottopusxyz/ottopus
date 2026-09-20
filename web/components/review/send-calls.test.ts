@@ -1,6 +1,6 @@
 import { getAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { BatchAccepted, SequentialNeedsConsent, probeBatching, sendPlanCalls } from './send-calls'
+import { BatchAccepted, SequentialNeedsConsent, describeWalletError, probeBatching, sendPlanCalls } from './send-calls'
 
 /**
  * The provider answered from memory. What is under test is the one rule that
@@ -176,6 +176,24 @@ describe('deciding whether to batch', () => {
     expect(p.calls[0]).toBe('wallet_sendCalls')
   })
 
+  /**
+   * Binance Wallet on BNB Smart Chain. Its background script has no handler
+   * for `wallet_sendCalls` and says so as a bare "Internal JSON-RPC error."
+   * with no code, before any prompt opens. Every plan, one call or many,
+   * failed right there while the `eth_sendTransaction` it accepts sat unused.
+   */
+  it('falls back when the wallet refuses with a codeless internal error', async () => {
+    const p = provider({
+      wallet_sendCalls: () => {
+        throw new Error('Internal JSON-RPC error.')
+      },
+      eth_sendTransaction: () => '0x' + 'ef'.repeat(32),
+    })
+    const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
+    expect(sent.method).toBe('sequential')
+    expect(p.calls).toEqual(['wallet_sendCalls', 'eth_sendTransaction'])
+  })
+
   /** A wallet that fails for its own reasons is not a wallet that cannot batch. */
   it('does not quietly send one at a time when the batch fails for another reason', async () => {
     const p = provider({
@@ -249,5 +267,34 @@ describe('asking the wallet whether it batches', () => {
     const sent = await sendPlanCalls({ provider: p, from: FROM, chainId: CHAIN, calls: [CALL], sequentialIsSafe: true })
     expect(sent.method).toBe('sendCalls')
     expect(p.calls).not.toContain('wallet_getCapabilities')
+  })
+})
+
+/**
+ * The wrapper is not the reason. A wallet that says "Internal JSON-RPC
+ * error" usually put the cause underneath it, and the page should show both.
+ */
+describe('describing what the wallet said', () => {
+  it('adds the nested reason a MetaMask-lineage wallet hides in data', () => {
+    const err = Object.assign(new Error('Internal JSON-RPC error.'), {
+      code: -32603,
+      data: { message: 'insufficient funds for gas * price + value' },
+    })
+    expect(describeWalletError(err)).toBe('Internal JSON-RPC error. (insufficient funds for gas * price + value)')
+    const original = Object.assign(new Error('Internal JSON-RPC error.'), {
+      data: { originalError: { message: 'execution reverted' } },
+    })
+    expect(describeWalletError(original)).toBe('Internal JSON-RPC error. (execution reverted)')
+  })
+
+  it('shows the bare message when there is nothing underneath', () => {
+    expect(describeWalletError(new Error('Internal JSON-RPC error.'))).toBe('Internal JSON-RPC error.')
+    expect(describeWalletError(new Error(''))).toBe('The wallet did not send it.')
+    expect(describeWalletError(null)).toBe('The wallet did not send it.')
+  })
+
+  it('does not repeat a reason the message already carries', () => {
+    const err = Object.assign(new Error('execution reverted: nope'), { data: { message: 'nope' } })
+    expect(describeWalletError(err)).toBe('execution reverted: nope')
   })
 })
