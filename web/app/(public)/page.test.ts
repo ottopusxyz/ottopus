@@ -41,9 +41,19 @@ describe('landing structure', () => {
    * count is of it plus anything else asking for the coral fill.
    */
   it('offers exactly one primary action', () => {
-    const ctas = FLAT.match(/<SignInCta/g) ?? []
+    // The brand bar's Sign in is a LandingAccount, drawn ghost; only a bare
+    // SignInCta takes the coral fill.
+    const ctas = FLAT.match(/<SignInCta(?![^>]*variant=)/g) ?? []
     const explicitPrimaries = FLAT.match(/variant: 'primary'/g) ?? []
     expect(ctas.length + explicitPrimaries.length).toBe(1)
+  })
+
+  it('keeps the brand bar to the lockup, the repo and the account', () => {
+    const bar = FLAT.slice(FLAT.indexOf('<header'), FLAT.indexOf('</header>'))
+    expect(bar).toContain('REPO_URL')
+    expect(bar).toContain('<LandingAccount')
+    expect(bar).not.toContain('ThemeToggle')
+    expect(FLAT).not.toContain('Transaction review for AI agents')
   })
 
   it('sends the second call to action to a review, not to sign-in', () => {
@@ -59,6 +69,7 @@ describe('landing structure', () => {
     const rest = FLAT.slice(FLAT.indexOf('One conversation instead of six tabs'))
     expect(hero).toContain('BubbleField')
     expect(hero).toContain('ot-caustic')
+    expect(hero).toContain('SeaLife')
     expect(rest).not.toMatch(/BubbleField|ot-caustic|ot-canvas/)
   })
 })

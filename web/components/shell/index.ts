@@ -1,4 +1,4 @@
-export { AccountMenu, DOCS_URL, REPO_URL, type AccountMenuProps, type Identity } from './account-menu'
+export { AccountMenu, DOCS_URL, GitHub, REPO_URL, type AccountMenuProps, type Identity } from './account-menu'
 export { AgentCard } from './agent-card'
 export { AppShell, type AppShellProps } from './app-shell'
 export { BottomNav } from './bottom-nav'

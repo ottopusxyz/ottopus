@@ -128,6 +128,21 @@ export const SEA_LIFE: readonly SeaCreature[] = [
   { species: 'crab', left: 16, top: 92, size: 20, travel: 62, lift: 0, delay: 3, duration: 30, opacity: 0.8 },
 ]
 
+/**
+ * The set for a page whose water is the whole viewport with a column of
+ * cards down the middle — the review page. Creatures live in the gutters
+ * and drift slowly across them. Fish face left in the drawing, so they
+ * travel left.
+ */
+export const GUTTER_LIFE: readonly SeaCreature[] = [
+  { species: 'fish', left: 14, top: 26, size: 22, travel: -180, lift: -18, delay: 0, duration: 70, opacity: 0.85 },
+  { species: 'turtle', left: 82, top: 30, size: 30, travel: -220, lift: 22, delay: 12, duration: 95, opacity: 0.8 },
+  { species: 'jelly', left: 90, top: 62, size: 24, travel: 14, lift: -160, delay: 6, duration: 58, opacity: 0.7 },
+  { species: 'jelly', left: 6, top: 72, size: 17, travel: -10, lift: -120, delay: 30, opacity: 0.55, duration: 64 },
+  { species: 'fish', left: 94, top: 48, size: 15, travel: -140, lift: 10, delay: 40, duration: 80, opacity: 0.6 },
+  { species: 'crab', left: 10, top: 94, size: 20, travel: 90, lift: 0, delay: 3, duration: 46, opacity: 0.8 },
+]
+
 export interface SeaLifeProps {
   creatures?: readonly SeaCreature[]
   className?: string

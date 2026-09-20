@@ -1,4 +1,5 @@
 export { PrivyProvider, usePrivyAvailable } from './privy-provider'
+export { LandingAccount } from './landing-account'
 export { SignInCta, type SignInCtaProps } from './sign-in-cta'
 export { SignInDialog, type SignInDialogProps } from './sign-in-dialog'
 export { SignInPanel, type SignInPanelProps } from './sign-in-panel'

@@ -1,22 +1,35 @@
 import Link from 'next/link'
-import { SignInCta } from '@/components/auth'
+import { LandingAccount, SignInCta } from '@/components/auth'
 import { Lockup, Otto } from '@/components/brand'
-import { BubbleField } from '@/components/motion'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Badge, Card, buttonClasses } from '@/components/ui'
+import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
+import { GitHub, REPO_URL } from '@/components/shell'
+import { Card, buttonClasses } from '@/components/ui'
 
 /**
  * The landing page. Copy is settled — see #6 — and used verbatim.
  *
  * This is the only page in the product where the water is loud, and even here
- * it stays in the gutters: the canvas gradient, one caustic wash and three
- * bubbles sit behind the hero's padding, never behind the headline. It has to
- * read as ocean with motion off, so depth and caustics carry it and the bubbles
- * are the garnish.
+ * it stays out from under the words: the review page's gradient, its two
+ * caustic washes, the bubbles and the creatures sit behind the hero's padding
+ * and around Otto, never behind the headline. It has to read as ocean with
+ * motion off, so depth and caustics carry it and the rest is the garnish.
  *
- * Outside the app shell on purpose. A visitor here is not signed in, so there
- * is no nav — just the lockup, the theme control, and one primary button.
+ * Outside the app shell on purpose. The brand bar carries the lockup, the
+ * repo, and either a greeting that opens the app or a Sign in button.
  */
+
+/**
+ * The hero's creatures: the review page's species, placed where the words
+ * are not. The right half is Otto's, and the bottom edge is open water.
+ */
+const HERO_LIFE: readonly SeaCreature[] = [
+  { species: 'fish', left: 92, top: 18, size: 20, travel: -160, lift: -12, delay: 0, duration: 64, opacity: 0.8 },
+  { species: 'turtle', left: 66, top: 76, size: 30, travel: 200, lift: -16, delay: 10, duration: 90, opacity: 0.75 },
+  { species: 'jelly', left: 96, top: 58, size: 22, travel: 10, lift: -120, delay: 6, duration: 56, opacity: 0.7 },
+  { species: 'jelly', left: 58, top: 86, size: 16, travel: -8, lift: -90, delay: 26, duration: 62, opacity: 0.55 },
+  { species: 'fish', left: 78, top: 40, size: 14, travel: -120, lift: 8, delay: 36, duration: 76, opacity: 0.6 },
+  { species: 'crab', left: 8, top: 96, size: 20, travel: 90, lift: 0, delay: 3, duration: 46, opacity: 0.8 },
+]
 
 const STEPS = [
   {
@@ -41,11 +54,7 @@ export default function Landing() {
     <div className="flex min-h-dvh flex-col">
       {/* The brand bar, as the app design draws it: navy ground, cream lockup,
           a cream hairline underneath. Navy and cream are the two tokens that do
-          not move between themes, so this bar looks identical in both.
-
-          It wraps below ~360px, where the lockup and a three-way toggle do not
-          fit on one line: the toggle drops beneath the lockup rather than off
-          the edge, which is what it did. */}
+          not move between themes, so this bar looks identical in both. */}
       <header
         className={
           'sticky top-0 z-50 flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 ' +
@@ -53,21 +62,33 @@ export default function Landing() {
         }
       >
         <Lockup layout="horizontal" tone="reversed" size={30} />
-        <ThemeToggle tone="reversed" />
+        <div className="flex items-center gap-1.5">
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-[13px] font-medium text-[var(--ot-cream)] transition-colors hover:bg-[rgba(255,240,220,0.1)]"
+          >
+            <GitHub />
+            <span className="hidden sm:inline">GitHub</span>
+          </a>
+          <LandingAccount />
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col">
-        {/* Hero. The canvas gradient and the bubbles live on this section only. */}
-        <section className="ot-canvas relative overflow-hidden px-5 py-14 sm:px-10 sm:py-20">
-          <div className="ot-caustic" />
-          <BubbleField pattern="canvas" />
+        {/* Hero. The app's water lives on this section only, clipped as one
+            layer so the caustic sheets never wash past its edge. */}
+        <section className="ot-review-sea relative overflow-hidden px-5 py-14 sm:px-10 sm:py-20">
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="ot-caustic" />
+            <div className="ot-caustic ot-caustic--b" />
+            <BubbleField pattern="canvas" />
+            <SeaLife creatures={HERO_LIFE} />
+          </div>
 
           <div className="relative mx-auto grid w-full max-w-[1100px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="flex flex-col gap-5">
-              <Badge tone="plan" className="w-fit">
-                Transaction review for AI agents
-              </Badge>
-
               <h1 className="font-display max-w-[20ch] text-[38px] leading-[1.05] font-bold tracking-[-0.025em] text-pretty sm:text-[52px]">
                 Stop juggling wallets to get one thing done
               </h1>

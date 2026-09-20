@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { RequireSession, usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
-import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
+import { BubbleField, GUTTER_LIFE, SeaLife } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
 import { cn } from '@/lib/cn'
@@ -186,22 +186,6 @@ function useClock(running: boolean): number {
   return now
 }
 
-/**
- * The portfolio's creatures are drawn for the lower half of a tall column.
- * Here the card sits at the top and centre, so they keep to the sides — the
- * gutters are wide and there is no table of numbers to compete with, which is
- * why this page carries twice the portfolio's count. Slow on purpose: a
- * creature that crosses the gutter in a minute is noticed once and then
- * becomes water. Fish face left in the drawing, so they travel left.
- */
-const GUTTER_LIFE: readonly SeaCreature[] = [
-  { species: 'fish', left: 14, top: 26, size: 22, travel: -180, lift: -18, delay: 0, duration: 70, opacity: 0.85 },
-  { species: 'turtle', left: 82, top: 30, size: 30, travel: -220, lift: 22, delay: 12, duration: 95, opacity: 0.8 },
-  { species: 'jelly', left: 90, top: 62, size: 24, travel: 14, lift: -160, delay: 6, duration: 58, opacity: 0.7 },
-  { species: 'jelly', left: 6, top: 72, size: 17, travel: -10, lift: -120, delay: 30, opacity: 0.55, duration: 64 },
-  { species: 'fish', left: 94, top: 48, size: 15, travel: -140, lift: 10, delay: 40, duration: 80, opacity: 0.6 },
-  { species: 'crab', left: 10, top: 94, size: 20, travel: 90, lift: 0, delay: 3, duration: 46, opacity: 0.8 },
-]
 
 function Ground({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (

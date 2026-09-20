@@ -5,13 +5,12 @@ import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { zerionTokens } from '../connectors/tokens/index.js'
-import { activityRoutes } from './activity.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
 import { apiErrorHandler } from './errors.js'
 import { planRoutes } from './plans.js'
 import { portfolioRoutes } from './portfolio.js'
-import { activityProvider, portfolioProvider } from './portfolio-provider.js'
+import { portfolioProvider } from './portfolio-provider.js'
 import { walletRoutes } from './wallets.js'
 
 /**
@@ -153,18 +152,12 @@ if (ready) {
    * sign in and link wallets — only the numbers are missing. Folding this into
    * `missing` above would take the whole API down over a portfolio provider.
    */
-  const noProvider = (c: Context) =>
-    c.json({ error: 'not_configured', detail: ['ZERION_API_KEY is not set'] }, 503)
   if (portfolioProvider) {
     apiApp.route('/portfolio', portfolioRoutes(db, session, portfolioProvider))
   } else {
-    apiApp.all('/portfolio', noProvider)
-  }
-  /** What the arms did on chain — the same provider, the same readiness question. */
-  if (activityProvider) {
-    apiApp.route('/activity', activityRoutes(db, session, activityProvider))
-  } else {
-    apiApp.all('/activity', noProvider)
+    apiApp.all('/portfolio', (c) =>
+      c.json({ error: 'not_configured', detail: ['ZERION_API_KEY is not set'] }, 503),
+    )
   }
 } else {
   const unconfigured = (c: Context) => c.json({ error: 'not_configured', detail: missing }, 503)
@@ -175,5 +168,4 @@ if (ready) {
   apiApp.all('/plans/*', unconfigured)
   apiApp.all('/plans', unconfigured)
   apiApp.all('/portfolio', unconfigured)
-  apiApp.all('/activity', unconfigured)
 }

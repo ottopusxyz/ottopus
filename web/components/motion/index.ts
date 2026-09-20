@@ -10,6 +10,7 @@ export {
 export * from './loaders'
 export { DEPTH_LEVELS, DEPTH_TOKENS, Depth, type DepthLevel, type DepthProps } from './depth'
 export {
+  GUTTER_LIFE,
   MAX_SEA_LIFE,
   SEA_LIFE,
   SEA_SPECIES,
