@@ -84,7 +84,7 @@ function Card({
 }
 
 function ConnectedPanel() {
-  const { state, linkWallet, linking, linkError, addWatchOnly, unlink, refresh } = useWallets()
+  const { state, linkWallet, linking, linkError, addWatchOnly, unlink, update, refresh } = useWallets()
   const [open, setOpen] = useState(false)
 
   const wallets = armsOf(state)
@@ -151,7 +151,7 @@ function ConnectedPanel() {
           />
         </div>
       ) : (
-        <WalletList wallets={wallets} onUnlink={unlink} />
+        <WalletList wallets={wallets} onUnlink={unlink} onUpdate={update} />
       )}
 
       {state.status !== 'loading' && state.overflow.length > 0 ? (

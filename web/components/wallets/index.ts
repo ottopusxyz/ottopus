@@ -1,7 +1,9 @@
 export { ArmCard, type ArmCardProps } from './arm-card'
+export { EditWalletDialog, type EditWalletDialogProps, type WalletEdit } from './edit-wallet-dialog'
 export { LinkWalletDialog, type LinkWalletDialogProps } from './link-wallet-dialog'
 export {
   ADDRESS_RE,
+  EDITABLE_TYPES,
   LINK_ERRORS,
   MAX_ARMS,
   WALLET_NAMES,

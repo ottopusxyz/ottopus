@@ -5,11 +5,14 @@ import { AddressChip, Button } from '@/components/ui'
 import type { Arm } from '@/lib/api'
 import { armName, walletClientName } from './naming'
 import { ProofMark } from './proof-mark'
+import { EditWalletDialog, type WalletEdit } from './edit-wallet-dialog'
 import { UnlinkDialog } from './unlink-dialog'
 
 export interface WalletListProps {
   wallets: Arm[]
   onUnlink: (arm: Arm) => Promise<void>
+  /** Rename or rekind an arm. Absent, the rows have no Edit. */
+  onUpdate?: ((arm: Arm, edit: WalletEdit) => Promise<void>) | undefined
 }
 
 /**
@@ -17,8 +20,9 @@ export interface WalletListProps {
  * one destructive action. Denser than the portfolio card because nothing here
  * competes with a balance.
  */
-export function WalletList({ wallets, onUnlink }: WalletListProps) {
+export function WalletList({ wallets, onUnlink, onUpdate }: WalletListProps) {
   const [confirming, setConfirming] = useState<Arm | null>(null)
+  const [editing, setEditing] = useState<Arm | null>(null)
 
   return (
     <>
@@ -41,20 +45,28 @@ export function WalletList({ wallets, onUnlink }: WalletListProps) {
                 </span>
                 <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setConfirming(arm)}
-                aria-label={`Unlink ${armName(arm)}`}
-              >
-                Unlink
-              </Button>
+              <span className="flex flex-none items-center gap-1.5">
+                {onUpdate ? (
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(arm)} aria-label={`Edit ${armName(arm)}`}>
+                    Edit
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setConfirming(arm)}
+                  aria-label={`Unlink ${armName(arm)}`}
+                >
+                  Unlink
+                </Button>
+              </span>
             </li>
           )
         })}
       </ul>
 
       <UnlinkDialog arm={confirming} onClose={() => setConfirming(null)} onUnlink={onUnlink} />
+      {onUpdate ? <EditWalletDialog arm={editing} onClose={() => setEditing(null)} onSave={onUpdate} /> : null}
     </>
   )
 }

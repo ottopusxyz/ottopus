@@ -7,6 +7,8 @@ import {
   listWallets,
   syncWallets,
   unlinkWallet,
+  updateWallet,
+  WALLET_TYPES,
 } from '../wallets/index.js'
 
 /**
@@ -29,10 +31,18 @@ const watchOnlySchema = z.object({
 
 const STATUS: Record<WalletError['code'], 400 | 404 | 409 | 422> = {
   invalid_address: 400,
+  invalid_type: 400,
   already_linked: 409,
   too_many_wallets: 422,
   not_found: 404,
 }
+
+const editSchema = z
+  .object({
+    label: z.string().max(60).nullable().optional(),
+    walletType: z.enum(WALLET_TYPES as [string, ...string[]]).optional(),
+  })
+  .refine((v) => v.label !== undefined || v.walletType !== undefined, { message: 'nothing to change' })
 
 export function walletRoutes(db: WalletDb, session: MiddlewareHandler): Hono {
   const app = new Hono()
@@ -78,6 +88,20 @@ export function walletRoutes(db: WalletDb, session: MiddlewareHandler): Hono {
 
     try {
       return c.json({ wallet: await addWatchOnlyWallet(db, c.get('userId'), body.data) }, 201)
+    } catch (err) {
+      const { code, status } = fail(err)
+      return c.json({ error: code }, status)
+    }
+  })
+
+  /** The name and the kind. The address and the proof are not for editing. */
+  app.patch('/:id', async (c) => {
+    const id = c.req.param('id')
+    if (!z.uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404)
+    const parsed = editSchema.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: 'invalid_type', detail: parsed.error.issues.map((i) => i.message) }, 400)
+    try {
+      return c.json({ wallet: await updateWallet(db, c.get('userId'), id, parsed.data) })
     } catch (err) {
       const { code, status } = fail(err)
       return c.json({ error: code }, status)

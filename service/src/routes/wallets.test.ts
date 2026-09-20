@@ -140,6 +140,47 @@ describe('POST /watch', () => {
   })
 })
 
+describe('PATCH /:id', () => {
+  const patch = (id: string, body: unknown, as?: string) =>
+    (as ? appAs(as) : app()).request(`/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  it('renames an arm and changes its kind, and the change is what the list shows', async () => {
+    const created = await post(undefined, '/watch', { address: address(5), label: 'Pasted' })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+
+    const res = await patch(arm.id, { label: 'Treasury', walletType: 'safe' })
+    expect(res.status).toBe(200)
+    expect((await res.json()) as unknown).toMatchObject({ wallet: { id: arm.id, label: 'Treasury', walletType: 'safe', isWatchOnly: true } })
+
+    const list = (await (await app().request('/')).json()) as { wallets: { label: string | null; walletType: string }[] }
+    expect(list.wallets[0]).toMatchObject({ label: 'Treasury', walletType: 'safe' })
+  })
+
+  it('clears a label with null and leaves the kind alone', async () => {
+    const created = await post(undefined, '/watch', { address: address(6), label: 'Pasted', walletType: 'safe' })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+    const res = await patch(arm.id, { label: null })
+    expect((await res.json()) as unknown).toMatchObject({ wallet: { label: null, walletType: 'safe' } })
+  })
+
+  it('refuses a kind it has no word for, an empty edit, and a bad body', async () => {
+    const created = await post(undefined, '/watch', { address: address(8) })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+    expect((await patch(arm.id, { walletType: 'abacus' })).status).toBe(400)
+    expect((await patch(arm.id, {})).status).toBe(400)
+    expect((await app().request(`/${arm.id}`, { method: 'PATCH', body: 'not json' })).status).toBe(400)
+  })
+
+  it('answers 404 for a wallet belonging to someone else, or none at all', async () => {
+    const stranger = await userIdForDid(db, 'did:privy:someone-else-editing')
+    const created = await post(undefined, '/watch', { address: address(9) })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+    expect((await patch(arm.id, { label: 'Mine now' }, stranger)).status).toBe(404)
+    expect((await patch('11111111-2222-3333-4444-555555555555', { label: 'x' })).status).toBe(404)
+    expect((await patch('nope', { label: 'x' })).status).toBe(404)
+  })
+})
+
 describe('DELETE /:id', () => {
   it('unlinks an arm', async () => {
     const created = await post(undefined, '/watch', { address: address(5) })

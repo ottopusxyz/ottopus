@@ -152,6 +152,19 @@ export function unlinkWallet(credentials: Credentials, id: string): Promise<void
   return call(`/wallets/${id}`, credentials, { method: 'DELETE' })
 }
 
+/** The name and the kind, which are the person's to set. Null clears the label. */
+export function updateWallet(
+  credentials: Credentials,
+  id: string,
+  edit: { label?: string | null; walletType?: string },
+): Promise<{ wallet: Arm }> {
+  return call(`/wallets/${id}`, credentials, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(edit),
+  })
+}
+
 /**
  * How an asset is held. `wallet` is the only one a plan can spend, and the
  * only one in the token list — everything else sits under its protocol.

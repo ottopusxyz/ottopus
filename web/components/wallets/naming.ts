@@ -82,6 +82,13 @@ export const WALLET_NAMES: Readonly<Record<string, string>> = {
   unknown: 'Wallet',
 }
 
+/** The kinds a person may pick for an arm: the ones with a bundled mark, so the choice is visible. */
+export const EDITABLE_TYPES: readonly string[] = [
+  'metamask', 'rabby_wallet', 'safe', 'ledger', 'ambire', 'infinex', 'coinbase_wallet', 'rainbow',
+  'phantom', 'zerion', 'trust', 'uniswap', 'okx_wallet', 'brave_wallet', 'bitget_wallet', 'backpack',
+  'wallet_connect',
+]
+
 /**
  * What each service error code means to a person. Anything unmapped falls back
  * to a generic line rather than showing the code — `too_many_wallets` on screen

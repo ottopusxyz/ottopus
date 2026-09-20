@@ -7,6 +7,7 @@ import {
   addWatchOnlyWallet,
   syncWallets,
   unlinkWallet as unlinkOnServer,
+  updateWallet as updateOnServer,
   type Arm,
   type Credentials,
 } from '@/lib/api'
@@ -59,6 +60,8 @@ export interface UseWallets {
   linkError: string | null
   addWatchOnly: (input: { address: string; label?: string }) => Promise<void>
   unlink: (arm: Arm) => Promise<void>
+  /** Rename an arm or change its kind. The list re-reads afterwards. */
+  update: (arm: Arm, edit: { label: string | null; walletType: string }) => Promise<void>
   refresh: () => void
 }
 
@@ -171,8 +174,19 @@ export function useWallets(): UseWallets {
     [credentials, unlinkAtPrivy],
   )
 
+  const update = useCallback(
+    async (arm: Arm, edit: { label: string | null; walletType: string }) => {
+      const creds = await credentials()
+      if (!creds) throw new Error('Not signed in')
+      await updateOnServer(creds, arm.id, edit)
+      setNonce((n) => n + 1)
+    },
+    [credentials],
+  )
+
   return {
     state,
+    update,
     linkWallet: () => {
       setLinkError(null)
       setLinking(true)

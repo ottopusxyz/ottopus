@@ -22,11 +22,28 @@ export interface Arm {
 
 export class WalletError extends Error {
   constructor(
-    readonly code: 'invalid_address' | 'already_linked' | 'too_many_wallets' | 'not_found',
+    readonly code: 'invalid_address' | 'already_linked' | 'too_many_wallets' | 'not_found' | 'invalid_type',
     message: string,
   ) {
     super(message)
   }
+}
+
+/**
+ * The kinds a wallet may be called. The web's WALLET_NAMES has words for
+ * each; a kind not here is a typo, not a new client. `watch_only` is a fact
+ * about proof rather than a kind, and only a watch-only arm may keep it.
+ */
+export const WALLET_TYPES: readonly string[] = [
+  'metamask', 'rabby_wallet', 'coinbase_wallet', 'coinbase_smart_wallet', 'base_account', 'rainbow',
+  'phantom', 'zerion', 'safe', 'trust', 'uniswap', 'okx_wallet', 'brave_wallet', 'bitget_wallet',
+  'backpack', 'ledger', 'ambire', 'infinex', 'wallet_connect', 'watch_only', 'unknown',
+]
+
+export interface WalletEdit {
+  /** Null clears the label; absent leaves it. */
+  label?: string | null | undefined
+  walletType?: string | undefined
 }
 
 const columns = {
@@ -233,6 +250,36 @@ export async function addWatchOnlyWallet(
       .returning(columns)
 
     if (!row) throw new WalletError('not_found', 'The wallet could not be stored')
+    return toArm(row)
+  })
+}
+
+/**
+ * The name and the kind, which are the person's to set. Everything else on
+ * the row — the address, the proof, whether it can sign — is not, and a
+ * proved wallet cannot be relabelled watch-only: the kind is what the mark
+ * says, the proof is what the scorer trusts.
+ */
+export async function updateWallet(db: WalletDb, userId: string, id: string, edit: WalletEdit): Promise<Arm> {
+  const patch: Partial<{ label: string | null; walletType: string }> = {}
+  if (edit.label !== undefined) patch.label = edit.label?.trim() || null
+  if (edit.walletType !== undefined) {
+    if (!WALLET_TYPES.includes(edit.walletType)) throw new WalletError('invalid_type', `${edit.walletType} is not a wallet kind`)
+    patch.walletType = edit.walletType
+  }
+  if (Object.keys(patch).length === 0) throw new WalletError('invalid_type', 'nothing to change')
+
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select(columns)
+      .from(linkedWallets)
+      .where(and(eq(linkedWallets.id, id), eq(linkedWallets.userId, userId), isNull(linkedWallets.unlinkedAt)))
+    if (!current) throw new WalletError('not_found', 'No such wallet')
+    if (patch.walletType === 'watch_only' && !current.isWatchOnly) {
+      throw new WalletError('invalid_type', 'a proved wallet is not watch-only')
+    }
+    const [row] = await tx.update(linkedWallets).set(patch).where(eq(linkedWallets.id, id)).returning(columns)
+    if (!row) throw new WalletError('not_found', 'No such wallet')
     return toArm(row)
   })
 }
