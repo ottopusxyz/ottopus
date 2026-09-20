@@ -1,11 +1,15 @@
 import type { AssetRow, ChainRow } from '@/lib/api'
 
 /**
- * What the nudge asks a person to try. The design's three, then two for the
- * custom tier — the same shapes the demo runs. Concrete on purpose: "try
- * something" is not a prompt, "swap 20 USDC for ETH on Base" is.
+ * What the nudge asks a person to try. A stock on chain first, then the
+ * design's three, then two for the custom tier — the same shapes the demo
+ * runs. Concrete on purpose: "try something" is not a prompt, "swap 20 USDC
+ * for ETH on Base" is. "Buy me NVIDIA" leads because it says what an agent
+ * with every wallet can do that a swap box cannot: find the token, pick the
+ * chain it lives on, and route to it.
  */
 export const INTENT_PROMPTS: readonly string[] = [
+  'Buy me NVIDIA token using 10 USDC',
   'Swap 20 USDC for ETH on Base',
   'Move my idle USDC to the cheapest chain',
   'Show me every unlimited approval I have',
@@ -34,13 +38,14 @@ export function smallSlice(amount: string, decimals: number, fraction = 0.05): s
 }
 
 /**
- * The prompts, led by one about what the person actually holds.
+ * The prompts, with one about what the person actually holds in second place.
  *
  * The largest loose balance is the one an agent can most plausibly move, and
  * a prompt naming it turns "try me" into "try me with this". A stable becomes
  * a swap into ETH at a round figure; anything else becomes a small slice of
- * itself into USDC. Without a reading, or with nothing spendable, the fixed
- * list stands.
+ * itself into USDC. It goes second rather than first so the lead prompt is
+ * the same for everyone. Without a reading, or with nothing spendable, the
+ * fixed list stands.
  */
 export function promptsFor(portfolio: { assets: readonly AssetRow[]; chains: readonly ChainRow[] } | null): readonly string[] {
   const top = portfolio?.assets.filter((row) => row.value > 0).sort((a, b) => b.value - a.value)[0]
@@ -55,5 +60,6 @@ export function promptsFor(portfolio: { assets: readonly AssetRow[]; chains: rea
         return slice ? `Swap ${slice} ${top.asset.symbol} for USDC on ${chain}` : null
       })()
   if (!lead) return INTENT_PROMPTS
-  return [lead, ...INTENT_PROMPTS.filter((p) => p !== lead)]
+  const [first, ...rest] = INTENT_PROMPTS
+  return [first!, lead, ...rest.filter((p) => p !== lead)]
 }

@@ -30,16 +30,18 @@ describe('the prompts', () => {
     expect(promptsFor({ assets: [], chains })).toBe(INTENT_PROMPTS)
   })
 
-  it('lead with a swap out of the largest stable balance', () => {
+  it('keep the lead prompt first, and put a swap out of the largest stable balance second', () => {
     const prompts = promptsFor({ assets: [row('ETH', 18, '10000000000000000', 30), row('USDC', 6, '500000000', 500)], chains })
-    expect(prompts[0]).toBe('Swap 20 USDC for ETH on Base')
-    // Already the design's first prompt, so it is not listed twice.
+    expect(prompts[0]).toBe(INTENT_PROMPTS[0])
+    expect(prompts[1]).toBe('Swap 20 USDC for ETH on Base')
+    // Already on the design's list, so it is not listed twice.
     expect(prompts).toHaveLength(INTENT_PROMPTS.length)
   })
 
-  it('lead with a small slice of anything else, into USDC', () => {
+  it('put a small slice of anything else, into USDC, second', () => {
     const prompts = promptsFor({ assets: [row('ETH', 18, '1000000000000000000', 3000)], chains })
-    expect(prompts[0]).toBe('Swap 0.05 ETH for USDC on Base')
+    expect(prompts[0]).toBe(INTENT_PROMPTS[0])
+    expect(prompts[1]).toBe('Swap 0.05 ETH for USDC on Base')
     expect(prompts).toHaveLength(INTENT_PROMPTS.length + 1)
   })
 
