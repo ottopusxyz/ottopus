@@ -33,6 +33,21 @@ const BY_EVM_ID: ReadonlyMap<number, Chain> = (() => {
   return map
 })()
 
+/**
+ * Every mainnet the registry knows, for the wallet provider's supported
+ * list. Privy refuses to switch to a chain outside it before the wallet is
+ * even asked, and its default list is a handful — so a swap on any chain
+ * the portfolio can read has to be one Privy will switch to. Base leads:
+ * Privy treats the first entry as the default when none is named, and
+ * naming one makes it prompt every wallet to switch on connect.
+ */
+export const WALLET_CHAINS: readonly Chain[] = (() => {
+  const mainnets = [...BY_EVM_ID.values()].filter((chain) => chain.testnet !== true)
+  const base = mainnets.find((chain) => chain.id === 8453)
+  const rest = mainnets.filter((chain) => chain.id !== 8453).sort((a, b) => a.id - b.id)
+  return base ? [base, ...rest] : rest
+})()
+
 export function evmIdOf(caip2: string): number | null {
   const m = /^eip155:(\d+)$/.exec(caip2)
   return m ? Number(m[1]) : null

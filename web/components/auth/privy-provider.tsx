@@ -2,6 +2,7 @@
 
 import { PrivyProvider as Privy } from '@privy-io/react-auth'
 import { Component, createContext, useContext, type ReactNode } from 'react'
+import { WALLET_CHAINS } from '@/lib/chains'
 import { SessionProvider } from './session-provider'
 
 const APP_ID = (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim()
@@ -89,6 +90,11 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
         config={{
           loginMethods: ['email', 'google', 'wallet'],
           embeddedWallets: { ethereum: { createOnLogin: 'off' } },
+          // Every mainnet the registry knows. Without this Privy's own short
+          // list applies, and a switch to any chain outside it fails before
+          // the wallet is asked. No defaultChain: naming one makes Privy
+          // prompt every wallet to switch on connect.
+          supportedChains: [...WALLET_CHAINS],
           appearance: {
             // Only the wallet step shows Privy's own UI; this is what brands it.
             accentColor: '#F58A6A',

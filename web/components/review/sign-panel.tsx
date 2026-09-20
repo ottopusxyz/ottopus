@@ -1,6 +1,6 @@
 'use client'
 
-import { useConnectWallet, useWallets } from '@privy-io/react-auth'
+import { useConnectWallet, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Otto } from '@/components/brand'
@@ -181,10 +181,17 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
       try {
         await wallet.switchChain(evmId)
       } catch (err) {
+        const message = String((err as Error).message)
+        // Privy refuses a chain outside its own list before the wallet is
+        // asked. The wallet may well know it: ask the wallet directly.
+        if (/unsupported chainid/i.test(message)) {
+          await switchDirectly(wallet, evmId, chain)
+          return
+        }
         // 4902: the wallet has never heard of the chain. Teach it from the
         // registry, then ask again. Anything else is the wallet's answer.
         const code = (err as { code?: number }).code
-        if (code !== 4902 && !/unrecognized|not added|4902/i.test(String((err as Error).message))) throw err
+        if (code !== 4902 && !/unrecognized|not added|4902/i.test(message)) throw err
         const params = addChainParams(chain)
         if (!params) throw err
         const provider = await wallet.getEthereumProvider()
@@ -601,4 +608,26 @@ function BatchMark() {
       <path d="M3.9 6h4.2M6 3.9v4.2" strokeLinecap="round" strokeWidth="1.2" opacity="0.6" />
     </svg>
   )
+}
+
+/**
+ * The switch, over the raw EIP-1193 provider rather than through Privy's
+ * wrapper — for a chain Privy does not list but the wallet may know. On
+ * 4902 the wallet is taught the chain from the registry and asked again.
+ * Privy still hears the wallet's chainChanged event, so its idea of the
+ * current chain follows.
+ */
+async function switchDirectly(wallet: ConnectedWallet, evmId: number, chain: string): Promise<void> {
+  const provider = await wallet.getEthereumProvider()
+  const hex = `0x${evmId.toString(16)}`
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
+  } catch (err) {
+    const code = (err as { code?: number }).code
+    if (code !== 4902 && !/unrecognized|not added|4902/i.test(String((err as Error).message))) throw err
+    const params = addChainParams(chain)
+    if (!params) throw err
+    await provider.request({ method: 'wallet_addEthereumChain', params: [params] })
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
+  }
 }
