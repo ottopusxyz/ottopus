@@ -24,7 +24,16 @@ export const KNOWN_ABI = parseAbi([
   'function setApprovalForAll(address operator, bool approved)',
   'function safeTransferFrom(address from, address to, uint256 tokenId)',
   'function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)',
+  // Permit2: the allowance a spender draws through, with an expiry of its own.
+  'function approve(address token, address spender, uint160 amount, uint48 expiration)',
 ])
+
+/**
+ * Permit2's signature for an allowance, which reads as an approval — the
+ * spender is the second argument, and the amount is a uint160 whose maximum
+ * is what "unlimited" means there.
+ */
+export const PERMIT2_APPROVE = 'approve(address,address,uint160,uint48)'
 
 /** Selector → item, for the first pass. */
 export const KNOWN_BY_SELECTOR: ReadonlyMap<string, AbiFunction> = new Map(

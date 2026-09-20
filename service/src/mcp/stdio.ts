@@ -2,13 +2,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { findUserById } from '../auth/session.js'
 import { config } from '../config.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
-import { lifiConnector } from '../connectors/route/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { zerionTokens } from '../connectors/tokens/index.js'
 import { getDb } from '../db/client.js'
 import { SCOPES } from '../oauth/scopes.js'
 import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
 import { portfolioProvider } from '../routes/portfolio-provider.js'
+import { routeProvider } from '../routes/route-provider.js'
 import { httpLookups } from '../verify/index.js'
 import { listWallets } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
@@ -84,10 +84,7 @@ async function main(): Promise<void> {
           ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
         })
       : null,
-    router: lifiConnector({
-      apiKey: config.lifiApiKey,
-      ...(config.lifiApiUrl ? { baseUrl: config.lifiApiUrl } : {}),
-    }),
+    router: routeProvider,
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
       issueReviewLink(db, { planId, version, planExpiresAt }, config.webUrl),

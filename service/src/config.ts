@@ -85,6 +85,13 @@ export interface Config {
   lifiApiKey: string | undefined
   lifiApiUrl: string | undefined
   /**
+   * Optional. With a key, Uniswap's Trading API is the first route provider
+   * asked on the chains it serves, and LI.FI takes the rest; without one,
+   * LI.FI routes everything. The API does not answer without a key.
+   */
+  uniswapApiKey: string | undefined
+  uniswapApiUrl: string | undefined
+  /**
    * One RPC provider for every chain: a URL with `{network}` (Alchemy's name)
    * or `{chainId}` (the EVM id) in it, substituted per chain. Unset means
    * viem's public endpoints, which are fine for a laptop and rate-limited for
@@ -256,6 +263,8 @@ export function loadConfig(): Config {
     zerionApiUrl: readOptional('ZERION_API_URL'),
     lifiApiKey: readOptional('LIFI_API_KEY'),
     lifiApiUrl: readOptional('LIFI_API_URL'),
+    uniswapApiKey: readOptional('UNISWAP_API_KEY'),
+    uniswapApiUrl: readOptional('UNISWAP_API_URL'),
     rpcUrlTemplate: readRpcTemplate('RPC_URL_TEMPLATE'),
   }
 }

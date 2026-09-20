@@ -3,13 +3,14 @@ import {
   type AbiFunction,
   type Hex,
   decodeFunctionData,
+  maxUint160,
   maxUint256,
   parseAbiItem,
   toFunctionSelector,
   toFunctionSignature,
 } from 'viem'
 import { type Call, type DecodedAction, accountOn, parseAccountId, parseChainId } from '../core/index.js'
-import { KNOWN_BY_SELECTOR } from './abi.js'
+import { KNOWN_BY_SELECTOR, PERMIT2_APPROVE } from './abi.js'
 import type { Lookups } from './lookups.js'
 
 /**
@@ -69,6 +70,10 @@ function approvalOf(chainId: string, item: AbiFunction, args: DecodedArgs): Deco
     }
     case 'setApprovalForAll(address,bool)':
       return args?.[1] === true ? { spender: spender(0), amount: 'unlimited' } : undefined
+    case PERMIT2_APPROVE: {
+      const amount = args?.[2] as bigint
+      return { spender: spender(1), amount: amount === maxUint160 ? 'unlimited' : amount.toString() }
+    }
     default:
       return undefined
   }

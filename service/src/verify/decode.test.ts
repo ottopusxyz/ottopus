@@ -1,4 +1,4 @@
-import { type Abi, encodeFunctionData, maxUint256, parseAbi } from 'viem'
+import { type Abi, encodeFunctionData, maxUint160, maxUint256, parseAbi } from 'viem'
 import { describe, expect, it } from 'vitest'
 import type { Call } from '../core/index.js'
 import { KNOWN_ABI } from './abi.js'
@@ -102,6 +102,16 @@ describe('decodeCall', () => {
       spender: `${CHAIN}:${SPENDER}`,
       amount: 'unlimited',
     })
+  })
+
+  it('reads a Permit2 grant as an approval to its spender, and the uint160 maximum as unlimited', async () => {
+    const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    const exact = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [USDC, SPENDER, 42n, 1_789_240_982] })
+    const forever = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [USDC, SPENDER, maxUint160, 1_789_240_982] })
+    const read = await decodeCall(call(PERMIT2, exact), fake())
+    expect(read.function).toBe('approve(address,address,uint160,uint48)')
+    expect(read.approval).toEqual({ spender: `${CHAIN}:${SPENDER}`, amount: '42' })
+    expect((await decodeCall(call(PERMIT2, forever), fake())).approval?.amount).toBe('unlimited')
   })
 
   it('reads setApprovalForAll(true) as an unlimited approval, and false as none', async () => {

@@ -1,4 +1,4 @@
-import { type Hex, decodeFunctionData, maxUint256, toFunctionSignature } from 'viem'
+import { type Hex, decodeFunctionData, maxUint160, maxUint256, toFunctionSignature } from 'viem'
 import {
   type BuiltIntent,
   type Call,
@@ -20,7 +20,7 @@ import {
   sourceAssetOf,
   sourceChainOf,
 } from '../core/index.js'
-import { KNOWN_ABI, KNOWN_BY_SELECTOR } from './abi.js'
+import { KNOWN_ABI, KNOWN_BY_SELECTOR, PERMIT2_APPROVE } from './abi.js'
 
 /**
  * Does this plan do what the intent says?
@@ -116,10 +116,34 @@ function approvalIn(call: Call): { spender: string; amount: bigint | 'unlimited'
     }
     case 'setApprovalForAll(address,bool)':
       return read.args[1] === true ? { spender: accountOn(chain, String(read.args[0])), amount: 'unlimited' } : null
+    case PERMIT2_APPROVE: {
+      const amount = read.args[2] as bigint
+      return { spender: accountOn(chain, String(read.args[1])), amount: amount === maxUint160 ? 'unlimited' : amount }
+    }
     default:
       return null
   }
 }
+
+/**
+ * A Permit2 grant, if this is one: the token, who may draw it, how much, and
+ * until when. Permit2's own "forever" is the maximum uint48.
+ */
+function permit2GrantIn(call: Call): { token: string; spender: string; amount: bigint | 'unlimited'; forever: boolean } | null {
+  const read = readCalldata(call)
+  if (read?.signature !== PERMIT2_APPROVE) return null
+  const chain = parseChainId(call.chainId)
+  const amount = read.args[2] as bigint
+  return {
+    token: String(read.args[0]).toLowerCase(),
+    spender: accountOn(chain, String(read.args[1])),
+    amount: amount === maxUint160 ? 'unlimited' : amount,
+    // viem hands a uint48 back as a number.
+    forever: BigInt(read.args[3] as number | bigint) === MAX_UINT48,
+  }
+}
+
+const MAX_UINT48 = (1n << 48n) - 1n
 
 /**
  * How much goes in, when the intent fixes it. Null for a trade quoted by its
@@ -425,7 +449,7 @@ const transferRules: Rule = (input) => {
 }
 
 /**
- * A swap is an approval and a router call, or just a router call.
+ * A swap is an allowance and a router call, or just a router call.
  *
  * The router's calldata is not ours to read — every aggregator encodes its
  * own — so the checks here are the ones that hold whatever the bytes say:
@@ -434,14 +458,22 @@ const transferRules: Rule = (input) => {
  * and that the quote commits to a floor. What the calls *do* is the
  * simulation's job, and the rule above already blocks an asset leaving that
  * the intent never named.
+ *
+ * The allowance takes one of two shapes. The plain one is an approval on the
+ * token to the router. The other is Permit2's: the token is approved to the
+ * allowance contract, and the allowance contract is told the router may draw
+ * that much until a deadline. Two calls, each exact, and the second names
+ * the first's spender as its own target — that pairing is what makes it one
+ * allowance rather than two, and it is checked as such. An allowance that
+ * never expires is refused there, as an unlimited one is here.
  */
 const tradeRules: Rule = (input) => {
   const intent = input.intent as TradeIntent
   const { calls, decodedActions } = input
   const findings: Finding[] = []
 
-  if (calls.length === 0 || calls.length > 2) {
-    return [{ block: `a trade is one router call, with an approval at most; this plan has ${calls.length}` }]
+  if (calls.length === 0 || calls.length > 3) {
+    return [{ block: `a trade is one router call, with an allowance at most; this plan has ${calls.length}` }]
   }
   const router = calls[calls.length - 1]!
   const routerAction = decodedActions[calls.length - 1]
@@ -451,10 +483,14 @@ const tradeRules: Rule = (input) => {
     findings.push({ block: `the trade targets ${short(router.to)}, which has no code on ${chainName(router.chainId)}` })
   }
 
-  // The approval, if the plan carries one, read off the calldata.
-  const approval = calls.length === 2 ? approvalIn(calls[0]!) : null
-  if (calls.length === 2 && !approval) {
-    findings.push({ block: 'the first of two calls in a trade must be the approval; this one is not' })
+  // The allowance, if the plan carries one, read off the calldata.
+  const approval = calls.length >= 2 ? approvalIn(calls[0]!) : null
+  if (calls.length >= 2 && !approval) {
+    findings.push({ block: 'the first call in a trade must be the approval; this one is not' })
+  }
+  const grant = calls.length === 3 ? permit2GrantIn(calls[1]!) : null
+  if (calls.length === 3 && !grant) {
+    findings.push({ block: 'a trade of three calls is an approval, a Permit2 grant and the router call; the second is not a Permit2 grant' })
   }
 
   if (nativeIn) {
@@ -465,23 +501,49 @@ const tradeRules: Rule = (input) => {
       findings.push({ block: `the call sends ${router.value} wei, but the intent says ${intent.amountIn}` })
     }
   } else if (approval) {
-    // Exact, and for the contract we are about to call. An allowance to
-    // somewhere other than the target is the shape a drain takes.
-    if (approval.amount === 'unlimited') {
-      findings.push({ block: `an unlimited approval to ${short(approval.spender)}; a trade approves exactly what it spends` })
-    } else if (intent.amountIn !== undefined && approval.amount !== BigInt(intent.amountIn)) {
-      findings.push({
-        block: `the plan approves ${approval.amount} but the intent spends ${intent.amountIn}; a trade approves exactly what it spends`,
-      })
+    const token = parseAssetId(intent.from).assetReference
+    // Exact. Whichever shape, a trade approves what it spends and no more.
+    const exact = (amount: bigint | 'unlimited', spender: string) => {
+      if (amount === 'unlimited') {
+        findings.push({ block: `an unlimited approval to ${short(spender)}; a trade approves exactly what it spends` })
+      } else if (intent.amountIn !== undefined && amount !== BigInt(intent.amountIn)) {
+        findings.push({
+          block: `the plan approves ${amount} but the intent spends ${intent.amountIn}; a trade approves exactly what it spends`,
+        })
+      }
     }
-    if (parseAccountId(approval.spender).address !== parseAccountId(router.to).address) {
+    exact(approval.amount, approval.spender)
+    if (parseAccountId(calls[0]!.to).address !== token) {
+      findings.push({ block: `the approval is on ${short(calls[0]!.to)}, not on the token being spent` })
+    }
+
+    if (grant) {
+      // The token is approved to the allowance contract, which then lets the
+      // router draw it. Each link is checked: an allowance contract that is
+      // not the one approved, or a grant to somewhere other than the router,
+      // is the shape a drain takes with an extra step in it.
+      exact(grant.amount, grant.spender)
+      if (parseAccountId(calls[1]!.to).address !== parseAccountId(approval.spender).address) {
+        findings.push({
+          block: `the approval lets ${short(approval.spender)} spend, but the grant is made on ${short(calls[1]!.to)}`,
+        })
+      }
+      if (grant.token !== token) {
+        findings.push({ block: `the grant is for ${short(accountOn(parseChainId(router.chainId), grant.token))}, not the token being spent` })
+      }
+      if (parseAccountId(grant.spender).address !== parseAccountId(router.to).address) {
+        findings.push({
+          block: `the grant lets ${short(grant.spender)} spend, but the call goes to ${short(router.to)}`,
+        })
+      }
+      if (grant.forever) {
+        findings.push({ block: `the grant to ${short(grant.spender)} never expires; a trade’s allowance ends with the trade` })
+      }
+    } else if (parseAccountId(approval.spender).address !== parseAccountId(router.to).address) {
+      // An allowance to somewhere other than the target is the shape a drain takes.
       findings.push({
         block: `the approval lets ${short(approval.spender)} spend, but the call goes to ${short(router.to)}`,
       })
-    }
-    const token = parseAssetId(intent.from).assetReference
-    if (parseAccountId(calls[0]!.to).address !== token) {
-      findings.push({ block: `the approval is on ${short(calls[0]!.to)}, not on the token being spent` })
     }
   }
 

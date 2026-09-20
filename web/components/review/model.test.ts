@@ -395,6 +395,69 @@ describe('what a half-signed swap would leave behind', () => {
   it('has nothing to say about a plan that approves nothing', () => {
     expect(standingApproval(plan)).toBeNull()
   })
+
+  /**
+   * An allowance through Permit2 is two approvals on the page: the token
+   * to Permit2, then Permit2's grant to the router. The grant's target is
+   * Permit2, not the token, so the token comes from its first argument.
+   */
+  it('names a Permit2 grant in the token’s words, and the spender it is for', () => {
+    const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    const permit2Swap: Plan = {
+      ...swap({ spender: `${BASE}:${PERMIT2}`, amount: '500000000' }),
+      outcome: {
+        type: 'calls',
+        calls: [
+          { to: `${BASE}:${USDC}`, value: '0', data: '0x095ea7b3', chainId: BASE },
+          { to: `${BASE}:${PERMIT2}`, value: '0', data: '0x87517c45', chainId: BASE },
+          { to: `${BASE}:${ROUTER}`, value: '0', data: '0x3593564c', chainId: BASE },
+        ],
+      },
+      humanPlan: { ...plan.humanPlan, steps: ['Swap on Uniswap v3'], assets: [{ id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 }] },
+      decodedActions: [
+        { ...swap({ spender: `${BASE}:${PERMIT2}`, amount: '500000000' }).decodedActions[0]!, contractName: 'FiatTokenProxy' },
+        {
+          target: `${BASE}:${PERMIT2}`,
+          isContract: true,
+          source: 'abi',
+          verified: true,
+          contractName: 'Permit2',
+          function: 'approve(address,address,uint160,uint48)',
+          args: [
+            { name: 'token', type: 'address', value: USDC },
+            { name: 'spender', type: 'address', value: ROUTER },
+            { name: 'amount', type: 'uint160', value: '500000000' },
+            { name: 'expiration', type: 'uint48', value: '1789240982' },
+          ],
+          value: '0',
+          approval: { spender: `${BASE}:${ROUTER}`, amount: '500000000' },
+        },
+        {
+          target: `${BASE}:${ROUTER}`,
+          isContract: true,
+          source: 'sourcify',
+          verified: true,
+          contractName: 'UniversalRouter',
+          function: 'execute(bytes,bytes[],uint256)',
+          args: [],
+          value: '0',
+        },
+      ],
+    }
+    const grants = approvals(permit2Swap)
+    expect(grants.map((g) => [g.asset, g.spenderName, g.throughPermit2])).toEqual([
+      [`${BASE}/erc20:${USDC}`, 'Permit2', false],
+      [`${BASE}/erc20:${USDC}`, 'UniversalRouter', true],
+    ])
+    expect(approvalAmount(permit2Swap, grants[1]!)).toBe('500 USDC')
+    expect(planSteps(permit2Swap).map((s) => [s.label, s.detail])).toEqual([
+      ['Approve 500 USDC', 'for Permit2'],
+      ['Approve 500 USDC', 'for UniversalRouter through Permit2'],
+      ['Swap on Uniswap v3', undefined],
+    ])
+    // Stopping after the first signature leaves the allowance to Permit2, and nothing to the router.
+    expect(standingApproval(permit2Swap)).toEqual({ spender: `${BASE}:${PERMIT2}`, amount: '500', symbol: 'USDC', unlimited: false })
+  })
 })
 
 describe('a trade with nothing simulated yet', () => {

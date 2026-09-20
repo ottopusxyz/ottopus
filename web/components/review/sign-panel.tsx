@@ -397,7 +397,9 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
       {askConsent ? (
         <div role="alert" className="flex flex-col gap-2 rounded-[10px] bg-[var(--ot-warn-bg)] px-3 py-2.5">
           <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-warn-text)]">
-            This wallet cannot send both steps together, so you would approve first and swap second.
+            {plan.outcome.type === 'calls' && plan.outcome.calls.length > 2
+              ? `This wallet cannot send these ${plan.outcome.calls.length} steps together, so you would sign them one at a time, the allowance before the swap.`
+              : 'This wallet cannot send both steps together, so you would approve first and swap second.'}
             {standing
               ? standing.unlimited
                 ? ` If you stop after the first, an unlimited allowance to ${truncateAddress(addressOf(standing.spender))} would remain.`

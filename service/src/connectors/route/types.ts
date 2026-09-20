@@ -52,6 +52,13 @@ export interface RouteApproval {
   asset: string
   /** Base units. Never "unlimited" — the policy blocks that, and so does this type. */
   amount: string
+  /**
+   * CAIP-10 of the allowance contract the spender draws through, when there
+   * is one. Permit2 is the case: the token is approved to it, and it is told
+   * the spender may take that much. Both contracts then need naming as
+   * spenders, and the calls carry one exact approval to each.
+   */
+  through?: string | undefined
 }
 
 export interface RouteQuote {

@@ -244,8 +244,8 @@ export async function prepareTrade(
       kind: 'no_route',
       reasons: [
         crossing
-          ? `${deps.router.name} does not route from ${chainName(chain)} to ${chainName(destination)}`
-          : `${deps.router.name} does not route swaps on ${chainName(chain)}`,
+          ? `no route provider (${deps.router.name}) routes from ${chainName(chain)} to ${chainName(destination)}`
+          : `no route provider (${deps.router.name}) routes swaps on ${chainName(chain)}`,
       ],
     }
   }
@@ -339,9 +339,12 @@ export async function prepareTrade(
     intent,
     calls: quote.calls,
     decodedActions,
-    // Exactly one spender may be approved: the one the route asked for. The
-    // policy blocks any other, and checks it is the contract being called.
-    allowedSpenders: quote.approval ? [quote.approval.spender] : [],
+    // Only the spenders the route asked for: the contract being called, and
+    // the allowance contract it draws through when there is one. The policy
+    // blocks any other, and checks each is the contract the next call goes to.
+    allowedSpenders: quote.approval
+      ? [quote.approval.spender, ...(quote.approval.through ? [quote.approval.through] : [])]
+      : [],
     quote: { expectedOut: quote.expectedOut, minOut: quote.minOut, nativeFee: quote.nativeFee },
   })
   const warnings = blockWarnings(verdict)

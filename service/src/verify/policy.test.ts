@@ -1,4 +1,4 @@
-import { encodeFunctionData, maxUint256 } from 'viem'
+import { encodeFunctionData, maxUint160, maxUint256 } from 'viem'
 import { describe, expect, it } from 'vitest'
 import type { AssetDelta, Call, DecodedAction, Intent, Simulation } from '../core/index.js'
 import { KNOWN_ABI } from './abi.js'
@@ -395,11 +395,84 @@ describe('a swap', () => {
     )
   })
 
-  it('blocks a third call', async () => {
+  it('blocks a third call that is not a Permit2 grant', async () => {
     const verdict = await ok(tokenIn, [call(USDC, approve(ROUTER, 500_000_000n)), swapCall(), swapCall()])
     expect(verdict.ok === false && verdict.reasons).toContain(
-      'a trade is one router call, with an approval at most; this plan has 3',
+      'a trade of three calls is an approval, a Permit2 grant and the router call; the second is not a Permit2 grant',
     )
+  })
+
+  it('blocks a fourth call', async () => {
+    const verdict = await ok(tokenIn, [call(USDC, approve(ROUTER, 500_000_000n)), swapCall(), swapCall(), swapCall()])
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'a trade is one router call, with an allowance at most; this plan has 4',
+    )
+  })
+
+  /**
+   * Permit2's shape: the token is approved to the allowance contract, and
+   * the allowance contract is told the router may draw that much until a
+   * deadline. One allowance in two calls, each link checked.
+   */
+  describe('an allowance through Permit2', () => {
+    const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    const DEADLINE = 1_789_240_982
+    const grant = (token: string, spender: string, amount: bigint, expiration = DEADLINE) =>
+      encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [token, spender, amount, expiration] })
+    const through = (intent: Intent, calls: Call[]) => verify(intent, calls, [`${CHAIN}:${PERMIT2}`, ROUTER_ID], undefined, floor)
+    const clean = [call(USDC, approve(PERMIT2, 500_000_000n)), call(PERMIT2, grant(USDC, ROUTER, 500_000_000n)), swapCall()]
+
+    it('passes an exact approval to Permit2, an exact grant to the router, then the router call', async () => {
+      const verdict = await through(tokenIn, clean)
+      expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+    })
+
+    it('holds the grant to the amount spent', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(PERMIT2, grant(USDC, ROUTER, 600_000_000n)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'the plan approves 600000000 but the intent spends 500000000; a trade approves exactly what it spends',
+      )
+    })
+
+    it('refuses Permit2’s own unlimited', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(PERMIT2, grant(USDC, ROUTER, maxUint160)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'an unlimited approval to 0x2222…2222; a trade approves exactly what it spends',
+      )
+    })
+
+    it('refuses a grant that never expires', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(PERMIT2, grant(USDC, ROUTER, 500_000_000n, 2 ** 48 - 1)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'the grant to 0x2222…2222 never expires; a trade’s allowance ends with the trade',
+      )
+    })
+
+    it('blocks a grant to somewhere other than the contract it calls', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(PERMIT2, grant(USDC, MALLORY, 500_000_000n)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'the grant lets 0x9999…9999 spend, but the call goes to 0x2222…2222',
+      )
+    })
+
+    it('blocks a grant made somewhere other than the contract the token was approved to', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(MALLORY, grant(USDC, ROUTER, 500_000_000n)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'the approval lets 0x0000…8ba3 spend, but the grant is made on 0x9999…9999',
+      )
+    })
+
+    it('blocks a grant for a token other than the one being swapped', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, call(PERMIT2, grant(MALLORY, ROUTER, 500_000_000n)), swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain('the grant is for 0x9999…9999, not the token being spent')
+    })
+
+    it('still blocks an approval to Permit2 with no grant behind it', async () => {
+      const verdict = await through(tokenIn, [clean[0]!, swapCall()])
+      expect(verdict.ok === false && verdict.reasons).toContain(
+        'the approval lets 0x0000…8ba3 spend, but the call goes to 0x2222…2222',
+      )
+    })
   })
 
   it('blocks an approval when the input is the chain’s own currency', async () => {
