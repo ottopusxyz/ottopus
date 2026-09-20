@@ -318,6 +318,109 @@ export function getPortfolio(credentials: Credentials): Promise<Portfolio> {
   return call('/portfolio', credentials)
 }
 
+/** What a transaction did, as the provider decoded it. */
+export type ActivityKind =
+  | 'send'
+  | 'receive'
+  | 'trade'
+  | 'deposit'
+  | 'withdraw'
+  | 'approve'
+  | 'revoke'
+  | 'claim'
+  | 'mint'
+  | 'burn'
+  | 'execute'
+  | 'deploy'
+  | 'delegate'
+  | 'revoke_delegation'
+  | 'bid'
+
+/** `failed` means mined and reverted: nothing moved except the fee. */
+export type ActivityStatus = 'confirmed' | 'failed' | 'pending'
+
+export type TransferAsset =
+  | { kind: 'fungible'; symbol: string; name: string; iconUrl: string | null; verified: boolean }
+  | { kind: 'nft'; name: string; imageUrl: string | null; contract: string; tokenId: string }
+
+/** One movement of one asset inside a transaction. `self` is a wallet paying itself. */
+export interface Transfer {
+  direction: 'in' | 'out' | 'self'
+  asset: TransferAsset
+  /** Base units. An NFT moves as "1" with zero decimals. */
+  amount: string
+  decimals: number
+  /** USD at the time it was mined. Null when unpriced. */
+  value: number | null
+  price: number | null
+  sender: string
+  recipient: string
+}
+
+export interface Approval {
+  asset: TransferAsset
+  amount: string
+  decimals: number
+  unlimited: boolean
+  spender: string
+}
+
+/** One transaction, as it concerns one linked wallet. */
+export interface ActivityRow {
+  /** Unique within one wallet's history; key rows by wallet and id together. */
+  id: string
+  walletId: string
+  hash: string
+  /** CAIP-2. */
+  chainId: string
+  /** ISO 8601, second precision. */
+  minedAt: string
+  block: number
+  status: ActivityStatus
+  kind: ActivityKind
+  from: string
+  to: string
+  fee: { symbol: string; amount: string; decimals: number; value: number | null } | null
+  transfers: Transfer[]
+  approvals: Approval[]
+  /** The app the wallet talked to, when the provider recognised it. */
+  app: { name: string | null; iconUrl: string | null; contract: string; method: string | null } | null
+}
+
+export interface ActivityFeed {
+  provider: string
+  items: ActivityRow[]
+  /** Pass back for the next page. Null once every wallet is exhausted. */
+  cursor: string | null
+  arms: { walletId: string; address: string; status: ArmStatus }[]
+  /** The chains the rows on this page are on. */
+  chains: { chainId: string; name: string; iconUrl: string | null }[]
+}
+
+export interface ActivityParams {
+  wallet?: string | null
+  chain?: string | null
+  kinds?: readonly ActivityKind[] | null
+  cursor?: string | null
+  size?: number
+}
+
+/**
+ * What the linked wallets did on chain, merged newest first. The service
+ * reads the provider and pages the merge; the browser holds the cursor and
+ * nothing else.
+ */
+export function getActivity(credentials: Credentials, params: ActivityParams = {}): Promise<ActivityFeed> {
+  const query = new URLSearchParams()
+  if (params.wallet) query.set('wallet', params.wallet)
+  if (params.chain) query.set('chain', params.chain)
+  if (params.kinds && params.kinds.length > 0) query.set('kinds', params.kinds.join(','))
+  if (params.cursor) query.set('cursor', params.cursor)
+  if (params.size) query.set('size', String(params.size))
+  const search = query.toString()
+  return call(`/activity${search ? `?${search}` : ''}`, credentials)
+}
+
 /**
  * Establish the session: exchange a Privy token for an Ottopus user, creating
  * the row on a first ever sign-in. Idempotent, so calling it again on every

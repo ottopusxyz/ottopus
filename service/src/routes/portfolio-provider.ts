@@ -1,9 +1,11 @@
 import { config } from '../config.js'
+import { ZerionActivityConnector, type ActivityConnector } from '../connectors/activity/index.js'
 import {
   ZerionPortfolioConnector,
   cached,
   type PortfolioConnector,
 } from '../connectors/portfolio/index.js'
+import { ZerionClient } from '../connectors/zerion/client.js'
 
 /**
  * The one portfolio connector, behind the one cache.
@@ -18,13 +20,24 @@ import {
  * missing — so each surface says "not configured" for balances alone rather
  * than refusing everything.
  */
-export const portfolioProvider: PortfolioConnector | null = config.zerionApiKey
-  ? cached(
-      new ZerionPortfolioConnector({
-        apiKey: config.zerionApiKey,
-        ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
-      }),
-    )
+const client: ZerionClient | null = config.zerionApiKey
+  ? new ZerionClient({
+      apiKey: config.zerionApiKey,
+      ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
+    })
   : null
 
-if (!portfolioProvider) console.error('[portfolio] balances disabled — ZERION_API_KEY is not set')
+export const portfolioProvider: PortfolioConnector | null = client
+  ? cached(new ZerionPortfolioConnector({ apiKey: config.zerionApiKey!, client }))
+  : null
+
+/**
+ * The history reader, on the same client so the chain list loads once. No
+ * cache in front of it: a page is asked for once and paged from, and a
+ * fresh page is the point of a refresh.
+ */
+export const activityProvider: ActivityConnector | null = client
+  ? new ZerionActivityConnector({ apiKey: config.zerionApiKey!, client })
+  : null
+
+if (!portfolioProvider) console.error('[portfolio] balances and activity disabled — ZERION_API_KEY is not set')

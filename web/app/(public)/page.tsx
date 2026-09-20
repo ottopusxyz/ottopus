@@ -1,9 +1,13 @@
 import Link from 'next/link'
 import { LandingAccount, SignInCta } from '@/components/auth'
-import { Lockup, Otto } from '@/components/brand'
+import { Lockup } from '@/components/brand'
+import { HeroOtto } from '@/components/landing/hero-otto'
+import { TypedIntent } from '@/components/landing/typed-intent'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
+import { AssetIcon } from '@/components/portfolio/asset-icon'
 import { GitHub, REPO_URL } from '@/components/shell'
 import { Card, buttonClasses } from '@/components/ui'
+import { WALLET_NAMES, walletMark } from '@/components/wallets/naming'
 
 /**
  * The landing page. Copy is settled — see #6 — and used verbatim.
@@ -31,21 +35,27 @@ const HERO_LIFE: readonly SeaCreature[] = [
   { species: 'crab', left: 8, top: 96, size: 20, travel: 90, lift: 0, delay: 3, duration: 46, opacity: 0.8 },
 ]
 
+/** The wallets on the strip under the hero: the ones whose marks are bundled and that people bring. */
+const WORKS_WITH = ['metamask', 'rabby_wallet', 'safe', 'ledger', 'ambire', 'infinex'] as const
+
 const STEPS = [
   {
     n: '01',
     title: 'Link your wallets',
     body: 'Hardware, hot, or a Safe. Up to eight — Otto only has eight arms.',
+    glyph: 'M3 7.5A2.5 2.5 0 0 1 5.5 5h12A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-12A2.5 2.5 0 0 1 3 16.5zM3 10h17M15 13.5h2',
   },
   {
     n: '02',
     title: 'Point your agent at Ottopus',
     body: 'Works with Claude, Codex, or whatever you already talk to. Nothing to install.',
+    glyph: 'M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4',
   },
   {
     n: '03',
     title: 'Say what you want',
     body: '“Swap 500 USDC for ETH.” You get back plain language describing exactly what will happen, and you sign it in your own wallet, like always.',
+    glyph: 'M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5zM8 9h8M8 12h5',
   },
 ]
 
@@ -99,6 +109,9 @@ export default function Landing() {
                 anything moves.
               </p>
 
+              {/* What you would say — typed, the way you would type it. */}
+              <TypedIntent className="font-mono text-[15px] text-[var(--ot-text)] sm:text-[16px]" />
+
               <div className="flex flex-wrap items-center gap-2">
                 <SignInCta>Link your first wallet</SignInCta>
                 <Link href="/review/demo" className={buttonClasses({ variant: 'ghost', size: 'lg' })}>
@@ -109,18 +122,22 @@ export default function Landing() {
               <p className="text-[13px] text-[var(--ot-text-3)]">
                 Ottopus never holds a key and never asks for a seed phrase.
               </p>
+
+              {/* One quiet row: any wallet, and the marks of the ones people bring. */}
+              <ul className="m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-2 p-0 pt-1" aria-label="Works with any wallet">
+                <li className="text-[11px] font-semibold tracking-[0.06em] text-[var(--ot-text-3)] uppercase">Works with any wallet</li>
+                {WORKS_WITH.map((type) => (
+                  <li key={type} className="flex items-center gap-1.5 text-[12px] text-[var(--ot-text-2)]">
+                    <AssetIcon url={walletMark(type)} name={WALLET_NAMES[type] ?? type} size={18} className="ring-[var(--ot-card)]" />
+                    {WALLET_NAMES[type]}
+                  </li>
+                ))}
+              </ul>
             </div>
 
             {/* Below lg he follows the pitch rather than leading it: 280px of
                 octopus before the headline buries what the product is. */}
-            <div className="ot-drift mx-auto lg:mx-0">
-              <Otto
-                pose="plan-ready"
-                size={280}
-                animated
-                className="h-auto w-[200px] max-w-full sm:w-[240px] lg:w-[280px]"
-              />
-            </div>
+            <HeroOtto className="mx-auto lg:mx-0" />
           </div>
         </section>
 
@@ -154,7 +171,14 @@ export default function Landing() {
                     (i > 0 ? ' border-t border-[var(--ot-border)] sm:border-t-0 sm:border-l' : '')
                   }
                 >
-                  <span className="font-mono text-[12px] text-[var(--ot-text-3)]">{step.n}</span>
+                  <span className="flex items-center gap-2 text-[var(--ot-text-3)]">
+                    <span aria-hidden className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ot-surface-3)] text-[var(--ot-text-2)]">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                        <path d={step.glyph} />
+                      </svg>
+                    </span>
+                    <span className="font-mono text-[12px]">{step.n}</span>
+                  </span>
                   <span className="font-display text-[19px] font-bold">{step.title}</span>
                   <span className="text-[14px] leading-[1.5] text-pretty text-[var(--ot-text-2)]">
                     {step.body}
@@ -170,7 +194,9 @@ export default function Landing() {
         <p className="font-display text-center text-[18px] font-semibold tracking-[-0.01em] text-[var(--ot-text-2)] sm:text-[20px]">
           One intent. Every wallet. You still sign.
         </p>
-        <Lockup layout="horizontal" size={26} />
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+          <Lockup layout="horizontal" size={26} />
+        </div>
       </footer>
     </div>
   )
