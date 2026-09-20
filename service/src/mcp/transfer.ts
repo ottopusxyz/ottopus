@@ -16,6 +16,7 @@ import {
   isNativeAsset,
   nativeAssetIdOf,
   parseAccountId,
+  parseChainId,
   parseAssetId,
   planDraftSchema,
   resolveTransferWallet,
@@ -25,7 +26,7 @@ import {
 import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
 import { KNOWN_ABI, type Lookups, blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { humanAmount, truncateAddress } from './readable.js'
+import { humanAmount, resolveWallet, truncateAddress } from './readable.js'
 
 /**
  * prepare_transfer, end to end: intent, wallet, one call, decode, verify,
@@ -197,13 +198,24 @@ export async function prepareTransfer(
   const recipient = await recipientOf(input.to, assetChain, deps.lookups)
   if ('error' in recipient) return { kind: 'invalid', reasons: [recipient.error] }
 
+  // The wallet, if one was named, however it was named. Resolved before the
+  // intent is parsed, because the intent wants a CAIP-10 and the agent may
+  // have said "the Safe".
+  const arms = await deps.listWallets(ctx.userId)
+  let fromAccount: string | undefined
+  if (input.fromAccount) {
+    const match = resolveWallet(arms, input.fromAccount)
+    if (!match.ok) return { kind: 'no_wallet', reasons: [match.reason] }
+    fromAccount = accountOn(parseChainId(assetChain), match.arm.address)
+  }
+
   const parsed = transferIntentSchema.safeParse({
     kind: 'transfer',
     asset: input.asset,
     amount: input.amount,
     to: recipient.to,
     ...(recipient.toName ? { toName: recipient.toName } : {}),
-    ...(input.fromAccount ? { fromAccount: input.fromAccount } : {}),
+    ...(fromAccount ? { fromAccount } : {}),
     ...(input.note?.trim() ? { note: input.note.trim() } : {}),
   })
   if (!parsed.success) {
@@ -231,7 +243,6 @@ export async function prepareTransfer(
 
   // Balances decide eligibility. Without a provider nothing can be known
   // about what a wallet holds, and a plan built on a guess is not a plan.
-  const arms = await deps.listWallets(ctx.userId)
   if (arms.length === 0) return { kind: 'no_wallet', reasons: ['no wallet is linked to this account'] }
   if (!deps.readPortfolio) {
     return { kind: 'no_wallet', reasons: ['balances are not available on this deployment, so no wallet can be chosen'] }

@@ -56,13 +56,64 @@ export function holderName(arm: Pick<Arm, 'label' | 'walletType' | 'address'>): 
   return arm.label ? arm.label : `${walletName(arm)} ${truncateAddress(arm.address)}`
 }
 
+/**
+ * One wallet, with everything an agent needs to name it back: the full
+ * address and the id. Hosts show the model the words and not always the
+ * structured copy, so a truncated address here is an address the agent
+ * can never pass to another tool.
+ */
 export function describeWallet(arm: Arm): string {
   const signing = arm.isWatchOnly
     ? 'watch only, cannot sign'
     : canSign(arm)
       ? 'can sign'
       : 'not yet proved, cannot sign'
-  return `${walletName(arm)} — ${arm.walletType}, ${truncateAddress(arm.address)}, ${signing}`
+  return `${walletName(arm)} — ${arm.walletType}, ${arm.address}, ${signing}, id ${arm.id}`
+}
+
+export type WalletMatch = { ok: true; arm: Arm } | { ok: false; reason: string }
+
+/**
+ * A linked wallet, from however a person or an agent names it: its id, a
+ * CAIP-10, a bare 0x address, its label or software name when only one
+ * wallet answers to it, or its number in the list `list_wallets` printed.
+ *
+ * Names are matched case-insensitively and by whole word, so "safe" finds
+ * the Safe and "main" finds Main. Two wallets with the same name is an
+ * ambiguity to report, never a coin to toss — the address is the tie-break
+ * and the reason says so.
+ */
+export function resolveWallet(arms: readonly Arm[], ref: string): WalletMatch {
+  const raw = ref.trim()
+  if (!raw) return { ok: false, reason: 'no wallet was named' }
+  const lower = raw.toLowerCase()
+
+  const byId = arms.find((arm) => arm.id === raw)
+  if (byId) return { ok: true, arm: byId }
+
+  // CAIP-10 (eip155:8453:0x…) or a bare address, either case.
+  const address = (lower.includes(':') ? lower.split(':').pop() : lower) ?? ''
+  if (/^0x[0-9a-f]{40}$/.test(address)) {
+    const byAddress = arms.find((arm) => arm.address.toLowerCase() === address)
+    return byAddress ? { ok: true, arm: byAddress } : { ok: false, reason: `${raw} is not a wallet linked to this account. ${choices(arms)}` }
+  }
+
+  if (/^[1-9][0-9]*$/.test(raw)) {
+    const byIndex = arms[Number(raw) - 1]
+    return byIndex ? { ok: true, arm: byIndex } : { ok: false, reason: `there is no wallet number ${raw}. ${choices(arms)}` }
+  }
+
+  const byName = arms.filter((arm) => (arm.label ?? '').toLowerCase() === lower || walletName(arm).toLowerCase() === lower)
+  if (byName.length === 1) return { ok: true, arm: byName[0]! }
+  if (byName.length > 1) {
+    return { ok: false, reason: `"${raw}" could be any of ${byName.map((arm) => `${holderName(arm)} (${arm.address})`).join(', ')} — name it by address` }
+  }
+  return { ok: false, reason: `"${raw}" is not a wallet linked to this account. ${choices(arms)}` }
+}
+
+function choices(arms: readonly Arm[]): string {
+  if (arms.length === 0) return 'No wallets are linked.'
+  return `Linked: ${arms.map((arm) => `${holderName(arm)} (${arm.address})`).join('; ')}.`
 }
 
 export function walletsText(arms: readonly Arm[]): string {

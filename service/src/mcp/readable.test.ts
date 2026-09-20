@@ -4,6 +4,7 @@ import type { Arm } from '../wallets/index.js'
 import {
   changeText,
   describeWallet,
+  resolveWallet,
   humanAmount,
   portfolioText,
   summarisePortfolio,
@@ -57,11 +58,35 @@ describe('wallets in words', () => {
   })
 
   it('says whether Otto can ask it to sign', () => {
-    expect(describeWallet(arm())).toBe('Rabby — rabby, 0xd8da…6045, can sign')
+    expect(describeWallet(arm())).toBe('Rabby — rabby, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045, can sign, id w1')
     expect(describeWallet(arm({ isWatchOnly: true, walletType: 'watch_only' }))).toContain(
       'watch only, cannot sign',
     )
     expect(describeWallet(arm({ provedAt: null }))).toContain('not yet proved, cannot sign')
+  })
+
+  it('finds a wallet however it is named', () => {
+    const arms = [arm({ label: 'Main' }), arm({ id: 'w2', label: null, walletType: 'safe', address: '0x9f925f63561e3bf88c320125ff3fdb742a5f6464' })]
+    const found = (ref: string) => {
+      const match = resolveWallet(arms, ref)
+      return match.ok ? match.arm.id : match.reason
+    }
+    expect(found('w2')).toBe('w2')
+    expect(found('safe')).toBe('w2')
+    expect(found('Main')).toBe('w1')
+    expect(found('0x9F925F63561E3BF88C320125FF3FDB742A5F6464')).toBe('w2')
+    expect(found('eip155:8453:0x9f925f63561e3bf88c320125ff3fdb742a5f6464')).toBe('w2')
+    expect(found('2')).toBe('w2')
+    expect(found('0x0000000000000000000000000000000000000001')).toMatch(/not a wallet linked.*Linked: Main \(0xd8da/)
+    expect(found('ledger')).toMatch(/"ledger" is not a wallet linked/)
+    expect(found('9')).toMatch(/no wallet number 9/)
+  })
+
+  it('will not toss a coin between two wallets with one name', () => {
+    const arms = [arm({ label: 'Cold' }), arm({ id: 'w2', label: 'Cold', address: '0x9f925f63561e3bf88c320125ff3fdb742a5f6464' })]
+    const match = resolveWallet(arms, 'cold')
+    expect(match.ok).toBe(false)
+    if (!match.ok) expect(match.reason).toMatch(/could be any of Cold \(0xd8da.*Cold \(0x9f92.*name it by address/)
   })
 
   it('numbers the list, and says when there is none', () => {

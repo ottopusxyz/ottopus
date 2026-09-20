@@ -4,7 +4,7 @@ import type { SessionUser } from '../auth/session.js'
 import { chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
-import { portfolioText, summarisePortfolio, walletsText } from './readable.js'
+import { portfolioText, resolveWallet, summarisePortfolio, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
@@ -158,9 +158,10 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
     {
       title: 'List wallets',
       description:
-        "The wallets this person has linked to Ottopus, with each one's address, the software " +
-        'it lives in, and whether it can sign. Watch-only wallets are visible but can never sign. ' +
-        'Read-only.',
+        "The wallets this person has linked to Ottopus, with each one's full address, id, the " +
+        'software it lives in, and whether it can sign. Any of the name, id, address or list ' +
+        'number names a wallet to the other tools. Watch-only wallets are visible but can never ' +
+        'sign. Read-only.',
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -198,14 +199,15 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           .max(100)
           .optional()
           .describe('How many holdings to list, highest value first. Default 20.'),
-        walletId: z
+        wallet: z
           .string()
           .optional()
-          .describe('Only this wallet, by the id list_wallets gave. Default: every linked wallet.'),
+          .describe('Only this wallet: its name ("Safe", "Main"), its id, its 0x address or CAIP-10, or its number in list_wallets. Default: every linked wallet.'),
+        walletId: z.string().optional().describe('The same as wallet; kept for older callers.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ limit, walletId }) => {
+    async ({ limit, wallet, walletId }) => {
       if (!hasScope(ctx.scopes, 'wallets:read')) return denied('wallets:read')
       if (!deps.readPortfolio) {
         return failure(
@@ -216,12 +218,15 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       const linked = await deps.listWallets(ctx.userId)
       if (linked.length === 0) return text(walletsText(linked), { total: 0, wallets: [], assets: [] })
 
-      // Narrowed here rather than in the provider call alone: an id from another
-      // account, or a stale one, must read as "no such wallet", never as an
-      // empty portfolio that looks like an honest zero.
-      const arms = walletId ? linked.filter((arm) => arm.id === walletId) : linked
-      if (arms.length === 0) {
-        return failure(`No linked wallet has the id ${walletId}. list_wallets gives the current ids.`)
+      // Narrowed here rather than in the provider call alone: a wallet from
+      // another account, or a stale one, must read as "no such wallet", never
+      // as an empty portfolio that looks like an honest zero.
+      let arms = linked
+      const named = wallet ?? walletId
+      if (named) {
+        const match = resolveWallet(linked, named)
+        if (!match.ok) return failure(`No linked wallet matches ${named}: ${match.reason}`)
+        arms = [match.arm]
       }
 
       const portfolio = await deps.readPortfolio(
@@ -261,7 +266,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         fromAccount: z
           .string()
           .optional()
-          .describe('CAIP-10 of a linked wallet to send from. Omit to let Ottopus recommend one.'),
+          .describe('The linked wallet to send from: its name ("Safe"), id, 0x address, CAIP-10, or number in list_wallets. Omit to let Ottopus recommend one.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -377,7 +382,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           .max(5000)
           .optional()
           .describe('Tolerance in basis points; 50 is 0.5%. The provider’s default when omitted.'),
-        fromAccount: z.string().optional().describe('CAIP-10 of a linked wallet to spend from. Omit to let Ottopus recommend one.'),
+        fromAccount: z.string().optional().describe('The linked wallet to spend from: its name ("Safe"), id, 0x address, CAIP-10, or number in list_wallets. Omit to let Ottopus recommend one.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -416,7 +421,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'the calls already bind; Ottopus checks it can sign and holds what may leave, and recommends ' +
         'nothing. A refusal names what disagreed: fix the calls or the declaration and resubmit.',
       inputSchema: {
-        account: z.string().describe('CAIP-10 of the linked wallet that will sign. The calls already bind it.'),
+        account: z.string().describe('The linked wallet that will sign — its name, id, 0x address or CAIP-10. The calls already bind it.'),
         chainId: z.string().describe('CAIP-2, e.g. eip155:8453. Every call, asset and spender must be on it.'),
         calls: z
           .array(

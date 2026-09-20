@@ -25,7 +25,7 @@ import {
 import { assemblePlan } from '../core/index.js'
 import { blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { humanAmount, truncateAddress } from './readable.js'
+import { humanAmount, resolveWallet, truncateAddress } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
 /**
@@ -194,6 +194,15 @@ export async function prepareTrade(
       reasons: ['from and to must both be CAIP-19 asset ids, exactly as get_portfolio lists them under assetId'],
     }
   }
+  const arms = await deps.listWallets(ctx.userId)
+  let fromAccount: string | undefined
+  if (input.fromAccount) {
+    const match = resolveWallet(arms, input.fromAccount)
+    if (!match.ok) return { kind: 'no_wallet', reasons: [match.reason] }
+    const a = parseAssetId(input.from)
+    fromAccount = accountOn({ namespace: a.namespace, reference: a.reference }, match.arm.address)
+  }
+
   const parsed = (crossing ? bridgeIntentSchema : swapIntentSchema).safeParse({
     kind: crossing ? 'bridge' : 'swap',
     from: input.from,
@@ -201,7 +210,7 @@ export async function prepareTrade(
     ...(input.amountIn ? { amountIn: input.amountIn } : {}),
     ...(input.amountOut ? { amountOut: input.amountOut } : {}),
     ...(input.slippageBps !== undefined ? { slippageBps: input.slippageBps } : {}),
-    ...(input.fromAccount ? { fromAccount: input.fromAccount } : {}),
+    ...(fromAccount ? { fromAccount } : {}),
     ...(input.note?.trim() ? { note: input.note.trim() } : {}),
   })
   if (!parsed.success) {
@@ -241,7 +250,6 @@ export async function prepareTrade(
     }
   }
 
-  const arms = await deps.listWallets(ctx.userId)
   if (arms.length === 0) return { kind: 'no_wallet', reasons: ['no wallet is linked to this account'] }
   if (!deps.readPortfolio) {
     return { kind: 'no_wallet', reasons: ['balances are not available on this deployment, so no wallet can be chosen'] }

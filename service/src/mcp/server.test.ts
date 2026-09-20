@@ -249,8 +249,9 @@ describe('list_wallets', () => {
     const words = result.content[0]!.text
 
     expect(words).toContain('2 wallets linked:')
-    expect(words).toContain('1. Main — rabby, 0xd8da…6045, can sign')
-    expect(words).toContain('2. Watch Only — watch_only, 0x7922…0f93, watch only, cannot sign')
+    // The full address and the id, in the words: the agent cannot pass back what it was never shown.
+    expect(words).toContain('1. Main — rabby, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045, can sign, id w1')
+    expect(words).toContain('2. Watch Only — watch_only, 0x7922000000000000000000000000000000000f93, watch only, cannot sign, id w2')
     expect(result.structuredContent).toMatchObject({
       wallets: [
         { id: 'w1', name: 'Main', canSign: true, watchOnly: false },
@@ -298,13 +299,15 @@ describe('get_portfolio', () => {
       },
     })
     await call(client, 'get_portfolio', { walletId: 'w2' })
-    expect(seen).toEqual([['w2']])
+    await call(client, 'get_portfolio', { wallet: 'main' })
+    await call(client, 'get_portfolio', { wallet: WALLETS[1]!.address })
+    expect(seen).toEqual([['w2'], ['w1'], ['w2']])
 
     const stranger = await call(client, 'get_portfolio', { walletId: 'w-someone-else' })
     expect(stranger.isError).toBe(true)
-    expect(stranger.content[0]!.text).toContain('No linked wallet has the id')
-    // The provider was not asked: an unknown id is an answer, not a read.
-    expect(seen).toHaveLength(1)
+    expect(stranger.content[0]!.text).toContain('No linked wallet matches')
+    // The provider was not asked: an unknown wallet is an answer, not a read.
+    expect(seen).toHaveLength(3)
   })
 
   it('honours the limit and counts what it cut', async () => {
@@ -445,6 +448,25 @@ describe('prepare_transfer', () => {
     const res = (await send(client, { fromAccount: `${BASE}:${WALLETS[0]!.address}` })) as { content: { text: string }[] }
     expect(res.content[0]!.text).toMatch(/You chose Main \(…6045\)/)
     expect(sink.created[0]!.walletId).toBe('w1')
+  })
+
+  it('takes the chosen wallet by name, number or bare address too', async () => {
+    for (const named of ['Main', 'main', '1', WALLETS[0]!.address, WALLETS[0]!.address.toUpperCase().replace('0X', '0x')]) {
+      const sink = planSink()
+      const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+      const res = (await send(client, { fromAccount: named })) as { isError?: boolean; content: { text: string }[] }
+      expect(res.isError, named).not.toBe(true)
+      expect(sink.created[0]!.walletId, named).toBe('w1')
+    }
+  })
+
+  it('says which wallets it knows when the chosen one is not among them', async () => {
+    const sink = planSink()
+    const { client } = await connected(undefined, { readPortfolio: async () => baseHoldings, createPlan: sink.createPlan })
+    const res = (await send(client, { fromAccount: 'Ledger' })) as { isError?: boolean; content: { text: string }[] }
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toMatch(/"Ledger" is not a wallet linked to this account\. Linked: Main \(0xd8da6bf2/)
+    expect(sink.created).toHaveLength(0)
   })
 
   it('refuses when no wallet can, names why, and creates no plan', async () => {

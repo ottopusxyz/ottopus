@@ -15,6 +15,7 @@ import {
   findChain,
   isNativeAsset,
   nativeAssetIdOf,
+  accountOn,
   parseAccountId,
   parseAssetId,
   parseChainId,
@@ -24,7 +25,7 @@ import {
 import { assemblePlan } from '../core/index.js'
 import { blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { canSign, truncateAddress } from './readable.js'
+import { canSign, resolveWallet, truncateAddress } from './readable.js'
 import { wordsFor } from './trade.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
@@ -208,9 +209,15 @@ export async function prepareCustom(
     calls.push(call)
   }
 
+  // The calls bind the wallet, but the agent may still name it any way
+  // list_wallets lets it.
+  const arms = await deps.listWallets(ctx.userId)
+  const named = resolveWallet(arms, input.account)
+  if (!named.ok) return { kind: 'no_wallet', reasons: [named.reason] }
+
   const parsed = customIntentSchema.safeParse({
     kind: 'custom',
-    fromAccount: input.account.trim().toLowerCase(),
+    fromAccount: accountOn(chain, named.arm.address),
     chainId,
     summary: input.summary,
     expectedChanges: (input.expectedChanges ?? []).map((c) => ({ asset: c.asset.trim().toLowerCase(), maxOut: c.maxOut })),
@@ -228,10 +235,8 @@ export async function prepareCustom(
   const intent: CustomIntent = parsed.data
 
   // Eligibility, never selection: the calls chose the wallet already.
-  const arms = await deps.listWallets(ctx.userId)
-  const address = parseAccountId(intent.fromAccount).address
-  const arm = arms.find((a) => a.namespace === 'eip155' && a.address.toLowerCase() === address)
-  if (!arm) return { kind: 'no_wallet', reasons: [`${truncateAddress(address)} is not a wallet linked to this account`] }
+  const arm = named.arm
+  if (arm.namespace !== 'eip155') return { kind: 'no_wallet', reasons: [`${describe(arm)} is not an EVM wallet`] }
   if (!canSign(arm)) return { kind: 'no_wallet', reasons: [`${describe(arm)} is watch-only and cannot sign`] }
   if (!deps.readPortfolio) {
     return { kind: 'no_wallet', reasons: ['balances are not available on this deployment, so the declaration cannot be checked against what the wallet holds'] }
