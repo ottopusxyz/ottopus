@@ -74,6 +74,12 @@ export interface PlanRouteDeps {
    * icon and nothing else.
    */
   tokens?: TokenRegistry | null
+  /**
+   * A chain's mark, from the provider's own chain list — which knows every
+   * chain, where the portfolio only knows the ones with a balance on them.
+   * A bridge's destination is usually one of the others.
+   */
+  chainIcon?: ((chainId: string) => string | null) | null
 }
 
 export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRouteDeps): Hono {
@@ -105,9 +111,9 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       const portfolio = deps.readPortfolio
         ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
         : null
-      return visualsFor(plan, arms, portfolio, deps.tokens ?? null)
+      return visualsFor(plan, arms, portfolio, deps.tokens ?? null, deps.chainIcon ?? null)
     } catch {
-      return visualsFor(plan, [], null, deps.tokens ?? null)
+      return visualsFor(plan, [], null, deps.tokens ?? null, deps.chainIcon ?? null)
     }
   }
 

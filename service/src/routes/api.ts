@@ -137,6 +137,7 @@ if (ready) {
     planRoutes(db, session, {
       webUrl: config.webUrl,
       readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
+      chainIcon: provider?.chainIcon ? (chainId) => provider.chainIcon!(chainId) : null,
       tokens: config.zerionApiKey
         ? zerionTokens({
             apiKey: config.zerionApiKey,

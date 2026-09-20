@@ -108,7 +108,10 @@ export function ReviewCard({
       {/* Amount, recipient and signer: one block, because to a person it is one thought. */}
       <section className="flex flex-col gap-2.5 bg-[var(--ot-water-1)] px-[18px] py-3.5">
         <div className="flex flex-col gap-3">
-          {changes.map((change) => (
+          {changes.map((change) => {
+            // The row's own chain, not the plan's: a bridge's arriving row is elsewhere.
+            const rowChain = visuals.chains[change.chainId] ?? null
+            return (
             <div key={`${change.direction}-${change.assetId}`} className="flex items-center gap-[11px]">
               <span aria-hidden className="relative h-9 w-9 flex-none">
                 <AssetIcon
@@ -117,11 +120,11 @@ export function ReviewCard({
                   size={36}
                   className="text-[13px]"
                 />
-                {chainVisual?.iconUrl ? (
+                {rowChain?.iconUrl ? (
                   <span className="absolute -right-px -bottom-px h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[var(--ot-card)] bg-[var(--ot-card)]">
                     {/* Provider CDN, same as the portfolio's icons. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={chainVisual.iconUrl} alt="" className="h-full w-full object-cover" />
+                    <img src={rowChain.iconUrl} alt="" className="h-full w-full object-cover" />
                   </span>
                 ) : null}
               </span>
@@ -133,6 +136,7 @@ export function ReviewCard({
                       change.direction === 'in' ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-text)]',
                     )}
                   >
+                    {change.estimate ? <span className="mr-1 font-sans text-[11px] font-medium text-[var(--ot-text-3)]">about</span> : null}
                     {change.direction === 'out' ? '−' : '+'}
                     {change.amount} {change.symbol}
                   </code>
@@ -150,7 +154,8 @@ export function ReviewCard({
                 </span>
               </div>
             </div>
-          ))}
+            )
+          })}
           {changes.length === 0 ? (
             <p className="m-0 text-[13px] text-[var(--ot-text-2)]">{plan.humanPlan.steps[0] ?? plan.humanPlan.summary}</p>
           ) : null}

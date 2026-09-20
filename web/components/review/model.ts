@@ -58,6 +58,10 @@ export interface AssetChange {
   where: string
   /** The CAIP-19 id, so the row can find its icon. */
   assetId: string
+  /** The CAIP-2 chain the row is on. A bridge's arriving row is not on the plan's chain. */
+  chainId: string
+  /** A quote's expectation rather than a figure — the row reads "about". */
+  estimate?: boolean
 }
 
 /**
@@ -75,7 +79,11 @@ export interface AssetChange {
 export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[] {
   const holder = holderOf(plan)
   const traced = (live ?? plan.simulation)?.assetChanges ?? []
-  if (traced.length > 0) return traced.map((delta) => observedRow(delta, holder))
+  // A simulation runs on the chain that signs. What a bridge delivers lands
+  // on another chain, which no run here can see — so that row stays, from
+  // the quote, beneath whatever was observed. Without it the page showed
+  // the money leaving and nothing arriving the moment a simulation landed.
+  if (traced.length > 0) return [...traced.map((delta) => observedRow(delta, holder)), ...arrival(plan)]
 
   if (plan.intent.kind === 'transfer') {
     const words = assetWords(plan, plan.intent.asset)
@@ -87,6 +95,7 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
         symbol: words.symbol,
         where: `leaves ${holder}`,
         assetId: plan.intent.asset,
+        chainId: chainOfAsset(plan.intent.asset),
       },
     ]
   }
@@ -101,7 +110,7 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
    * expectation, not an observation.
    */
   if (plan.intent.kind === 'swap' || plan.intent.kind === 'bridge') {
-    const { from, to, amountIn } = plan.intent
+    const { from, amountIn } = plan.intent
     const rows: AssetChange[] = []
     const paid = assetWords(plan, from)
     if (paid && amountIn) {
@@ -111,21 +120,10 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
         symbol: paid.symbol,
         where: `leaves ${holder}`,
         assetId: from,
+        chainId: chainOfAsset(from),
       })
     }
-    const got = assetWords(plan, to)
-    const expected = plan.quote.expectedOut
-    if (got && expected) {
-      const crossing = chainOfAsset(to) !== chainOfAsset(from)
-      rows.push({
-        direction: 'in',
-        amount: formatAmount(expected, got.decimals),
-        symbol: got.symbol,
-        where: crossing ? `arrives on ${chainName(chainOfAsset(to))}` : `arrives in ${holder}`,
-        assetId: to,
-      })
-    }
-    return rows
+    return [...rows, ...expectedIn(plan, holder)]
   }
 
   /**
@@ -145,11 +143,39 @@ export function assetChanges(plan: Plan, live?: Simulation | null): AssetChange[
         symbol: words.symbol,
         where: `at most, leaves ${holder}`,
         assetId: change.asset,
+        chainId: chainOfAsset(change.asset),
       })
     }
     return rows
   }
   return []
+}
+
+/** What a trade's quote says arrives: on the plan's chain for a swap, elsewhere for a bridge. */
+function expectedIn(plan: Plan, holder: string): AssetChange[] {
+  if (plan.intent.kind !== 'swap' && plan.intent.kind !== 'bridge') return []
+  const { from, to } = plan.intent
+  const got = assetWords(plan, to)
+  const expected = plan.quote.expectedOut
+  if (!got || !expected) return []
+  const crossing = chainOfAsset(to) !== chainOfAsset(from)
+  return [
+    {
+      direction: 'in',
+      amount: formatAmount(expected, got.decimals),
+      symbol: got.symbol,
+      // The same wallet receives on the far chain; saying so is the address the row was missing.
+      where: crossing ? `arrives on ${chainName(chainOfAsset(to))} in ${holder}` : `arrives in ${holder}`,
+      assetId: to,
+      chainId: chainOfAsset(to),
+      estimate: true,
+    },
+  ]
+}
+
+/** The bridge's far side, which a simulation on the signing chain cannot observe. */
+function arrival(plan: Plan): AssetChange[] {
+  return plan.intent.kind === 'bridge' ? expectedIn(plan, holderOf(plan)) : []
 }
 
 /**
@@ -215,6 +241,7 @@ function observedRow(delta: AssetDelta, holder: string): AssetChange {
     symbol: delta.symbol ?? 'units',
     where: out ? `leaves ${holder}` : `arrives in ${holder}`,
     assetId: delta.assetId,
+    chainId: chainOfAsset(delta.assetId),
   }
 }
 

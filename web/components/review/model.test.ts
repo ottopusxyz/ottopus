@@ -103,7 +103,7 @@ describe('status on the page', () => {
 
 describe('what the page says', () => {
   it('shows the outgoing amount in the asset’s own words', () => {
-    expect(assetChanges(plan)).toEqual([{ assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' }])
+    expect(assetChanges(plan)).toEqual([{ assetId: `${BASE}/erc20:${USDC}`, chainId: BASE, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' }])
   })
 
   it('shows nothing rather than guessing when the plan recorded no asset words', () => {
@@ -191,7 +191,7 @@ describe('what the simulation observed', () => {
     const page = simulated()
     expect(changeSource(page)).toBe('stored')
     expect(assetChanges(page)).toEqual([
-      { assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
+      { assetId: `${BASE}/erc20:${USDC}`, chainId: BASE, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
     ])
   })
 
@@ -212,6 +212,34 @@ describe('what the simulation observed', () => {
       'out 500 USDC leaves Main',
       'in 0.002 ETH arrives in Main',
     ])
+  })
+
+  it('keeps a bridge’s far side from the quote beneath what was observed', () => {
+    const BNB = 'eip155:56'
+    const USDT = '0x55d398326f99059ff775485246999027b3197955'
+    const bridge: Plan = {
+      ...simulated({
+        chainId: BNB,
+        assetChanges: [{ assetId: `${BNB}/erc20:${USDT}`, symbol: 'USDT', decimals: 18, diff: '-41750000000000000000', pre: '41750000000000000000', post: '0' }],
+      }),
+      intent: { kind: 'bridge', from: `${BNB}/erc20:${USDT}`, to: `${BASE}/erc20:${USDC}`, amountIn: '41750000000000000000', slippageBps: 50 },
+      quote: { provider: 'lifi', expiresAt: '2026-09-09T16:32:59Z', expectedOut: '41634022', minOut: '41425852' },
+      resolution: { ...plan.resolution, account: { caip10: `${BNB}:${plan.resolution.account.caip10.split(':')[2]}`, label: 'Main' } },
+      humanPlan: {
+        ...plan.humanPlan,
+        assets: [
+          { id: `${BNB}/erc20:${USDT}`, symbol: 'USDT', decimals: 18 },
+          { id: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6 },
+        ],
+      },
+    } as Plan
+    expect(assetChanges(bridge).map((c) => `${c.direction} ${c.amount} ${c.symbol} ${c.chainId} ${c.where}${c.estimate ? ' (about)' : ''}`)).toEqual([
+      'out 41.75 USDT eip155:56 leaves Main',
+      'in 41.634022 USDC eip155:8453 arrives on Base in Main (about)',
+    ])
+    // Before any run, the same two rows, both from the request.
+    const unrun = { ...bridge, simulation: null } as Plan
+    expect(assetChanges(unrun).map((c) => c.chainId)).toEqual([BNB, BASE])
   })
 
   it('shows a token it could not name in that token’s own units', () => {
@@ -392,14 +420,14 @@ describe('a trade with nothing simulated yet', () => {
   it('reads both sides off the request and the quote', () => {
     const rows = assetChanges(trade('swap', `${BASE}/erc20:${DEGEN}`))
     expect(rows).toEqual([
-      { assetId: `${BASE}/erc20:${USDC}`, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
-      { assetId: `${BASE}/erc20:${DEGEN}`, direction: 'in', amount: '9.5', symbol: 'DEGEN', where: 'arrives in Main' },
+      { assetId: `${BASE}/erc20:${USDC}`, chainId: BASE, direction: 'out', amount: '500', symbol: 'USDC', where: 'leaves Main' },
+      { assetId: `${BASE}/erc20:${DEGEN}`, chainId: BASE, direction: 'in', amount: '9.5', symbol: 'DEGEN', where: 'arrives in Main', estimate: true },
     ])
   })
 
   it('names the destination chain when the trade crosses one', () => {
     const rows = assetChanges(trade('bridge', `eip155:42161/erc20:${DEGEN}`))
-    expect(rows[1]).toMatchObject({ direction: 'in', where: 'arrives on Arbitrum One' })
+    expect(rows[1]).toMatchObject({ direction: 'in', chainId: 'eip155:42161', where: 'arrives on Arbitrum One in Main' })
   })
 
   it('is labelled as the request, because that is what it is', () => {
