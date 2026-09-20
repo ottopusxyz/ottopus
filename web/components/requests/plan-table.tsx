@@ -9,7 +9,7 @@ import { walletMark } from '@/components/wallets/naming'
 import type { PlanSummary } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
-import { WalletFilter } from './wallet-filter'
+import { WalletFilter } from '@/components/portfolio/wallet-filter'
 import {
   type StatusFilter,
   type WalletFilter as WalletChoice,
@@ -57,7 +57,12 @@ export function PlanTable({ plans, opening, onOpen, now }: PlanTableProps) {
   const [wallet, setWallet] = useState<WalletChoice>('all')
   const sorted = sortPlans(plans, now)
   const counts = statusCounts(sorted, now)
-  const wallets = walletOptions(sorted).map((w) => ({ ...w, ref: refFor(w.address, w.label, w.walletType) }))
+  const wallets = walletOptions(sorted).map((w) => ({
+    id: w.address,
+    label: w.label,
+    ref: refFor(w.address, w.label, w.walletType),
+    detail: String(w.count),
+  }))
   const shown = filterPlans(sorted, status, wallet, now)
 
   return (

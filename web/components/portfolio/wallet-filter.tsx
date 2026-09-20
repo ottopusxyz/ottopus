@@ -1,29 +1,38 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { WalletMark, type WalletRef } from '@/components/portfolio/wallet-marks'
 import { Button, Dialog, SHEET_MEDIA } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { useMediaQuery } from '@/lib/use-media-query'
-import type { WalletOption } from './plans'
+import { WalletMark, type WalletRef } from './wallet-marks'
+
+/** One wallet the filter can pick. `id` is whatever the caller keys its rows by. */
+export interface WalletChoice {
+  id: string
+  label: string
+  ref: WalletRef
+  /** Small, right-aligned: how many requests on that page, a balance on the portfolio. */
+  detail?: string | undefined
+}
 
 export interface WalletFilterProps {
-  wallets: readonly (WalletOption & { ref: WalletRef })[]
+  wallets: readonly WalletChoice[]
+  /** "all", or a wallet's id. */
   value: string
-  onChange: (caip10: string) => void
+  onChange: (id: string) => void
 }
 
 /**
- * The wallet picker on the requests header — the portfolio's network filter,
- * with wallets in it. A dropdown anchored to the chip on a wide screen and a
- * bottom sheet on a phone, the same rows in both.
+ * The wallet picker, shared by the requests header and the portfolio's tab
+ * bar — the network filter, with wallets in it. A dropdown anchored to the
+ * chip on a wide screen and a bottom sheet on a phone, the same rows in both.
  */
 export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
   const [open, setOpen] = useState(false)
   const sheet = useMediaQuery(SHEET_MEDIA)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
-  const selected = wallets.find((w) => w.address === value)
+  const selected = wallets.find((w) => w.id === value)
 
   useEffect(() => {
     if (!open || sheet) return
@@ -36,8 +45,8 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
 
   if (wallets.length < 2) return null
 
-  const pick = (caip10: string) => {
-    onChange(caip10)
+  const pick = (id: string) => {
+    onChange(id)
     setOpen(false)
     if (!sheet) trigger.current?.focus()
   }
@@ -57,7 +66,7 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
       >
         <span aria-hidden className="flex -space-x-2 pr-1">
           {wallets.slice(0, 3).map((w) => (
-            <WalletMark key={w.address} wallet={w.ref} size={22} className="ring-2 ring-[var(--ot-card)]" />
+            <WalletMark key={w.id} wallet={w.ref} size={22} className="ring-2 ring-[var(--ot-card)]" />
           ))}
         </span>
         <span className="flex-1 truncate">All wallets</span>
@@ -66,21 +75,21 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
       </button>
       {wallets.map((w) => (
         <button
-          key={w.address}
+          key={w.id}
           type="button"
-          aria-pressed={value === w.address}
-          onClick={() => pick(w.address)}
+          aria-pressed={value === w.id}
+          onClick={() => pick(w.id)}
           className={cn(
             'flex w-full cursor-pointer items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-[var(--ot-surface-3)]',
             'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ot-plan)]',
             rowClassName,
-            value === w.address && 'bg-[var(--ot-surface-3)] font-semibold',
+            value === w.id && 'bg-[var(--ot-surface-3)] font-semibold',
           )}
         >
           <WalletMark wallet={w.ref} size={24} />
           <span className="flex-1 truncate">{w.label}</span>
-          <span className="text-[11px] text-[var(--ot-text-3)]">{w.count}</span>
-          {value === w.address ? <span aria-hidden>✓</span> : null}
+          {w.detail ? <span className="font-mono text-[11px] text-[var(--ot-text-3)] tabular-nums">{w.detail}</span> : null}
+          {value === w.id ? <span aria-hidden>✓</span> : null}
         </button>
       ))}
     </>
@@ -114,7 +123,7 @@ export function WalletFilter({ wallets, value, onChange }: WalletFilterProps) {
         ) : (
           <span aria-hidden className="flex -space-x-2 pr-1">
             {wallets.slice(0, 3).map((w) => (
-              <WalletMark key={w.address} wallet={w.ref} size={20} className="ring-2 ring-[var(--ot-card)]" />
+              <WalletMark key={w.id} wallet={w.ref} size={20} className="ring-2 ring-[var(--ot-card)]" />
             ))}
           </span>
         )}

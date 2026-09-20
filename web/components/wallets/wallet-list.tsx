@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Dialog } from '@/components/ui'
+import { AddressChip, Button } from '@/components/ui'
 import type { Arm } from '@/lib/api'
-import { truncateAddress } from '@/lib/format'
 import { armName, walletClientName } from './naming'
 import { ProofMark } from './proof-mark'
+import { UnlinkDialog } from './unlink-dialog'
 
 export interface WalletListProps {
   wallets: Arm[]
@@ -19,33 +19,6 @@ export interface WalletListProps {
  */
 export function WalletList({ wallets, onUnlink }: WalletListProps) {
   const [confirming, setConfirming] = useState<Arm | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  function dismiss() {
-    if (busy) return
-    setConfirming(null)
-    setError(null)
-  }
-
-  async function confirm() {
-    if (!confirming) return
-    setBusy(true)
-    setError(null)
-    try {
-      await onUnlink(confirming)
-      setConfirming(null)
-    } catch {
-      // The dialog stays open holding the error. Closing it on failure would
-      // look exactly like success, and the wallet would still be linked.
-      //
-      // Rejecting the signature in the wallet lands here too, which is why the
-      // wording does not assert that anything went wrong on our side.
-      setError('That wallet is still linked. Nothing changed — try again.')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <>
@@ -66,9 +39,7 @@ export function WalletList({ wallets, onUnlink }: WalletListProps) {
                       null}
                   </span>
                 </span>
-                <code className="font-mono text-[12px] text-[var(--ot-text-3)]">
-                  {truncateAddress(arm.address)}
-                </code>
+                <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
               </div>
               <Button
                 variant="secondary"
@@ -83,33 +54,7 @@ export function WalletList({ wallets, onUnlink }: WalletListProps) {
         })}
       </ul>
 
-      <Dialog
-        open={confirming !== null}
-        onClose={dismiss}
-        tone="destructive"
-        title={`Unlink ${confirming ? armName(confirming) : ''}?`}
-        description={
-          confirming?.isWatchOnly
-            ? 'Ottopus stops reading its balances and stops counting it when planning.'
-            : 'Ottopus stops planning with this wallet. Anything already signed is unaffected, and you can link it again whenever you like.'
-        }
-        actions={
-          <>
-            <Button variant="ghost" onClick={dismiss} disabled={busy} fullWidth>
-              Keep it
-            </Button>
-            <Button variant="destructive" onClick={() => void confirm()} disabled={busy} fullWidth>
-              {busy ? 'Unlinking…' : 'Unlink'}
-            </Button>
-          </>
-        }
-      >
-        {error ? (
-          <p role="alert" className="text-[13px] leading-[1.5] text-[var(--ot-block-text)]">
-            {error}
-          </p>
-        ) : null}
-      </Dialog>
+      <UnlinkDialog arm={confirming} onClose={() => setConfirming(null)} onUnlink={onUnlink} />
     </>
   )
 }

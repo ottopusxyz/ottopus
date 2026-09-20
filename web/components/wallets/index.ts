@@ -16,5 +16,6 @@ export {
   type WalletsFailure,
   type WalletsState,
 } from './use-wallets'
+export { UnlinkDialog, type UnlinkDialogProps } from './unlink-dialog'
 export { WalletList, type WalletListProps } from './wallet-list'
 export { WalletsPanel, failureText } from './wallets-panel'

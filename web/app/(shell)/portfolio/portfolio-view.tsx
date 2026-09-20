@@ -12,6 +12,7 @@ import {
   ArmCard,
   LinkWalletDialog,
   MAX_ARMS,
+  UnlinkDialog,
   armsOf,
   failureText,
   useWallets,
@@ -21,7 +22,7 @@ import type { Arm } from '@/lib/api'
 import { formatDelta, formatMoney, formatMoneyFlat, formatShare } from '@/lib/format'
 import { useMediaQuery } from '@/lib/use-media-query'
 import {
-  Holdings, NetworkFilter, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
+  Holdings, NetworkFilter, WalletFilter, usePortfolio, portfolioOf, portfolioFailureText, unreadArms,
   type PortfolioState,
 } from '@/components/portfolio'
 import { balanceLine, greeting } from '@/components/portfolio/greeting'
@@ -46,7 +47,7 @@ export function PortfolioView() {
 function ConnectedPortfolio() {
   // One `useWallets` for the whole page — two would mean two components
   // reconciling the same account against the same token.
-  const { state, linkWallet, linking, linkError, addWatchOnly } = useWallets()
+  const { state, linkWallet, linking, linkError, addWatchOnly, unlink } = useWallets()
   const [linkOpen, setLinkOpen] = useState(false)
   const tab = useSearchParams().get('tab') ?? 'tokens'
   const identity = useIdentity()
@@ -65,6 +66,7 @@ function ConnectedPortfolio() {
       linkError={linkError}
       tab={tab}
       onLink={() => setLinkOpen(true)}
+      onUnlink={unlink}
       dialog={
         <LinkWalletDialog
           open={linkOpen}
@@ -82,12 +84,13 @@ function ConnectedPortfolio() {
 }
 
 /**
- * The rail: a third of the section, within reason. A strict third is 339px on
- * a 1280 screen and 552px on a 1920 one — the first is tighter than a card
- * wants, the second is half the rail wasted. Only at xl: between lg and xl the
- * column is about 760px, and a third of that holds nothing well.
+ * The rail: two fifths of the section, within reason. A protocol card wants
+ * more room than a nudge does, and the token table has columns to spare —
+ * so 400px at the least, 520px at the most, and 40% between. Only at xl:
+ * between lg and xl the column is about 760px, and a rail that size in it
+ * would leave the table nothing.
  */
-const RAIL_WIDTH = 'xl:w-[clamp(360px,33%,440px)]'
+const RAIL_WIDTH = 'xl:w-[clamp(400px,40%,520px)]'
 const RAIL_MEDIA = '(min-width: 1280px)'
 
 /**
@@ -126,6 +129,8 @@ interface FrameProps {
   linkError?: string | null
   tab?: string
   onLink?: (() => void) | undefined
+  /** Unlinks an arm, after the confirm this view owns. Absent, the cards are read-only. */
+  onUnlink?: ((arm: Arm) => Promise<void>) | undefined
   dialog?: React.ReactNode
 }
 
@@ -139,14 +144,38 @@ export function Frame({
   linkError,
   tab = 'tokens',
   onLink,
+  onUnlink,
   dialog,
 }: FrameProps) {
   const [network, setNetwork] = useState<string | null>(null)
+  const [unlinking, setUnlinking] = useState<Arm | null>(null)
+  const [wallet, setWallet] = useState<string>('all')
   // Read once: a greeting that flips from gm to hello mid-visit is a clock, not a greeting.
   const [hour] = useState(() => new Date().getHours())
   const portfolio = portfolioState ? portfolioOf(portfolioState) : null
   const selectedNetwork = portfolio?.chains.some((chain) => chain.chainId === network) ? network : null
-  const selected = useMemo(() => portfolio ? selectPortfolio(portfolio, selectedNetwork) : null, [portfolio, selectedNetwork])
+  const selectedWallet = wallets.some((arm) => arm.id === wallet) ? wallet : null
+  const selected = useMemo(
+    () => (portfolio ? selectPortfolio(portfolio, selectedNetwork, selectedWallet) : null),
+    [portfolio, selectedNetwork, selectedWallet],
+  )
+  // The network's whole, for the figure beside each wallet in the picker.
+  const onNetwork = useMemo(() => (portfolio ? selectPortfolio(portfolio, selectedNetwork) : null), [portfolio, selectedNetwork])
+  const walletRefs = useMemo(() => walletRefsOf(wallets), [wallets])
+  const walletChoices = useMemo(
+    () =>
+      wallets.map((arm) => {
+        const ref = walletRefs.get(arm.id)!
+        const summary = onNetwork?.arms.find((item) => item.walletId === arm.id)
+        return {
+          id: arm.id,
+          label: ref.name,
+          ref,
+          detail: summary?.status === 'ok' ? formatMoneyFlat(summary.total, onNetwork?.currency) : undefined,
+        }
+      }),
+    [wallets, walletRefs, onNetwork],
+  )
   const missing = unreadArms(portfolio)
   const hasReading = !!portfolio?.arms.some((arm) => arm.status === 'ok')
   const money = selected && hasReading ? formatMoney(selected.total, selected.currency) : null
@@ -175,7 +204,7 @@ export function Frame({
             <strong className="text-[15px] font-semibold text-[var(--ot-text)]">{greeting(person?.name, hour, person?.mono)}</strong>
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {balanceLine(wallets.length)}
-              {linked ? <WalletMarks holders={[...walletRefsOf(wallets).values()]} /> : null}
+              {linked ? <WalletMarks holders={[...walletRefs.values()]} /> : null}
             </span>
           </span>
         }
@@ -190,6 +219,7 @@ export function Frame({
               'No change today'
             )}
             {selectedNetwork ? ` · ${portfolio?.chains.find((chain) => chain.chainId === selectedNetwork)?.name}` : ''}
+            {selectedWallet ? ` · ${walletRefs.get(selectedWallet)?.name}` : ''}
             {missing.length > 0 ? ' · Partial total' : ''}
             {portfolioState?.status === 'failed' ? ' · Last successful reading' : ''}
           </span>
@@ -240,9 +270,13 @@ export function Frame({
             tabs={[
               { value: 'tokens', label: 'Tokens' },
               { value: 'wallets', label: 'Wallets' },
-              { value: 'approvals', label: 'Approvals', disabled: true },
             ]}
-            aside={<NetworkFilter chains={portfolio?.chains ?? []} value={selectedNetwork} onChange={setNetwork} />}
+            aside={
+              <span className="flex flex-wrap items-center gap-2">
+                <WalletFilter wallets={walletChoices} value={selectedWallet ?? 'all'} onChange={setWallet} />
+                <NetworkFilter chains={portfolio?.chains ?? []} value={selectedNetwork} onChange={setNetwork} />
+              </span>
+            }
           />
 
           {tab === 'wallets' ? (
@@ -258,6 +292,7 @@ export function Frame({
                       value={known ? formatMoneyFlat(summary.total, selected?.currency) : null}
                       share={known ? `${formatShare(summary.share)} of holdings`
                         : balancesLoading ? 'Reading balance…' : 'Balance unavailable'}
+                      onUnlink={onUnlink ? () => setUnlinking(arm) : undefined}
                     />
                   )
                 })}
@@ -369,6 +404,7 @@ export function Frame({
       )}
 
       {dialog}
+      {onUnlink ? <UnlinkDialog arm={unlinking} onClose={() => setUnlinking(null)} onUnlink={onUnlink} /> : null}
       {tokensView ? null : <IntentNudgeOverlay prompts={prompts} />}
     </div>
   )

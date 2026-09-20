@@ -1,10 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Chip } from '@/components/ui'
+import { AddressChip, Button, Chip } from '@/components/ui'
 import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { truncateAddress } from '@/lib/format'
 import { WALLET_AVATARS, armName, walletClientName, walletMark } from './naming'
 import { ProofMark } from './proof-mark'
 
@@ -65,16 +64,15 @@ export interface ArmCardProps {
   /** Formatted balance. Null while the balance is unknown. */
   value?: string | null
   share?: string | null
-  /** The wallet client's own logo, when this arm is connected here. */
+  /** Asks to unlink this arm. The confirm is the caller's (UnlinkDialog); absent, the card is read-only. */
+  onUnlink?: (() => void) | undefined
 }
 
 /**
- * An arm on the portfolio, per the P2 wallets view.
- *
- * Read-only by design: unlinking lives on Settings, where the confirm can say
- * what it costs without a balance sheet competing for attention.
+ * An arm on the portfolio, per the P2 wallets view. The address is a chip that
+ * copies itself, and Unlink is the same confirm Settings uses.
  */
-export function ArmCard({ arm, value = null, share = null }: ArmCardProps) {
+export function ArmCard({ arm, value = null, share = null, onUnlink }: ArmCardProps) {
   const client = walletClientName(arm)
 
   return (
@@ -88,14 +86,19 @@ export function ArmCard({ arm, value = null, share = null }: ArmCardProps) {
             {client ? <Chip className="text-[11px]">{client}</Chip> : null}
             {arm.isWatchOnly ? <Chip className="text-[11px]">Watch only</Chip> : null}
           </div>
-          <code className="font-mono text-[12px] text-[var(--ot-text-3)]">
-            {truncateAddress(arm.address)}
-          </code>
+          <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
         </div>
       </div>
-      <div className="flex flex-none flex-col gap-0.5 text-right">
-        <code className="font-mono text-[17px] font-semibold tabular-nums">{value ?? '—'}</code>
-        <span className="text-[12px] text-[var(--ot-text-3)]">{share ?? 'Balance pending'}</span>
+      <div className="flex flex-none items-center gap-3">
+        <div className="flex flex-col gap-0.5 text-right">
+          <code className="font-mono text-[17px] font-semibold tabular-nums">{value ?? '—'}</code>
+          <span className="text-[12px] text-[var(--ot-text-3)]">{share ?? 'Balance pending'}</span>
+        </div>
+        {onUnlink ? (
+          <Button variant="ghost" size="sm" onClick={onUnlink} aria-label={`Unlink ${armName(arm)}`}>
+            Unlink
+          </Button>
+        ) : null}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import type { ArmSummary, Portfolio, ProtocolRow } from '@/lib/api'
+import type { ArmSummary, AssetRow, PositionGroup, Portfolio, ProtocolRow } from '@/lib/api'
 
 /** A 0..1 share of a net total, or nothing when there is no positive whole to be a share of. */
 function shareOf(value: number, total: number): number {
@@ -15,11 +15,17 @@ function shareOf(value: number, total: number): number {
  * card can exceed 100%; that is honest, and a share of a non-positive whole
  * is zero rather than nonsense.
  */
-export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
-  const assets = portfolio.assets.filter((row) => !chainId || row.chainId === chainId)
+export function selectPortfolio(portfolio: Portfolio, chainId: string | null, walletId: string | null = null) {
+  const assets = portfolio.assets
+    .filter((row) => !chainId || row.chainId === chainId)
+    .map((row) => (walletId ? sliceAsset(row, walletId) : row))
+    .filter((row): row is AssetRow => row !== null)
   const protocols: ProtocolRow[] = portfolio.protocols
     .map((app) => {
-      const groups = app.groups.filter((group) => !chainId || group.chainId === chainId)
+      const groups = app.groups
+        .filter((group) => !chainId || group.chainId === chainId)
+        .map((group) => (walletId ? sliceGroup(group, walletId) : group))
+        .filter((group): group is PositionGroup => group !== null)
       return {
         ...app,
         groups,
@@ -73,3 +79,38 @@ export function selectPortfolio(portfolio: Portfolio, chainId: string | null) {
 }
 
 export type SelectedPortfolio = ReturnType<typeof selectPortfolio>
+
+/**
+ * One wallet's part of a loose balance. Every holding in the row is the same
+ * asset at the same price, so the day's change divides exactly by amount —
+ * this is arithmetic on what the provider said, not a new reading. Null when
+ * the wallet holds none of it.
+ */
+function sliceAsset(row: AssetRow, walletId: string): AssetRow | null {
+  const holdings = row.holdings.filter((h) => h.walletId === walletId)
+  if (holdings.length === 0) return null
+  const amount = holdings.reduce((sum, h) => sum + BigInt(h.amount), 0n)
+  const whole = BigInt(row.amount)
+  const fraction = whole > 0n ? Number(amount) / Number(whole) : 0
+  return {
+    ...row,
+    holdings,
+    amount: amount.toString(),
+    value: holdings.reduce((sum, h) => sum + (h.value ?? 0), 0),
+    change1d: row.change1d * fraction,
+  }
+}
+
+/** One wallet's positions in a pool or market: value and change re-summed from its own rows. */
+function sliceGroup(group: PositionGroup, walletId: string): PositionGroup | null {
+  const holdings = group.holdings.filter((h) => h.walletId === walletId)
+  if (holdings.length === 0) return null
+  const sign = (h: PositionGroup['holdings'][number]) => (h.positionType === 'loan' ? -1 : 1)
+  return {
+    ...group,
+    holdings,
+    value: holdings.reduce((sum, h) => sum + sign(h) * (h.value ?? 0), 0),
+    change1d: holdings.reduce((sum, h) => sum + sign(h) * (h.change1d ?? 0), 0),
+    unpriced: holdings.filter((h) => h.value === null).length,
+  }
+}
