@@ -78,7 +78,25 @@ const EVM_NATIVE_COIN_TYPE: Readonly<Record<string, number>> = {
   '534352': 60, // Scroll, ETH
   '7777777': 60, // Zora, ETH
   '1313161554': 60, // Aurora, ETH
+  // Added Sep 12 after a scan of the portfolio provider's chain list: every
+  // chain it serves whose currency is ETH. A chain missing here drops the
+  // native balance a wallet holds on it, which is how Robinhood was found.
+  '169': 60, // Manta Pacific, ETH
+  '690': 60, // Redstone, ETH
+  '1135': 60, // Lisk, ETH
+  '1923': 60, // Swellchain, ETH
+  '3776': 60, // Astar zkEVM, ETH
+  '4326': 60, // MegaETH, ETH
+  '4663': 60, // Robinhood Chain, ETH
+  '7560': 60, // Cyber, ETH
+  '8008': 60, // Polynomial, ETH
+  '60808': 60, // BOB, ETH
+  '167000': 60, // Taiko, ETH
+  '543210': 60, // Zero Network, ETH
+  '747474': 60, // Katana, ETH
+  '810180': 60, // zkLink Nova, ETH
   '56': 714, // BNB Smart Chain, BNB
+  '204': 714, // opBNB, BNB
   '100': 700, // Gnosis, xDAI
   '137': 966, // Polygon, POL
   '250': 1007, // Fantom, FTM
