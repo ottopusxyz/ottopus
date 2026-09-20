@@ -54,8 +54,20 @@ export interface ActivityFeedQuery {
   size: number
 }
 
-/** Where one arm's stream stands: the last row shown, or exhausted. */
-type ArmMark = { before: string; seen: string[] } | 'done'
+/**
+ * Where one arm's stream stands: the last row shown; exhausted; or skipped
+ * for the rest of this feed because a read failed. A failed arm cannot
+ * rejoin a feed that has moved on without its rows landing under older
+ * ones, so it sits out until the page is read again from the top.
+ */
+type ArmMark = { before: string; seen: string[] } | 'done' | { skip: ArmStatus }
+
+/**
+ * How many ids a bound remembers for its second. A second holding more
+ * rows than this is jumped rather than remembered — the cursor has to fit
+ * a query string, and no wallet mines that many in one second.
+ */
+export const MAX_SEEN = 20
 
 interface Cursor {
   v: 1
@@ -84,13 +96,20 @@ export function decodeCursor(raw: string): Cursor | null {
       continue
     }
     if (!mark || typeof mark !== 'object') return null
-    const { before, seen } = mark as { before?: unknown; seen?: unknown }
+    const { before, seen, skip } = mark as { before?: unknown; seen?: unknown; skip?: unknown }
+    if (typeof skip === 'string') {
+      if (!ARM_STATUSES.has(skip)) return null
+      out[walletId] = { skip: skip as ArmStatus }
+      continue
+    }
     if (typeof before !== 'string' || !Number.isFinite(Date.parse(before))) return null
-    if (!Array.isArray(seen) || !seen.every((id) => typeof id === 'string')) return null
+    if (!Array.isArray(seen) || seen.length > MAX_SEEN || !seen.every((id) => typeof id === 'string')) return null
     out[walletId] = { before, seen }
   }
   return { v: 1, arms: out }
 }
+
+const ARM_STATUSES = new Set<string>(['ok', 'untracked_address', 'rate_limited', 'unavailable', 'not_configured'])
 
 interface ArmRead {
   arm: ArmRef
@@ -98,6 +117,27 @@ interface ArmRead {
   items: ActivityRow[]
   more: boolean
   status: ArmStatus
+  /** Every row the provider returned, kept or not. */
+  raw: { id: string; minedAt: string }[]
+}
+
+/** One second earlier, for a bound that has to jump a second it cannot remember. */
+function secondBefore(at: string): string {
+  return new Date(Date.parse(at) - 1000).toISOString().replace('.000Z', 'Z')
+}
+
+/**
+ * Where an arm's bound goes when the page it read had nothing new on it —
+ * every row already shown, or dropped for a chain we cannot name. Left
+ * alone, the same page comes back forever.
+ */
+function advance(mark: ArmMark | null, raw: { id: string; minedAt: string }[]): ArmMark | null {
+  const last = raw.at(-1)
+  if (!last) return mark
+  const stuck = mark && typeof mark === 'object' && 'before' in mark && mark.before === last.minedAt
+  const ids = raw.filter((row) => row.minedAt === last.minedAt).map((row) => row.id)
+  if (stuck || ids.length > MAX_SEEN) return { before: secondBefore(last.minedAt), seen: [] }
+  return { before: last.minedAt, seen: ids }
 }
 
 function statusOf(error: unknown): ArmStatus {
@@ -129,7 +169,8 @@ export async function readActivity(
   const reads: ArmRead[] = await Promise.all(
     arms.map(async (arm): Promise<ArmRead> => {
       const mark = cursor?.arms[arm.walletId] ?? null
-      if (mark === 'done') return { arm, mark, items: [], more: false, status: 'ok' }
+      if (mark === 'done') return { arm, mark, items: [], more: false, status: 'ok', raw: [] }
+      if (mark && 'skip' in mark) return { arm, mark, items: [], more: false, status: mark.skip, raw: [] }
       try {
         const seen = new Set(mark?.seen ?? [])
         // The rows already shown come back at the top of a page bounded at
@@ -144,9 +185,9 @@ export async function readActivity(
         const items = page.items
           .filter((item) => !seen.has(item.id))
           .map((item) => ({ ...item, walletId: arm.walletId }))
-        return { arm, mark, items, more: page.more, status: 'ok' }
+        return { arm, mark, items, more: page.more, status: 'ok', raw: page.raw }
       } catch (err) {
-        return { arm, mark, items: [], more: false, status: statusOf(err) }
+        return { arm, mark, items: [], more: false, status: statusOf(err), raw: [] }
       }
     }),
   )
@@ -172,9 +213,9 @@ export async function readActivity(
       continue
     }
     if (read.status !== 'ok') {
-      // A failed read moves nothing: the next page asks again from the same place.
-      if (read.mark) next.arms[id] = read.mark
-      exhausted = false
+      // Out for the rest of this feed. Its rows would land under older ones
+      // if it rejoined; reading from the top is how it comes back.
+      next.arms[id] = { skip: read.status }
       continue
     }
     const mine = read.items.filter((item) => shown.has(`${item.walletId}:${item.id}`))
@@ -186,14 +227,19 @@ export async function readActivity(
     exhausted = false
     const last = mine.at(-1)
     if (!last) {
-      if (read.mark) next.arms[id] = read.mark
+      // Nothing shown. Either the rows sit below the watermark and the bound
+      // stands, or the page had nothing new and the bound has to move.
+      const kept = read.items.length > 0 ? read.mark : advance(read.mark, read.raw)
+      if (kept) next.arms[id] = kept
       continue
     }
     const seen = mine.filter((item) => item.minedAt === last.minedAt).map((item) => item.id)
     // The bound did not move if the page ended inside the second the last one
     // did, and the ids already dropped there are still to be dropped.
-    if (read.mark && read.mark.before === last.minedAt) seen.push(...read.mark.seen)
-    next.arms[id] = { before: last.minedAt, seen }
+    if (read.mark && 'before' in read.mark && read.mark.before === last.minedAt) seen.push(...read.mark.seen)
+    // A second too busy to remember is jumped: the rows shown at it are all
+    // the feed will show of it.
+    next.arms[id] = seen.length > MAX_SEEN ? { before: secondBefore(last.minedAt), seen: [] } : { before: last.minedAt, seen }
   }
 
   const chains = new Map<string, ActivityChain>()

@@ -146,6 +146,12 @@ export interface ActivityPageRead {
   items: Activity[]
   /** The provider has older transactions past this page. */
   more: boolean
+  /**
+   * Every row the provider put on the page, in its order, the dropped ones
+   * included. The merge advances its bound over these, so a page of rows it
+   * could not name still moves the feed along instead of stalling it.
+   */
+  raw: { id: string; minedAt: string }[]
 }
 
 export interface ActivityConnector {

@@ -147,7 +147,7 @@ export class ZerionActivityConnector implements ActivityConnector {
     if (query.chainId) {
       const slug = chains.slugOf(query.chainId)
       // A chain the provider does not know has no history to read.
-      if (!slug) return { items: [], more: false }
+      if (!slug) return { items: [], more: false, raw: [] }
       params.set('filter[chain_ids]', slug)
     }
     if (query.before) {
@@ -161,11 +161,13 @@ export class ZerionActivityConnector implements ActivityConnector {
     )
 
     const items: Activity[] = []
-    for (const raw of body.data ?? []) {
-      const item = toActivity(raw, chains)
+    const raw: ActivityPageRead['raw'] = []
+    for (const row of body.data ?? []) {
+      if (row.id && row.attributes?.mined_at) raw.push({ id: row.id, minedAt: row.attributes.mined_at })
+      const item = toActivity(row, chains)
       if (item) items.push(item)
     }
-    return { items, more: Boolean(body.links?.next) }
+    return { items, more: Boolean(body.links?.next), raw }
   }
 }
 

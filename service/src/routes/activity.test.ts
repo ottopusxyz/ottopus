@@ -34,7 +34,7 @@ function connector(): ActivityConnector & { asked: { address: string; query: Act
     asked,
     transactionsFor: vi.fn(async (account: AccountRef, query: ActivityQuery) => {
       asked.push({ address: account.address, query })
-      return { items: [], more: false }
+      return { items: [], more: false, raw: [] }
     }),
   }
 }

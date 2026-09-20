@@ -26,9 +26,10 @@ const query = z.object({
     .transform((raw) => raw.split(',').filter(Boolean))
     .pipe(z.array(KIND).max(ACTIVITY_KINDS.length))
     .optional(),
+  /** Eight arms, each a bound and at most MAX_SEEN ids, fits well inside this. */
   cursor: z
     .string()
-    .max(4096)
+    .max(12_000)
     .refine((raw) => decodeCursor(raw) !== null, 'cursor is not one this service wrote')
     .optional(),
   size: z.coerce.number().int().min(1).max(MAX_SIZE).default(DEFAULT_SIZE),

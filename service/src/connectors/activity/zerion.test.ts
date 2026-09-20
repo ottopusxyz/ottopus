@@ -143,12 +143,20 @@ describe('asking zerion', () => {
     expect(query.get('page[size]')).toBe('25')
     expect(page.items).toHaveLength(1)
     expect(page.more).toBe(true)
+    expect(page.raw).toEqual([{ id: 'a2fa5101', minedAt: '2026-09-11T12:06:51Z' }])
+  })
+
+  it('reports a dropped row as consumed, so the merge can move past it', async () => {
+    const { connector } = reader(() => ({ data: [trade({}, 'solana')], links: { next: 'https://api/next' } }))
+    const page = await connector.transactionsFor({ namespace: 'eip155', address: ME }, { size: 5 })
+    expect(page.items).toEqual([])
+    expect(page.raw).toEqual([{ id: 'a2fa5101', minedAt: '2026-09-11T12:06:51Z' }])
   })
 
   it('answers an unknown chain with nothing rather than asking', async () => {
     const { connector, fetchImpl } = reader(() => ({ data: [] }))
     const page = await connector.transactionsFor({ namespace: 'eip155', address: ME }, { chainId: 'eip155:99999', size: 5 })
-    expect(page).toEqual({ items: [], more: false })
+    expect(page).toEqual({ items: [], more: false, raw: [] })
     // The chain list, and nothing else.
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })

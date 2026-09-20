@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ArmRef } from '../portfolio/aggregate.js'
 import { PortfolioError, type AccountRef } from '../portfolio/types.js'
-import { decodeCursor, encodeCursor, readActivity, type ActivityRow } from './merge.js'
+import { MAX_SEEN, decodeCursor, encodeCursor, readActivity, type ActivityRow } from './merge.js'
 import type { Activity, ActivityConnector, ActivityQuery } from './types.js'
 
 const ARM_A: ArmRef = { walletId: 'a', namespace: 'eip155', address: '0xa' }
@@ -29,11 +29,19 @@ function tx(id: string, minedAt: string, overrides: Partial<Activity> = {}): Act
 
 /**
  * A provider over in-memory streams that honours the bound the way Zerion
- * does: everything mined at or before `before`, newest first, `size` at a time.
+ * does: everything mined at or before `before`, newest first, `size` at a
+ * time. `failing` is thrown for on every read; `cap` is the provider's page
+ * ceiling; a row whose chain is `unnamed` is on the page but dropped, the
+ * way a Solana row is by the real reader.
  */
-function connector(streams: Record<string, Activity[]>, failing: string[] = []): ActivityConnector {
+function connector(
+  streams: Record<string, Activity[]>,
+  failing: string[] = [],
+  options: { cap?: number; unnamed?: string } = {},
+): ActivityConnector & { failing: string[] } {
   return {
     provider: 'fake',
+    failing,
     chainName: (chainId) => (chainId === 'eip155:8453' ? 'Base' : null),
     async transactionsFor(account: AccountRef, query: ActivityQuery) {
       if (failing.includes(account.address)) throw new PortfolioError('rate_limited', 'nope')
@@ -42,7 +50,12 @@ function connector(streams: Record<string, Activity[]>, failing: string[] = []):
         .filter((item) => !query.kinds || query.kinds.includes(item.kind))
         .filter((item) => !query.before || Date.parse(item.minedAt) <= Date.parse(query.before))
         .sort((x, y) => Date.parse(y.minedAt) - Date.parse(x.minedAt))
-      return { items: all.slice(0, query.size), more: all.length > query.size }
+      const page = all.slice(0, Math.min(query.size, options.cap ?? Infinity))
+      return {
+        items: page.filter((item) => item.chainId !== options.unnamed),
+        more: all.length > page.length,
+        raw: page.map((item) => ({ id: item.id, minedAt: item.minedAt })),
+      }
     },
   }
 }
@@ -104,8 +117,57 @@ describe('merging arms', () => {
       { walletId: 'a', address: '0xa', status: 'ok' },
       { walletId: 'b', address: '0xb', status: 'rate_limited' },
     ])
-    // The failed arm has not been read, so there is more to ask for.
-    expect(feed.cursor).not.toBeNull()
+    // The failed arm sits out; nothing else is left, so the feed is done.
+    expect(feed.cursor).toBeNull()
+  })
+
+  it('moves past a page of rows it could not name rather than reading it forever', async () => {
+    // Three Solana rows fill a page of three; the Base row behind them must still arrive.
+    const a = [tx('s0', at(50), { chainId: 'solana' }), tx('s1', at(49), { chainId: 'solana' }), tx('s2', at(48), { chainId: 'solana' }), tx('a0', at(40))]
+    const c = connector({ '0xa': a }, [], { unnamed: 'solana' })
+    const pages = await drain(c, [ARM_A], 3)
+    expect(pages.flat().map((i) => i.id)).toEqual(['a0'])
+    expect(pages.length).toBeLessThan(5)
+  })
+
+  it('jumps a second too busy to remember instead of stalling on it', async () => {
+    // More rows in one second than the provider's page holds. What fits is
+    // shown; the second is then skipped and the rows behind it still arrive.
+    const busy = Array.from({ length: MAX_SEEN + 5 }, (_, i) => tx(`b${String(i).padStart(2, '0')}`, at(50)))
+    const a = [...busy, tx('a0', at(40)), tx('a1', at(30))]
+    const c = connector({ '0xa': a }, [], { cap: 8 })
+    const pages = await drain(c, [ARM_A], 8)
+    const ids = pages.flat().map((i) => i.id)
+    expect(ids.slice(-2)).toEqual(['a0', 'a1'])
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(pages.length).toBeLessThan(10)
+  })
+
+  it('keeps the cursor small however busy the boundary is', async () => {
+    const busy = Array.from({ length: 40 }, (_, i) => tx(`b${String(i).padStart(2, '0')}`, at(50)))
+    const c = connector({ '0xa': [...busy, tx('a0', at(40))] })
+    const feed = await readActivity(c, [ARM_A], { size: 10 })
+    const cursor = decodeCursor(feed.cursor!)!
+    const mark = cursor.arms['a']
+    expect(mark && typeof mark === 'object' && 'seen' in mark ? mark.seen.length : 0).toBeLessThanOrEqual(MAX_SEEN)
+  })
+
+  it('sits a failed arm out for the rest of the feed, so it cannot rejoin under older rows', async () => {
+    const c = connector({ '0xa': [tx('a1', at(50)), tx('a2', at(30))], '0xb': [tx('b1', at(45)), tx('b2', at(20))] }, ['0xb'])
+    const first = await readActivity(c, [ARM_A, ARM_B], { size: 1 })
+    expect(first.items.map((i) => i.id)).toEqual(['a1'])
+    expect(first.arms[1]?.status).toBe('rate_limited')
+
+    // B comes back. The feed has moved past b1, so B stays out and says why.
+    c.failing.length = 0
+    const second = await readActivity(c, [ARM_A, ARM_B], { size: 5, cursor: first.cursor })
+    expect(second.items.map((i) => i.id)).toEqual(['a2'])
+    expect(second.arms[1]?.status).toBe('rate_limited')
+    expect(second.cursor).toBeNull()
+
+    // Reading from the top is how it rejoins, in order.
+    const fresh = await readActivity(c, [ARM_A, ARM_B], { size: 5 })
+    expect(fresh.items.map((i) => i.id)).toEqual(['a1', 'b1', 'a2', 'b2'])
   })
 
   it('refuses a cursor it did not write', async () => {
