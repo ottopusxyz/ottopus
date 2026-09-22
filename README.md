@@ -78,7 +78,7 @@ flowchart LR
     end
 
     DB[("Postgres<br/>Supabase")]
-    Vendors["Zerion · Uniswap · LI.FI · RPC"]
+    Vendors["Zerion · Uniswap · LI.FI · Binance · RPC"]
 
     Agent -- "prepare_trade …" --> MCP
     Web --> API
@@ -99,12 +99,20 @@ renders what the service returns; it never computes or verifies a plan itself.
 Four rules define the product:
 
 1. **No private key ever reaches the backend or the agent.** Ownership is proved
-   through Privy's wallet-link flow; the service only ever sees addresses.
-2. **Tool calls create plans, not transactions.** Prepare, never surprise.
+   through Privy's wallet-link flow; the service only ever sees addresses. An
+   agent-operated wallet's key lives with its vendor, and Ottopus still only
+   sees the address.
+2. **Tool calls create plans, not transactions.** Prepare, never surprise. One
+   stated exception, for agent-operated wallets only: once a person has approved
+   a plan on the review page, or a rule the person set has approved it after a
+   passing simulation, `get_plan` hands the agent that plan's calls and the
+   agent's own wallet sends them. Ottopus still never signs and never broadcasts.
 3. **The review page is a hard security boundary**, bound to an immutable `planHash`.
-   A tampered or expired plan will not sign.
+   A tampered or expired plan will not sign, and will not release its calls.
 4. **Simulation is independent of whoever built the route.** The routing vendor is
-   never the simulation vendor.
+   never the simulation vendor. A second, labelled simulation from Binance may
+   appear on the review page for a person to compare; it is advice, and never
+   enters the prepare path, the verification or the hash.
 
 ## Run it locally
 
