@@ -92,6 +92,17 @@ export interface Config {
   uniswapApiKey: string | undefined
   uniswapApiUrl: string | undefined
   /**
+   * Binance Web3 API. Both halves are secrets: every request is signed with
+   * the secret key, so neither may reach the browser. Absent together means
+   * every Binance-backed feature — BSC routing, stock data, the review page's
+   * second simulation — reports itself unavailable. One without the other is
+   * a misconfiguration and refuses to boot.
+   */
+  binanceApiKey: string | undefined
+  binanceSecretKey: string | undefined
+  /** Origin plus the `/build` prefix. Only for tests and local mocks. */
+  binanceApiUrl: string | undefined
+  /**
    * One RPC provider for every chain: a URL with `{network}` (Alchemy's name)
    * or `{chainId}` (the EVM id) in it, substituted per chain. Unset means
    * viem's public endpoints, which are fine for a laptop and rate-limited for
@@ -227,6 +238,20 @@ function readRpcTemplate(name: string): string | undefined {
   return raw
 }
 
+/**
+ * Half a credential is worse than none: the client would sign every request
+ * with an empty secret and the vendor would refuse each one with a message
+ * about the timestamp. Say so at boot instead.
+ */
+function readBinanceKeys(): Pick<Config, 'binanceApiKey' | 'binanceSecretKey' | 'binanceApiUrl'> {
+  const binanceApiKey = readOptional('BINANCE_WEB3_API_KEY')
+  const binanceSecretKey = readOptional('BINANCE_WEB3_SECRET_KEY')
+  if ((binanceApiKey === undefined) !== (binanceSecretKey === undefined)) {
+    throw new ConfigError('BINANCE_WEB3_API_KEY and BINANCE_WEB3_SECRET_KEY must be set together, or neither')
+  }
+  return { binanceApiKey, binanceSecretKey, binanceApiUrl: readOptional('BINANCE_WEB3_API_URL') }
+}
+
 export function loadConfig(): Config {
   // Read first: the MCP and web URLs default off them.
   const port = readInt('PORT', 8787)
@@ -265,6 +290,7 @@ export function loadConfig(): Config {
     lifiApiUrl: readOptional('LIFI_API_URL'),
     uniswapApiKey: readOptional('UNISWAP_API_KEY'),
     uniswapApiUrl: readOptional('UNISWAP_API_URL'),
+    ...readBinanceKeys(),
     rpcUrlTemplate: readRpcTemplate('RPC_URL_TEMPLATE'),
   }
 }
