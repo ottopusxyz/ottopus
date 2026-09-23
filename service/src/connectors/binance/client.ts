@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 
 /**
  * The HTTP half of every Binance Web3 API connector: signing, the clock, rate
@@ -17,6 +17,14 @@ import { createHmac } from 'node:crypto'
  * window, and when the vendor still says no it reads the server's own time
  * out of the refusal, learns the offset, and tries once more.
  *
+ * Every attempt carries a fresh nonce. Without one the vendor uses the
+ * signature itself for replay detection, and a signature is a function of
+ * the timestamp, the path and the body — so two identical requests inside
+ * twice the receive window are, to the vendor, one request replayed. Three
+ * of four identical concurrent calls were refused that way, and so was the
+ * same call repeated a moment later. A random nonce per attempt is what
+ * makes two honest requests two requests.
+ *
  * The secret never leaves the service. Nothing in `web/` imports this.
  */
 
@@ -31,7 +39,11 @@ const DEFAULT_TIMEOUT_MS = 10_000
 /** Retrying inside a request is only worth it when the wait is shorter than the request. */
 const MAX_RETRY_WAIT_MS = 2_000
 
-/** The vendor's own code for a timestamp outside the receive window. */
+/**
+ * The vendor's one code for both "timestamp outside the receive window" and
+ * "request replayed". The message tells them apart: the first names the
+ * server's time, the second says "Duplicate request detected".
+ */
 const CODE_BAD_TIMESTAMP = 40103
 
 export type BinanceErrorCode =
@@ -76,6 +88,8 @@ export interface BinanceClientOptions {
   /** Milliseconds since the epoch, for a test to pin the timestamp. */
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  /** One per attempt. Random by default; a test may want to see it. */
+  nonce?: () => string
 }
 
 export interface SignInput {
@@ -111,6 +125,7 @@ export class BinanceClient {
   private readonly doFetch: typeof globalThis.fetch
   private readonly now: () => number
   private readonly sleep: (ms: number) => Promise<void>
+  private readonly nonce: () => string
   /**
    * How far this machine's clock is from the vendor's, learned from the
    * vendor's own refusal. Kept for the process: a clock does not drift
@@ -132,6 +147,7 @@ export class BinanceClient {
     this.doFetch = options.fetch ?? globalThis.fetch
     this.now = options.now ?? Date.now
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+    this.nonce = options.nonce ?? randomUUID
   }
 
   /** The learned skew, for a log line or a test. Zero until the vendor has complained. */
@@ -162,6 +178,7 @@ export class BinanceClient {
         'X-OC-TIMESTAMP': timestamp,
         'X-OC-SIGN': signBinanceRequest({ secretKey: this.secretKey, timestamp, method, requestPath, body }),
         'X-OC-RECV-WINDOW': String(RECV_WINDOW_MS),
+        'X-OC-NONCE': this.nonce(),
         accept: 'application/json',
       }
       if (method === 'POST') headers['content-type'] = 'application/json'
@@ -203,6 +220,11 @@ export class BinanceClient {
         }
       }
 
+      // The same code, no server time: the vendor saw this request before.
+      // That is a fact about the request, not the key.
+      if (envelope?.code === CODE_BAD_TIMESTAMP) {
+        throw new BinanceError('rejected', `binance refused (${envelope.code}): ${envelope.msg ?? 'timestamp or replay'}`, envelope.code)
+      }
       if (response.status === 401 || response.status === 403) {
         throw new BinanceError(
           'not_configured',
