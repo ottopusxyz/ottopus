@@ -177,12 +177,21 @@ describe('the clock', () => {
     expect(seen[2]!.headers['X-OC-TIMESTAMP']).toBe('2026-09-21T11:41:50.000Z')
   })
 
-  it('gives up after one retry, as a key problem rather than a loop', async () => {
+  it('gives up after one retry, as a rejection rather than a loop', async () => {
     const { seen, client } = vendor(
       json({ code: 40103, msg: 'Timestamp outside recv_window. serverTime=2026-09-21T11:42:07.000Z', data: '' }, 401),
     )
-    await expect(client.get(CHAINS)).rejects.toMatchObject({ code: 'not_configured', vendorCode: 40103 })
+    await expect(client.get(CHAINS)).rejects.toMatchObject({ code: 'rejected', vendorCode: 40103 })
     expect(seen).toHaveLength(2)
+  })
+
+  it('retries the clock with a fresh nonce, not the one the vendor already saw', async () => {
+    const { seen, client } = vendor(
+      json({ code: 40103, msg: 'Timestamp outside recv_window. serverTime=2026-09-21T11:42:07.000Z', data: '' }, 401),
+      ok([]),
+    )
+    await client.get(CHAINS)
+    expect(seen[0]!.headers['X-OC-NONCE']).not.toBe(seen[1]!.headers['X-OC-NONCE'])
   })
 
   it('reads the server time out of the message', () => {
@@ -191,6 +200,46 @@ describe('the clock', () => {
     )
     expect(serverTimeIn('Timestamp outside recv_window.')).toBeNull()
     expect(serverTimeIn(undefined)).toBeNull()
+  })
+})
+
+describe('the nonce', () => {
+  /**
+   * The vendor's replay detection falls back to the signature when no nonce
+   * is sent, and a signature is a function of timestamp, path and body. So
+   * two identical requests in the same millisecond — or within two minutes,
+   * at our receive window — were one request replayed: live, three of four
+   * concurrent calls came back 40103 "Duplicate request detected".
+   */
+  it('is different on every attempt, so identical concurrent calls are not a replay', async () => {
+    const { seen, client } = vendor(ok([]))
+    await Promise.all([client.get(CHAINS), client.get(CHAINS), client.get(CHAINS), client.get(CHAINS)])
+    const nonces = seen.map((r) => r.headers['X-OC-NONCE'])
+    expect(nonces.every((n) => typeof n === 'string' && n.length > 0)).toBe(true)
+    expect(new Set(nonces).size).toBe(4)
+    // Same timestamp, same signature — exactly the case the nonce exists for.
+    expect(new Set(seen.map((r) => r.headers['X-OC-SIGN'])).size).toBe(1)
+  })
+
+  it('is whatever the caller supplies, for a test that wants to see it', async () => {
+    let n = 0
+    const client = new BinanceClient({
+      apiKey: 'k',
+      secretKey: 's',
+      nonce: () => `n-${++n}`,
+      fetch: (async (_url: unknown, init?: RequestInit) => {
+        expect((init?.headers as Record<string, string>)['X-OC-NONCE']).toBe(`n-${n}`)
+        return ok([])()
+      }) as unknown as typeof fetch,
+    })
+    await client.get(CHAINS)
+    await client.get(CHAINS)
+    expect(n).toBe(2)
+  })
+
+  it('reports a replay the vendor still detects as a rejection, not a key problem', async () => {
+    const { client } = vendor(json({ code: 40103, msg: 'Duplicate request detected', data: '' }, 401))
+    await expect(client.get(CHAINS)).rejects.toMatchObject({ code: 'rejected', vendorCode: 40103 })
   })
 })
 
