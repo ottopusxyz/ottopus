@@ -1,3 +1,6 @@
+import { DEFAULT_BINANCE_ROUTE_CHAINS } from './connectors/route/binance.js'
+import { CaipError, formatChainId } from './core/index.js'
+
 /**
  * Environment config, parsed and validated once at boot.
  *
@@ -85,13 +88,6 @@ export interface Config {
   lifiApiKey: string | undefined
   lifiApiUrl: string | undefined
   /**
-   * Optional. With a key, Uniswap's Trading API is the first route provider
-   * asked on the chains it serves, and LI.FI takes the rest; without one,
-   * LI.FI routes everything. The API does not answer without a key.
-   */
-  uniswapApiKey: string | undefined
-  uniswapApiUrl: string | undefined
-  /**
    * Binance Web3 API. Both halves are secrets: every request is signed with
    * the secret key, so neither may reach the browser. Absent together means
    * every Binance-backed feature — BSC routing, stock data, the review page's
@@ -102,6 +98,13 @@ export interface Config {
   binanceSecretKey: string | undefined
   /** Origin plus the `/build` prefix. Only for tests and local mocks. */
   binanceApiUrl: string | undefined
+  /**
+   * CAIP-2 chains where the Binance route provider is asked before LI.FI —
+   * the connector's own `serves()` reads this same list. Set as plain EVM
+   * chain ids, comma-separated (`BINANCE_ROUTE_CHAINS=56`), not CAIP-2; the
+   * default is BNB Chain alone.
+   */
+  binanceRouteChains: readonly string[]
   /**
    * One RPC provider for every chain: a URL with `{network}` (Alchemy's name)
    * or `{chainId}` (the EVM id) in it, substituted per chain. Unset means
@@ -252,6 +255,21 @@ function readBinanceKeys(): Pick<Config, 'binanceApiKey' | 'binanceSecretKey' | 
   return { binanceApiKey, binanceSecretKey, binanceApiUrl: readOptional('BINANCE_WEB3_API_URL') }
 }
 
+/** Comma-separated plain EVM chain ids, e.g. `56,8453`, formatted as CAIP-2. */
+function readEvmChainList(name: string, fallback: readonly string[]): readonly string[] {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return fallback
+  return raw.split(',').map((value) => {
+    const reference = value.trim()
+    try {
+      return formatChainId({ namespace: 'eip155', reference })
+    } catch (err) {
+      const reason = err instanceof CaipError ? err.message : String(err)
+      throw new ConfigError(`${name} must be a comma-separated list of EVM chain ids — ${reason}`)
+    }
+  })
+}
+
 export function loadConfig(): Config {
   // Read first: the MCP and web URLs default off them.
   const port = readInt('PORT', 8787)
@@ -288,9 +306,8 @@ export function loadConfig(): Config {
     zerionApiUrl: readOptional('ZERION_API_URL'),
     lifiApiKey: readOptional('LIFI_API_KEY'),
     lifiApiUrl: readOptional('LIFI_API_URL'),
-    uniswapApiKey: readOptional('UNISWAP_API_KEY'),
-    uniswapApiUrl: readOptional('UNISWAP_API_URL'),
     ...readBinanceKeys(),
+    binanceRouteChains: readEvmChainList('BINANCE_ROUTE_CHAINS', DEFAULT_BINANCE_ROUTE_CHAINS),
     rpcUrlTemplate: readRpcTemplate('RPC_URL_TEMPLATE'),
   }
 }
