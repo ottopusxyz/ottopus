@@ -217,6 +217,17 @@ describe('the Binance route provider', () => {
     await connector.route(swap)
     expect(seen[1]!.query.get('quoteId')).toBe('b'.repeat(32))
   })
+
+  it('picks the best SWAP quote even when an RFQ quote is marked best overall', async () => {
+    const { seen, connector } = server({
+      quote: envelope([
+        route({ quoteId: 'a'.repeat(32), executionMode: 'RFQ', isBest: true }),
+        route({ quoteId: 'b'.repeat(32), executionMode: 'SWAP', isBest: false }),
+      ]),
+    })
+    await connector.route(swap)
+    expect(seen[1]!.query.get('quoteId')).toBe('b'.repeat(32))
+  })
 })
 
 describe('what is not a route here', () => {
@@ -238,6 +249,11 @@ describe('what is not a route here', () => {
   it('refuses a build that came back as an order even when the quote did not', async () => {
     const { connector } = server({ swap: envelope(built({ executionMode: 'RFQ', tx: null, rfq: { typedDataToSign: {} } })) })
     await expect(connector.route(swap)).rejects.toMatchObject({ code: 'unsupported' })
+  })
+
+  it('is a provider failure, not a crash, when the build comes back with no data', async () => {
+    const { connector } = server({ swap: envelope(null) })
+    await expect(connector.route(swap)).rejects.toMatchObject({ code: 'provider_failed' })
   })
 
   it('is no_route when the vendor found no venue', async () => {

@@ -164,11 +164,20 @@ export function binanceRouteConnector(options: BinanceRouteOptions): RouteConnec
 
       const routes = await ask<BinanceQuoteRoute[] | BinanceQuoteRoute>('/api/v1/dex/aggregator/quote', common)
       const offered = (Array.isArray(routes) ? routes : [routes]).filter((r) => r && typeof r === 'object')
-      const best = offered.find((r) => r.isBest) ?? offered[0]
+      if (offered.length === 0) {
+        throw new RouteError('no_route', `${BINANCE_PROVIDER} found no route for this pair at this size`)
+      }
+      // A non-SWAP quote (RFQ) can still be marked isBest; that must not hide
+      // a usable SWAP quote sitting alongside it in the same response.
+      const swapRoutes = offered.filter((r) => r.executionMode === 'SWAP')
+      if (swapRoutes.length === 0) {
+        const overallBest = offered.find((r) => r.isBest) ?? offered[0]
+        throw new RouteError('unsupported', refusal(overallBest?.executionMode))
+      }
+      const best = swapRoutes.find((r) => r.isBest) ?? swapRoutes[0]
       if (!best?.quoteId) {
         throw new RouteError('no_route', `${BINANCE_PROVIDER} found no route for this pair at this size`)
       }
-      if (best.executionMode !== 'SWAP') throw new RouteError('unsupported', refusal(best.executionMode))
       if (!best.toTokenAmount) {
         throw new RouteError('provider_failed', `${BINANCE_PROVIDER} returned a quote with no output`)
       }
@@ -179,6 +188,9 @@ export function binanceRouteConnector(options: BinanceRouteOptions): RouteConnec
         quoteId: best.quoteId,
         slippagePercent: slippagePercentOf(request.slippageBps ?? DEFAULT_SLIPPAGE_BPS),
       })
+      if (!built || typeof built !== 'object') {
+        throw new RouteError('provider_failed', `${BINANCE_PROVIDER} returned no transaction to build`)
+      }
       if (built.executionMode !== undefined && built.executionMode !== 'SWAP') {
         throw new RouteError('unsupported', refusal(built.executionMode))
       }
