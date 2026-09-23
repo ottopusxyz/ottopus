@@ -13,6 +13,8 @@ const KEYS = [
   'MCP_URL',
   'WEB_URL',
   'WEB_ORIGINS',
+  'BINANCE_WEB3_API_KEY',
+  'BINANCE_WEB3_SECRET_KEY',
 ] as const
 
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
@@ -89,5 +91,28 @@ describe('a production identity', () => {
   it('leaves the test environment alone, which has no public address at all', () => {
     env({ NODE_ENV: 'test' })
     expect(() => loadConfig()).not.toThrow()
+  })
+})
+
+describe('the binance credential', () => {
+  it('is absent as a pair, and that is fine', () => {
+    env({})
+    const config = loadConfig()
+    expect(config.binanceApiKey).toBeUndefined()
+    expect(config.binanceSecretKey).toBeUndefined()
+  })
+
+  it('is read as a pair', () => {
+    env({ BINANCE_WEB3_API_KEY: 'k', BINANCE_WEB3_SECRET_KEY: 's' })
+    const config = loadConfig()
+    expect(config.binanceApiKey).toBe('k')
+    expect(config.binanceSecretKey).toBe('s')
+  })
+
+  it('refuses half a credential at boot', () => {
+    env({ BINANCE_WEB3_API_KEY: 'k' })
+    expect(() => loadConfig()).toThrow(/BINANCE_WEB3_SECRET_KEY/)
+    env({ BINANCE_WEB3_SECRET_KEY: 's' })
+    expect(() => loadConfig()).toThrow(/BINANCE_WEB3_API_KEY/)
   })
 })
