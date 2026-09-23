@@ -78,7 +78,7 @@ flowchart LR
     end
 
     DB[("Postgres<br/>Supabase")]
-    Vendors["Zerion · Uniswap · LI.FI · Binance · RPC"]
+    Vendors["Zerion · LI.FI · Binance · RPC"]
 
     Agent -- "prepare_trade …" --> MCP
     Web --> API
@@ -129,9 +129,9 @@ pnpm db:migrate                           # applies pending migrations, safe to 
 pnpm dev                                  # web on :3000, service on :8787
 ```
 
-Optional keys in `service/.env`: `ZERION_API_KEY` for portfolios, `UNISWAP_API_KEY`
-and `LIFI_API_KEY` for routing, `RPC_URL_TEMPLATE` for a faster RPC provider. Each
-file explains what happens without it.
+Optional keys in `service/.env`: `ZERION_API_KEY` for portfolios, `LIFI_API_KEY`
+and `BINANCE_WEB3_API_KEY`/`BINANCE_WEB3_SECRET_KEY` for routing, `RPC_URL_TEMPLATE`
+for a faster RPC provider. Each file explains what happens without it.
 
 To reach `/mcp` from an agent host during development, expose the service over HTTPS
 (for example `cloudflared tunnel --url http://localhost:8787`) and set `PUBLIC_URL`

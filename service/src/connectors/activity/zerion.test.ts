@@ -85,7 +85,7 @@ describe('reading a transaction', () => {
         operation_type: 'deposit',
         transfers: [
           {
-            nft_info: { contract_address: '0x03a5', token_id: '5977045', name: 'Uniswap - 0.05% - USDC/WETH', content: { preview: { url: 'https://img/1' } } },
+            nft_info: { contract_address: '0x03a5', token_id: '5977045', name: 'LiquidPool - 0.05% - USDC/WETH', content: { preview: { url: 'https://img/1' } } },
             direction: 'in',
             quantity: { int: '1', decimals: 0 },
             value: null,
@@ -97,7 +97,7 @@ describe('reading a transaction', () => {
       }),
       CHAINS,
     )
-    expect(out?.transfers[0]?.asset).toEqual({ kind: 'nft', name: 'Uniswap - 0.05% - USDC/WETH', imageUrl: 'https://img/1', contract: '0x03a5', tokenId: '5977045' })
+    expect(out?.transfers[0]?.asset).toEqual({ kind: 'nft', name: 'LiquidPool - 0.05% - USDC/WETH', imageUrl: 'https://img/1', contract: '0x03a5', tokenId: '5977045' })
     expect(out?.transfers[0]?.value).toBeNull()
   })
 

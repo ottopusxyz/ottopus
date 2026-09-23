@@ -15,6 +15,7 @@ const KEYS = [
   'WEB_ORIGINS',
   'BINANCE_WEB3_API_KEY',
   'BINANCE_WEB3_SECRET_KEY',
+  'BINANCE_ROUTE_CHAINS',
 ] as const
 
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
@@ -114,5 +115,27 @@ describe('the binance credential', () => {
     expect(() => loadConfig()).toThrow(/BINANCE_WEB3_SECRET_KEY/)
     env({ BINANCE_WEB3_SECRET_KEY: 's' })
     expect(() => loadConfig()).toThrow(/BINANCE_WEB3_API_KEY/)
+  })
+})
+
+describe('BINANCE_ROUTE_CHAINS', () => {
+  it('defaults to BNB Chain alone, unset', () => {
+    env({})
+    expect(loadConfig().binanceRouteChains).toEqual(['eip155:56'])
+  })
+
+  it('reads a comma-separated list of plain EVM chain ids as CAIP-2', () => {
+    env({ BINANCE_ROUTE_CHAINS: '56,8453' })
+    expect(loadConfig().binanceRouteChains).toEqual(['eip155:56', 'eip155:8453'])
+  })
+
+  it('trims whitespace around each id', () => {
+    env({ BINANCE_ROUTE_CHAINS: ' 56 , 8453 ' })
+    expect(loadConfig().binanceRouteChains).toEqual(['eip155:56', 'eip155:8453'])
+  })
+
+  it('refuses a non-numeric chain id at boot', () => {
+    env({ BINANCE_ROUTE_CHAINS: 'bnb' })
+    expect(() => loadConfig()).toThrow(/BINANCE_ROUTE_CHAINS/)
   })
 })

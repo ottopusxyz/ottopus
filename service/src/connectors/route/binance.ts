@@ -28,8 +28,8 @@ import { RouteError, type RouteConnector, type RouteQuote, type RouteRequest } f
  * about thirty seconds, which is why the two are never held apart — but
  * that clock gates only the second call. Once the transaction is built, the
  * floor is in its calldata (`minReceiveAmount`), and a person may take the
- * usual few minutes to read it. Same treatment as Uniswap's API, which
- * gives no expiry at all.
+ * usual few minutes to read it. Same treatment as most DEX APIs, which
+ * give no expiry at all.
  *
  * **Only routes that are one transaction are routes here.** Equity tokens
  * can come back in RFQ mode — an EIP-712 order a vendor fills against a

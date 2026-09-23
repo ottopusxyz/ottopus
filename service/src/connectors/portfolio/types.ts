@@ -138,7 +138,7 @@ export interface AccountPosition {
   /** Provider id of a parent position — rewards that hang off a farm. Carried, not nested. */
   parentId: string | null
   /**
-   * Positions sharing this belong to one pool or market — a Uniswap v2
+   * Positions sharing this belong to one pool or market — an AMM's v2
    * USDC/WETH pair arrives as two positions with one group_id, and a lending
    * market's collateral and debt share one too. The aggregate groups by it.
    */
