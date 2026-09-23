@@ -1264,7 +1264,7 @@ describe('find_asset', () => {
 /**
  * prepare_custom: the agent's calls, held to the agent's declaration.
  *
- * The shape is the one Uniswap's LP API hands back for a v3 position —
+ * The shape is the one a DEX's LP API hands back for a v3 position —
  * an approval and a mint — because that is the scenario it was built
  * against (#97), and because the vendor's own approval is unlimited,
  * which makes the honest and the forwarded-verbatim versions two real

@@ -193,8 +193,8 @@ describe('a protocol is one card, grouped the way the app groups it', () => {
     const portfolio = await readPortfolio(
       fake({
         '0xaa': [
-          pos({ assetId: WETH_BASE, symbol: 'WETH', decimals: 18, value: 500, positionType: 'deposit', protocol: 'Uniswap V2', protocolModule: 'liquidity_pool', positionName: 'USDC/WETH', groupId: 'pool-1' }),
-          pos({ value: 500, positionType: 'deposit', protocol: 'Uniswap V2', protocolModule: 'liquidity_pool', positionName: 'USDC/WETH', groupId: 'pool-1' }),
+          pos({ assetId: WETH_BASE, symbol: 'WETH', decimals: 18, value: 500, positionType: 'deposit', protocol: 'LiquidPool V2', protocolModule: 'liquidity_pool', positionName: 'USDC/WETH', groupId: 'pool-1' }),
+          pos({ value: 500, positionType: 'deposit', protocol: 'LiquidPool V2', protocolModule: 'liquidity_pool', positionName: 'USDC/WETH', groupId: 'pool-1' }),
         ],
       }),
       [DAILY],
