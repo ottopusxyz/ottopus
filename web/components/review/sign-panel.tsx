@@ -7,7 +7,7 @@ import { Otto } from '@/components/brand'
 import { LoaderDots, TentacleRing } from '@/components/motion'
 import { Button, Dialog } from '@/components/ui'
 import type { Plan, WebTransition } from '@/lib/api'
-import { addChainParams, chainName, evmIdOf, explorerTxUrl } from '@/lib/chains'
+import { addChainParams, chainName, evmIdOf, explorerName, explorerTxUrl } from '@/lib/chains'
 import { getAddress } from 'viem'
 import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
@@ -301,7 +301,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         <div className="flex w-full gap-2">
           {explorer(phase.txHash) ? (
             <Button variant="secondary" size="sm" fullWidth onClick={() => window.open(explorer(phase.txHash)!, '_blank', 'noreferrer')}>
-              View on the explorer
+              View on {explorerName(chain)}
             </Button>
           ) : null}
           <Button variant="secondary" size="sm" fullWidth onClick={() => router.push('/portfolio')}>
@@ -327,7 +327,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
         </div>
         {explorer(phase.txHash) ? (
           <a href={explorer(phase.txHash)!} target="_blank" rel="noreferrer" className="text-[12px] text-[var(--ot-plan-text)]">
-            Follow it on the explorer
+            Follow it on {explorerName(chain)}
           </a>
         ) : null}
         {problem ? <p className="m-0 text-[12px] text-[var(--ot-warn-text)]">{problem}</p> : null}

@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui'
 import type { Plan } from '@/lib/api'
-import { chainName, explorerAddressUrl } from '@/lib/chains'
+import { explorerAddressUrl, explorerName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import {
   chainOfPlan,
@@ -141,7 +141,7 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
               rel="noreferrer"
               className="w-fit text-[11.5px] font-medium text-[var(--ot-plan-text)] underline decoration-[var(--ot-plan)]/40 underline-offset-2"
             >
-              Recipient on the {chainName(chain)} explorer
+              Recipient on {explorerName(chain)}
             </a>
           ) : null}
         </div>
