@@ -6,13 +6,13 @@ import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } f
 import { httpLookups } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
-import { zerionTokens } from '../connectors/tokens/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
 import { listWallets } from '../wallets/index.js'
 import { portfolioProvider } from './portfolio-provider.js'
 import { routeProvider } from './route-provider.js'
+import { stockRegistry, tokenRegistry } from './token-registry.js'
 import {
   authorizationServerMetadata,
   challenge,
@@ -109,15 +109,8 @@ if (!config.databaseUrl) {
      * never read this field, so the decision above stands for them.
      */
     customSimulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
-    // Same provider as the portfolio, so a token has one logo and one price
-    // whether or not the person holds it. No key means no registry, and the
-    // words fall back rather than the plan failing.
-    tokens: config.zerionApiKey
-      ? zerionTokens({
-          apiKey: config.zerionApiKey,
-          ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
-        })
-      : null,
+    tokens: tokenRegistry,
+    stocks: stockRegistry,
     router: routeProvider,
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>

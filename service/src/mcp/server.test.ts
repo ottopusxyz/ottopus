@@ -121,6 +121,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   customSimulator: null,
   router: null,
   tokens: null,
+  stocks: null,
   createPlan: planSink().createPlan,
   issueReviewLink: async (planId, version) => ({
     token: 'tok',
@@ -1237,6 +1238,53 @@ describe('find_asset', () => {
     const { client: other } = await connected(undefined, { tokens: unverified })
     const res = (await call(other, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
     expect(res.content[0]!.text).toContain('Show the address to the person before spending anything')
+  })
+
+  /**
+   * A bare ticker on a chain with two providers is two tokens at different
+   * prices and share ratios. Picking one silently would bind a plan to a
+   * contract the person did not choose, so the choice is the answer.
+   */
+  it('refuses a bare stock ticker with several variants, and lists them', async () => {
+    const stock = (symbol: string, platformId: string, address: string) => ({
+      assetId: `eip155:56/erc20:${address}`,
+      symbol,
+      name: `NVIDIA (${platformId})`,
+      decimals: 18,
+      iconUrl: null,
+      priceUsd: 225,
+      verified: true,
+      stock: {
+        platformId,
+        ticker: 'NVDA',
+        companyName: 'Nvidia Corp',
+        tokenToShareRatio: 1,
+        referencePriceUsd: 224.88,
+        status: { open: true, marketStatus: null, reason: 'TRADING', nextOpenAt: null, nextCloseAt: null },
+        asOf: '2026-09-24T10:00:00.000Z',
+      },
+    })
+    const stocks = {
+      name: 'fake-stocks',
+      async byAssetId() {
+        return null
+      },
+      async variants(_chain: string, query: string) {
+        return query === 'NVDA'
+          ? [
+              stock('NVDAon', 'ondo', '0xa9ee28c80f960b889dfbd1902055218cba016f75'),
+              stock('NVDAB', 'bstock', '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'),
+            ]
+          : []
+      },
+    }
+    const { client } = await connected(undefined, { tokens: registry, stocks })
+    const res = (await call(client, 'find_asset', { chain: 'eip155:56', query: 'NVDA' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('"NVDA" names 2 tokens on BNB Smart Chain')
+    expect(res.content[0]!.text).toContain('NVDAB (bstock) eip155:56/erc20:0x02fca66c1d1afb4e2a7884261eb00f63598a7436')
+    expect(res.content[0]!.text).toContain('NVDAon (ondo) eip155:56/erc20:0xa9ee28c80f960b889dfbd1902055218cba016f75')
+    expect(res.content[0]!.text).toContain('Ask which provider the person means')
   })
 
   it('says plainly when nothing matches, and suggests the address', async () => {

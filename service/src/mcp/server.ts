@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
+import type { StockRegistry } from '../connectors/tokens/index.js'
 import { chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
@@ -49,6 +50,12 @@ export interface ToolContext {
 export interface ToolDeps extends StatusDeps, SwapDeps, CustomDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
+  /**
+   * The stock side of the registry, for the one thing `tokens.find` cannot
+   * say: that a symbol names several tokens. Null when no stock data is
+   * configured, and a stock symbol then resolves like any other.
+   */
+  stocks: StockRegistry | null
 }
 
 export const SERVER_INFO = {
@@ -308,7 +315,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'prepare_trade need, with its decimals, name and price. Use it for any token the person does ' +
         'not already hold — get_portfolio covers the ones they do. Read-only, and it reveals nothing ' +
         'about the person. A symbol can be ambiguous, so the address it resolved to comes back too: ' +
-        'show it before spending anything.',
+        'show it before spending anything. A tokenized stock is resolved from stock data, so a bare ' +
+        'ticker like NVDA with several providers on the chain is refused with the choice listed; a ' +
+        'provider’s own symbol (NVDAB, NVDAon) or the address names one.',
       inputSchema: {
         chain: z.string().describe('CAIP-2 chain id, e.g. eip155:8453 for Base.'),
         query: z
@@ -323,6 +332,21 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       }
       const found = await deps.tokens.find(chain, query)
       if (!found) {
+        // A bare stock ticker on a chain with more than one provider. Nobody
+        // picks: the choice is shown, and the agent asks the person.
+        const variants = (await deps.stocks?.variants(chain, query)) ?? []
+        if (variants.length > 1) {
+          const shown = variants.slice(0, 6)
+          const more = variants.length - shown.length
+          return failure(
+            [
+              `"${query}" names ${variants.length} tokens on ${chainName(chain)}, from different providers:`,
+              ...shown.map((v) => `  ${v.symbol} (${v.stock.platformId}) ${v.assetId}`),
+              ...(more > 0 ? [`  and ${more} more`] : []),
+              'Ask which provider the person means, then call find_asset with that token symbol or its address.',
+            ].join('\n'),
+          )
+        }
         return failure(
           `No token matching "${query}" was found on ${chain}. Check the chain, or give the contract address instead of the symbol.`,
         )

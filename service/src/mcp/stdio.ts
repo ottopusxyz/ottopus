@@ -3,12 +3,12 @@ import { findUserById } from '../auth/session.js'
 import { config } from '../config.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
-import { zerionTokens } from '../connectors/tokens/index.js'
 import { getDb } from '../db/client.js'
 import { SCOPES } from '../oauth/scopes.js'
 import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
 import { portfolioProvider } from '../routes/portfolio-provider.js'
 import { routeProvider } from '../routes/route-provider.js'
+import { stockRegistry, tokenRegistry } from '../routes/token-registry.js'
 import { httpLookups } from '../verify/index.js'
 import { listWallets } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
@@ -75,15 +75,8 @@ async function main(): Promise<void> {
      * never read this field, so the decision above stands for them.
      */
     customSimulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
-    // Same provider as the portfolio, so a token has one logo and one price
-    // whether or not the person holds it. No key means no registry, and the
-    // words fall back rather than the plan failing.
-    tokens: config.zerionApiKey
-      ? zerionTokens({
-          apiKey: config.zerionApiKey,
-          ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
-        })
-      : null,
+    tokens: tokenRegistry,
+    stocks: stockRegistry,
     router: routeProvider,
     createPlan: (input) => createPlan(db, input),
     issueReviewLink: (planId, version, planExpiresAt) =>
