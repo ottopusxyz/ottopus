@@ -121,6 +121,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   customSimulator: null,
   router: null,
   tokens: null,
+  stocks: null,
   createPlan: planSink().createPlan,
   issueReviewLink: async (planId, version) => ({
     token: 'tok',
@@ -1237,6 +1238,83 @@ describe('find_asset', () => {
     const { client: other } = await connected(undefined, { tokens: unverified })
     const res = (await call(other, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
     expect(res.content[0]!.text).toContain('Show the address to the person before spending anything')
+  })
+
+  /**
+   * A bare ticker on a chain with two providers is two tokens at different
+   * prices and share ratios. Picking one silently would bind a plan to a
+   * contract the person did not choose, so the choice is the answer.
+   */
+  it('refuses a bare stock ticker with several variants, and lists them', async () => {
+    const stock = (symbol: string, platformId: string, address: string) => ({
+      assetId: `eip155:56/erc20:${address}`,
+      symbol,
+      name: `NVIDIA (${platformId})`,
+      decimals: 18,
+      iconUrl: null,
+      priceUsd: 225,
+      verified: true,
+      stock: {
+        platformId,
+        ticker: 'NVDA',
+        companyName: 'Nvidia Corp',
+        tokenToShareRatio: 1,
+        referencePriceUsd: 224.88,
+        status: { open: true, marketStatus: null, reason: 'TRADING', nextOpenAt: null, nextCloseAt: null },
+        asOf: '2026-09-24T10:00:00.000Z',
+      },
+    })
+    const stocks = {
+      name: 'fake-stocks',
+      async byAssetId() {
+        return null
+      },
+      async variants(_chain: string, query: string) {
+        return query === 'NVDA'
+          ? [
+              stock('NVDAon', 'ondo', '0xa9ee28c80f960b889dfbd1902055218cba016f75'),
+              stock('NVDAB', 'bstock', '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'),
+            ]
+          : []
+      },
+    }
+    const { client } = await connected(undefined, { tokens: registry, stocks })
+    const res = (await call(client, 'find_asset', { chain: 'eip155:56', query: 'NVDA' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('"NVDA" names 2 tokens on BNB Smart Chain')
+    expect(res.content[0]!.text).toContain('NVDAB (bstock) eip155:56/erc20:0x02fca66c1d1afb4e2a7884261eb00f63598a7436')
+    expect(res.content[0]!.text).toContain('NVDAon (ondo) eip155:56/erc20:0xa9ee28c80f960b889dfbd1902055218cba016f75')
+    expect(res.content[0]!.text).toContain('Ask which provider the person means')
+  })
+
+  /**
+   * Through a stock-data outage the composite answers null for every symbol,
+   * on purpose. "Not found" would send the agent elsewhere for a contract; a
+   * failed lookup is a retry.
+   */
+  it('says a symbol could not be looked up, not that it does not exist, when the stock data is down', async () => {
+    const down = {
+      name: 'down-stocks',
+      async byAssetId() {
+        return null
+      },
+      async variants() {
+        return null
+      },
+    }
+    const { client } = await connected(undefined, { tokens: { ...registry, find: async () => null }, stocks: down })
+    const res = (await call(client, 'find_asset', { chain: 'eip155:56', query: 'USDT' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('Could not look up "USDT"')
+    expect(res.content[0]!.text).toContain('Try again in a minute')
+    expect(res.content[0]!.text).not.toContain('No token matching')
+
+    // An address is not held back by the outage, so its miss is a real miss.
+    const byAddress = (await call(client, 'find_asset', {
+      chain: 'eip155:56',
+      query: '0x000000000000000000000000000000000000dead',
+    })) as Result
+    expect(byAddress.content[0]!.text).toContain('No token matching')
   })
 
   it('says plainly when nothing matches, and suggests the address', async () => {

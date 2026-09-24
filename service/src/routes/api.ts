@@ -4,7 +4,6 @@ import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
-import { zerionTokens } from '../connectors/tokens/index.js'
 import { activityRoutes } from './activity.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
@@ -12,6 +11,7 @@ import { apiErrorHandler } from './errors.js'
 import { planRoutes } from './plans.js'
 import { portfolioRoutes } from './portfolio.js'
 import { activityProvider, portfolioProvider } from './portfolio-provider.js'
+import { tokenRegistry } from './token-registry.js'
 import { walletRoutes } from './wallets.js'
 
 /**
@@ -138,12 +138,7 @@ if (ready) {
       webUrl: config.webUrl,
       readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
       chainIcon: provider?.chainIcon ? (chainId) => provider.chainIcon!(chainId) : null,
-      tokens: config.zerionApiKey
-        ? zerionTokens({
-            apiKey: config.zerionApiKey,
-            ...(config.zerionApiUrl ? { baseUrl: config.zerionApiUrl } : {}),
-          })
-        : null,
+      tokens: tokenRegistry,
     }),
   )
 

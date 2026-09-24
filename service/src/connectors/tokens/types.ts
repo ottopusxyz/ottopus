@@ -36,6 +36,11 @@ export interface TokenInfo {
    * this.
    */
   verified: boolean
+  /**
+   * Present when the token is a tokenized stock, from a registry that knows
+   * stocks. Absent means "not known to be one", never "is not one".
+   */
+  stock?: StockFacts
 }
 
 export interface TokenRegistry {
@@ -49,4 +54,65 @@ export interface TokenRegistry {
    * the address it resolved to so a person can see which token was meant.
    */
   find(chainId: string, query: string): Promise<TokenInfo | null>
+}
+
+/**
+ * What makes a token a tokenized stock, beside what makes it a token.
+ *
+ * A stock token has a provider (`bstock`, `ondo`), an underlying ticker,
+ * a share ratio, a reference price off-chain, and a market that opens and
+ * closes. None of that is guessable from the contract, and all of it bears
+ * on whether a trade should be prepared at all: a halted market is a block,
+ * a premium over the reference is a warning. Both are read from here.
+ */
+export interface StockFacts {
+  /** The provider's id in the data source's words: `bstock`, `ondo`. */
+  platformId: string
+  /** The underlying's ticker, `NVDA`, which several providers share. */
+  ticker: string
+  companyName: string
+  /** How many shares one token stands for. Drifts above 1 as dividends accrue. */
+  tokenToShareRatio: number
+  /** The underlying's price off-chain, in USD. Null when the source had none. */
+  referencePriceUsd: number | null
+  status: {
+    /** Whether the token can be traded now. False is a halt, not a closed market. */
+    open: boolean
+    /** The source's session word — `overnight`, `regular` — when it gives one. */
+    marketStatus: string | null
+    /** The source's reason code, `TRADING` when open. */
+    reason: string | null
+    nextOpenAt: string | null
+    nextCloseAt: string | null
+  }
+  /** When these facts were read. Prices and status move; identity does not. */
+  asOf: string
+}
+
+/** A token that is also a stock. What `stock` says is as fresh as `stock.asOf`. */
+export interface StockInfo extends TokenInfo {
+  stock: StockFacts
+}
+
+/**
+ * The stock side of the registry, kept apart because a ticker has several
+ * answers and the token interface has room for one.
+ *
+ * "NVDA" on BNB Chain is NVDAB from one provider and NVDAon from another,
+ * at different prices and with different share ratios. Picking one silently
+ * would bind a plan to a contract the person did not choose, so the answer
+ * is the list, and the caller decides what to do with more than one.
+ */
+export interface StockRegistry {
+  readonly name: string
+  /**
+   * Every provider variant on a chain for a ticker, a company name, a token
+   * symbol or a contract address. An exact token symbol or an address names
+   * one; a ticker or a company name may name several. Empty when the query
+   * is not a stock the registry knows; null when the registry could not
+   * answer at all, which is not the same thing.
+   */
+  variants(chainId: string, query: string): Promise<StockInfo[] | null>
+  /** The stock behind an asset id. Null when it is not a stock, or on failure. */
+  byAssetId(assetId: string): Promise<StockInfo | null>
 }
