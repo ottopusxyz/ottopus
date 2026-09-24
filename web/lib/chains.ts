@@ -15,7 +15,19 @@ export interface ChainWords {
   name: string
   nativeCurrency: { name: string; symbol: string; decimals: number }
   explorerUrl: string | null
+  /** What the explorer is called — "BscScan", "Basescan". Null with no explorer. */
+  explorerName: string | null
   rpcUrls: readonly string[]
+}
+
+/**
+ * Where viem's name is not the one people use. viem calls chain 56 "BNB Smart
+ * Chain"; Binance, the wallets and the portfolio call it "BNB Chain", and the
+ * review page should agree with the portfolio beside it. The service keeps the
+ * same table.
+ */
+const NAMES: Readonly<Record<number, string>> = {
+  56: 'BNB Chain',
 }
 
 function isChain(value: unknown): value is Chain {
@@ -60,9 +72,10 @@ export function findChain(caip2: string): ChainWords | null {
   return {
     id: caip2,
     evmId: chain.id,
-    name: chain.name,
+    name: NAMES[chain.id] ?? chain.name,
     nativeCurrency: chain.nativeCurrency,
     explorerUrl: chain.blockExplorers?.default.url ?? null,
+    explorerName: chain.blockExplorers?.default.name ?? null,
     rpcUrls: chain.rpcUrls.default.http,
   }
 }
@@ -79,6 +92,11 @@ export function rawChain(caip2: string): Chain | null {
 
 export function chainName(caip2: string): string {
   return findChain(caip2)?.name ?? caip2
+}
+
+/** The explorer by name, for a link's words — "BscScan", or "the explorer" when the chain has none named. */
+export function explorerName(caip2: string): string {
+  return findChain(caip2)?.explorerName ?? 'the explorer'
 }
 
 export function explorerTxUrl(caip2: string, txHash: string): string | null {

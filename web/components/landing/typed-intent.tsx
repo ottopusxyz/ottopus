@@ -6,12 +6,13 @@ import { useMediaQuery } from '@/lib/use-media-query'
 /**
  * What you would say to your agent, typed as you would type it. The same
  * kind of line the intent nudge offers inside the app, so the landing page
- * and the product feel like one thing. With reduced motion the first line
- * simply stands there.
+ * and the product feel like one thing — a stock on BNB Chain first, as the
+ * nudge leads. With reduced motion the first line simply stands there.
  */
 export const TYPED_INTENTS: readonly string[] = [
+  'Buy NVIDIA with 50 USDT on BNB Chain',
   'Swap 500 USDC for ETH',
-  'Buy $100 of Tesla stock on chain',
+  'Buy $100 of Tesla stock on BNB Chain',
   'Get me the cheapest $1,000 loan on Base',
   'Send 0.1 ETH to koshik.eth',
   'Move my idle USDC to the best yield',

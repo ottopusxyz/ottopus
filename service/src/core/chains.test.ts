@@ -66,6 +66,12 @@ describe('the registry', () => {
     expect(chainName('eip155:1')).toBe('Ethereum')
     expect(chainName('eip155:99999999999')).toBe('eip155:99999999999')
   })
+
+  /** viem says "BNB Smart Chain"; Zerion, Binance and the portfolio say "BNB Chain". */
+  it('calls BSC what the portfolio calls it, and spends BNB there', () => {
+    expect(chainName('eip155:56')).toBe('BNB Chain')
+    expect(findChain('eip155:56')?.nativeCurrency.symbol).toBe('BNB')
+  })
 })
 
 describe('rpc resolution', () => {

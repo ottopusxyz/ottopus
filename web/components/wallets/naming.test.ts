@@ -211,6 +211,8 @@ describe("Privy's wallet client identifiers", () => {
     ['metamask', 'MetaMask'],
     ['phantom', 'Phantom'],
     ['safe', 'Safe'],
+    // An EIP-6963 extension is its announced name, lowercased and underscored.
+    ['binance_wallet', 'Binance Wallet'],
   ])('%s is named %s', (client, name) => {
     expect(WALLET_NAMES[client]).toBe(name)
   })
@@ -241,6 +243,7 @@ describe('wallet marks', () => {
   it('draws a mark for a listed type and none for an unlisted one', () => {
     expect(walletMark('ambire')).toBe('/wallets/ambire.svg')
     expect(walletMark('infinex')).toBe('/wallets/infinex.svg')
+    expect(walletMark('binance_wallet')).toBe('/wallets/binance_wallet.svg')
     expect(walletMark('base_account')).toBe('/wallets/coinbase_wallet.svg')
     expect(walletMark('watch_only')).toBeNull()
   })

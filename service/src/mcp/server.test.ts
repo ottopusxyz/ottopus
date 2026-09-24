@@ -1281,7 +1281,7 @@ describe('find_asset', () => {
     const { client } = await connected(undefined, { tokens: registry, stocks })
     const res = (await call(client, 'find_asset', { chain: 'eip155:56', query: 'NVDA' })) as Result
     expect(res.isError).toBe(true)
-    expect(res.content[0]!.text).toContain('"NVDA" names 2 tokens on BNB Smart Chain')
+    expect(res.content[0]!.text).toContain('"NVDA" names 2 tokens on BNB Chain')
     expect(res.content[0]!.text).toContain('NVDAB (bstock) eip155:56/erc20:0x02fca66c1d1afb4e2a7884261eb00f63598a7436')
     expect(res.content[0]!.text).toContain('NVDAon (ondo) eip155:56/erc20:0xa9ee28c80f960b889dfbd1902055218cba016f75')
     expect(res.content[0]!.text).toContain('Ask which provider the person means')

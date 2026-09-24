@@ -8,7 +8,7 @@ import { BubbleField, GUTTER_LIFE, SeaLife } from '@/components/motion'
 import { Button, Callout, StatusChip } from '@/components/ui'
 import type { Plan, PlanStatusName } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { explorerTxUrl } from '@/lib/chains'
+import { explorerName, explorerTxUrl } from '@/lib/chains'
 import { decoderUrl } from '@/lib/simulators'
 import { AdvancedPanel } from './advanced-panel'
 import { HeadsUpPanel } from './heads-up-panel'
@@ -289,7 +289,7 @@ function Ended({ status, chain, txHash }: { status: PlanStatusName; chain: strin
       <div className="flex w-full gap-2">
         {explorer ? (
           <Button variant="secondary" size="sm" fullWidth onClick={() => window.open(explorer, '_blank', 'noreferrer')}>
-            {status === 'failed' ? 'See the failed transaction' : 'View on the explorer'}
+            {status === 'failed' ? 'See the failed transaction' : `View on ${explorerName(chain!)}`}
           </Button>
         ) : null}
         <Button variant="secondary" size="sm" fullWidth onClick={() => router.push('/portfolio')}>

@@ -7,7 +7,7 @@ import { NetworkFilter, WalletFilter, type WalletChoice } from '@/components/por
 import { WalletMark, type WalletRef } from '@/components/portfolio/wallet-marks'
 import { AddressChip, Badge, Button } from '@/components/ui'
 import type { ActivityRow, Approval, ChainRow, Transfer } from '@/lib/api'
-import { explorerAddressUrl, explorerTxUrl } from '@/lib/chains'
+import { explorerAddressUrl, explorerName, explorerTxUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { formatAmount, formatMoneyFlat } from '@/lib/format'
 import { KIND_FILTERS, approvalWords, counterparty, groupByDay, kindWord, legs, rowKey, transferWords } from './activity'
@@ -315,12 +315,12 @@ function Detail({ row, address }: { row: ActivityRow; address: string }) {
       <div className="flex flex-wrap gap-2 sm:col-span-2">
         {tx ? (
           <a href={tx} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-1.5 text-[12px] font-medium hover:bg-[var(--ot-surface-3)]">
-            View on explorer <span aria-hidden>↗</span>
+            View on {explorerName(row.chainId)} <span aria-hidden>↗</span>
           </a>
         ) : null}
         {spender && explorerAddressUrl(row.chainId, spender) ? (
           <a href={explorerAddressUrl(row.chainId, spender)!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-1.5 text-[12px] font-medium hover:bg-[var(--ot-surface-3)]">
-            Spender on explorer <span aria-hidden>↗</span>
+            Spender on {explorerName(row.chainId)} <span aria-hidden>↗</span>
           </a>
         ) : null}
       </div>

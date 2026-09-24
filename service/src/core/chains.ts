@@ -45,11 +45,20 @@ const BY_EVM_ID: ReadonlyMap<number, Chain> = (() => {
   return map
 })()
 
+/**
+ * Where viem's name is not the one people use. viem calls chain 56 "BNB Smart
+ * Chain"; Binance, the wallets and Zerion call it "BNB Chain", and a plan
+ * summary should agree with the portfolio. The web keeps the same table.
+ */
+const NAMES: Readonly<Record<number, string>> = {
+  56: 'BNB Chain',
+}
+
 function toInfo(chain: Chain): ChainInfo {
   return {
     id: formatChainId({ namespace: 'eip155', reference: String(chain.id) }),
     evmId: chain.id,
-    name: chain.name,
+    name: NAMES[chain.id] ?? chain.name,
     nativeCurrency: chain.nativeCurrency,
     publicRpcUrls: chain.rpcUrls.default.http,
     explorerUrl: chain.blockExplorers?.default.url ?? null,
