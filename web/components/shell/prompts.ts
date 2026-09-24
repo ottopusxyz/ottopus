@@ -4,12 +4,13 @@ import type { AssetRow, ChainRow } from '@/lib/api'
  * What the nudge asks a person to try. A stock on chain first, then the
  * design's three, then two for the custom tier — the same shapes the demo
  * runs. Concrete on purpose: "try something" is not a prompt, "swap 20 USDC
- * for ETH on Base" is. "Buy me NVIDIA" leads because it says what an agent
+ * for ETH on Base" is. "Buy NVIDIA" leads because it says what an agent
  * with every wallet can do that a swap box cannot: find the token, pick the
- * chain it lives on, and route to it.
+ * variant, and route to it. It names BNB Chain and USDT because that is where
+ * the tokenized stocks trade and what they are quoted in.
  */
 export const INTENT_PROMPTS: readonly string[] = [
-  'Buy me NVIDIA token using 10 USDC',
+  'Buy NVIDIA with 50 USDT on BNB Chain',
   'Swap 20 USDC for ETH on Base',
   'Move my idle USDC to the cheapest chain',
   'Show me every unlimited approval I have',
