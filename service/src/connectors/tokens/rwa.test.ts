@@ -222,9 +222,27 @@ describe('the RWA registry', () => {
 
   /** "A" matched twenty-three tickers on the real vendor. An exact ticker means that one. */
   it('narrows a loose match to the exact ticker or symbol when the query is one', async () => {
-    const { registry } = bsc({ [search('nvda')]: ok(SEARCH_LOOSE), [search('Nvidia')]: ok(SEARCH_LOOSE) })
+    const { registry } = bsc({ [search('nvda')]: ok(SEARCH_LOOSE) })
     expect((await registry.variants(BSC, 'nvda'))?.map((v) => v.symbol)).toEqual(['NVDAon', 'NVDAB'])
-    expect((await registry.variants(BSC, 'Nvidia'))?.map((v) => v.symbol)).toEqual(['NVDAon', 'NVDAB', 'AAPLB'])
+  })
+
+  /** A company name means that company, not everything else the vendor returned beside it. */
+  it('narrows a company name to the companies it names, word for word', async () => {
+    const { registry } = bsc({ [search('Nvidia')]: ok(SEARCH_LOOSE), [search('Apple')]: ok(SEARCH_LOOSE) })
+    expect((await registry.variants(BSC, 'Nvidia'))?.map((v) => v.symbol)).toEqual(['NVDAon', 'NVDAB'])
+    expect((await registry.variants(BSC, 'Apple'))?.map((v) => v.symbol)).toEqual(['AAPLB'])
+  })
+
+  /**
+   * The composite asks this registry first for every symbol, crypto
+   * included. A fragment the vendor matched loosely must come back "none",
+   * so the general registry answers "A" or "OP" rather than a stock.
+   */
+  it('answers "none" for a fragment the vendor matched loosely', async () => {
+    const { registry } = bsc({ [search('A')]: ok(SEARCH_LOOSE), [search('NVID')]: ok(SEARCH_LOOSE) })
+    expect(await registry.variants(BSC, 'A')).toEqual([])
+    expect(await registry.variants(BSC, 'NVID')).toEqual([])
+    expect(await registry.find(BSC, 'A')).toBeNull()
   })
 
   it('answers "none" for a token that is not a stock, and remembers it', async () => {

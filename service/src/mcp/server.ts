@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
 import type { StockRegistry } from '../connectors/tokens/index.js'
-import { chainName } from '../core/index.js'
+import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, resolveWallet, summarisePortfolio, walletsText } from './readable.js'
@@ -332,10 +332,19 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       }
       const found = await deps.tokens.find(chain, query)
       if (!found) {
+        const variants = deps.stocks ? await deps.stocks.variants(chain, query) : []
+        // The stock data could not be read, and the composite will not guess a
+        // symbol past it. That is a retry, not a missing token: saying "not
+        // found" would send the agent off to find the contract somewhere else.
+        if (variants === null && !EVM_ADDRESS_RE.test(query.trim())) {
+          return failure(
+            `Could not look up "${query}" on ${chainName(chain)} right now: the tokenized-stock data did not answer, ` +
+              'and a symbol is not resolved without it in case it names a stock. Try again in a minute, or give the contract address.',
+          )
+        }
         // A bare stock ticker on a chain with more than one provider. Nobody
         // picks: the choice is shown, and the agent asks the person.
-        const variants = (await deps.stocks?.variants(chain, query)) ?? []
-        if (variants.length > 1) {
+        if (variants && variants.length > 1) {
           const shown = variants.slice(0, 6)
           const more = variants.length - shown.length
           return failure(

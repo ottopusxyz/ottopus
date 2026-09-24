@@ -238,7 +238,14 @@ export function rwaTokens(options: RwaTokenOptions): RwaRegistry {
 /**
  * The search matches loosely, so a query that is exactly a token symbol or
  * exactly a ticker means that one, not everything it resembles. A company
- * name, or a fragment, means whatever the vendor matched.
+ * name means the companies it begins, word for word: "NVIDIA" is NVIDIA
+ * Corporation, "Bank of America" is itself.
+ *
+ * A fragment means nothing. The composite asks this registry first for every
+ * symbol, crypto included, and the vendor matches "OP" or "SOL" to some
+ * ticker or name that merely contains the letters. Kept, that would resolve a
+ * plain token to a stock contract, or refuse it as an ambiguous stock, and
+ * the general registry that knows it would never be asked.
  */
 function narrow(groups: RwaSearchGroup[], query: string): NonNullable<RwaSearchGroup['assets']> {
   const upper = query.toUpperCase()
@@ -247,7 +254,15 @@ function narrow(groups: RwaSearchGroup[], query: string): NonNullable<RwaSearchG
   if (bySymbol.length > 0) return bySymbol
   const byTicker = groups.filter((group) => group.ticker?.toUpperCase() === upper).flatMap((group) => group.assets ?? [])
   if (byTicker.length > 0) return byTicker
-  return all
+  return groups.filter((group) => namesCompany(group.companyName, upper)).flatMap((group) => group.assets ?? [])
+}
+
+/** Whether a query is the company's name, or its leading words: "NVIDIA" for "NVIDIA Corporation", never "NVID". */
+function namesCompany(companyName: string | undefined, upperQuery: string): boolean {
+  const name = companyName?.trim().toUpperCase()
+  if (!name || !name.startsWith(upperQuery)) return false
+  const next = name.charAt(upperQuery.length)
+  return next === '' || !/[\p{L}\p{N}]/u.test(next)
 }
 
 /** The vendor's chain id for an EVM chain: the numeric reference as a string. Null for anything else. */

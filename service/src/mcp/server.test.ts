@@ -1287,6 +1287,36 @@ describe('find_asset', () => {
     expect(res.content[0]!.text).toContain('Ask which provider the person means')
   })
 
+  /**
+   * Through a stock-data outage the composite answers null for every symbol,
+   * on purpose. "Not found" would send the agent elsewhere for a contract; a
+   * failed lookup is a retry.
+   */
+  it('says a symbol could not be looked up, not that it does not exist, when the stock data is down', async () => {
+    const down = {
+      name: 'down-stocks',
+      async byAssetId() {
+        return null
+      },
+      async variants() {
+        return null
+      },
+    }
+    const { client } = await connected(undefined, { tokens: { ...registry, find: async () => null }, stocks: down })
+    const res = (await call(client, 'find_asset', { chain: 'eip155:56', query: 'USDT' })) as Result
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('Could not look up "USDT"')
+    expect(res.content[0]!.text).toContain('Try again in a minute')
+    expect(res.content[0]!.text).not.toContain('No token matching')
+
+    // An address is not held back by the outage, so its miss is a real miss.
+    const byAddress = (await call(client, 'find_asset', {
+      chain: 'eip155:56',
+      query: '0x000000000000000000000000000000000000dead',
+    })) as Result
+    expect(byAddress.content[0]!.text).toContain('No token matching')
+  })
+
   it('says plainly when nothing matches, and suggests the address', async () => {
     const { client } = await connected(undefined, { tokens: registry })
     const res = (await call(client, 'find_asset', { chain: BASE, query: 'ZZZNOTATOKEN' })) as Result
