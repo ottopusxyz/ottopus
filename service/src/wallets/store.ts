@@ -37,7 +37,7 @@ export class WalletError extends Error {
 export const WALLET_TYPES: readonly string[] = [
   'metamask', 'rabby_wallet', 'coinbase_wallet', 'coinbase_smart_wallet', 'base_account', 'rainbow',
   'phantom', 'zerion', 'safe', 'trust', 'uniswap', 'okx_wallet', 'brave_wallet', 'bitget_wallet',
-  'backpack', 'ledger', 'ambire', 'infinex', 'wallet_connect', 'watch_only', 'unknown',
+  'binance_wallet', 'backpack', 'ledger', 'ambire', 'infinex', 'wallet_connect', 'watch_only', 'unknown',
 ]
 
 export interface WalletEdit {

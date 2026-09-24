@@ -24,6 +24,11 @@ Most are on a 28×28 grid; Rainbow, Backpack, Bitget and Brave carry their own.
 Ambire and Infinex were added on 2026-09-12 from the wallets' own brand assets,
 on their own grids (40 and 46), since rainbowkit carries neither.
 
+Binance Wallet was added on 2026-09-24 from the same rainbowkit folder
+(`binanceWallet/binanceWallet.svg`), unmodified, on its own 130 grid. Privy
+names an EIP-6963 extension by its announced name, lowercased with spaces as
+underscores, so the extension arrives as `binance_wallet`.
+
 A type without a file falls back to a lettered brand tile (`WALLET_AVATARS`),
 and a watch-only address shows an eye — watched, not held — regardless of
 label. Add a mark by dropping `<walletType>.svg` here and, if it has brand

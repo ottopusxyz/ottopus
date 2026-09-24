@@ -46,6 +46,7 @@ export const WALLET_AVATARS: Readonly<Record<string, { bg: string; fg: string }>
   safe: { bg: '#12FF80', fg: '#16213E' }, // 11.84
   ambire: { bg: '#6000FF', fg: '#FFF0DC' }, // 6.20
   infinex: { bg: '#FE6F39', fg: '#16213E' }, // 5.93
+  binance_wallet: { bg: '#F3BA2F', fg: '#16213E' }, // 8.99
 }
 
 /**
@@ -72,6 +73,7 @@ export const WALLET_NAMES: Readonly<Record<string, string>> = {
   okx_wallet: 'OKX Wallet',
   brave_wallet: 'Brave Wallet',
   bitget_wallet: 'Bitget Wallet',
+  binance_wallet: 'Binance Wallet',
   backpack: 'Backpack',
   ledger: 'Ledger',
   ambire: 'Ambire',
@@ -85,8 +87,8 @@ export const WALLET_NAMES: Readonly<Record<string, string>> = {
 /** The kinds a person may pick for an arm: the ones with a bundled mark, so the choice is visible. */
 export const EDITABLE_TYPES: readonly string[] = [
   'metamask', 'rabby_wallet', 'safe', 'ledger', 'ambire', 'infinex', 'coinbase_wallet', 'rainbow',
-  'phantom', 'zerion', 'trust', 'uniswap', 'okx_wallet', 'brave_wallet', 'bitget_wallet', 'backpack',
-  'wallet_connect',
+  'phantom', 'zerion', 'trust', 'uniswap', 'okx_wallet', 'brave_wallet', 'bitget_wallet', 'binance_wallet',
+  'backpack', 'wallet_connect',
 ]
 
 /**
@@ -138,7 +140,7 @@ const MARK_ALIASES: Readonly<Record<string, string>> = {
 
 /** The types with a file in public/wallets. Kept in step with that folder. */
 export const MARKS: ReadonlySet<string> = new Set([
-  'ambire', 'backpack', 'bitget_wallet', 'brave_wallet', 'coinbase_wallet', 'infinex', 'ledger',
+  'ambire', 'backpack', 'binance_wallet', 'bitget_wallet', 'brave_wallet', 'coinbase_wallet', 'infinex', 'ledger',
   'metamask', 'okx_wallet', 'phantom', 'rabby_wallet', 'rainbow', 'safe', 'trust', 'uniswap',
   'wallet_connect', 'zerion',
 ])
