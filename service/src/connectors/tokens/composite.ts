@@ -1,3 +1,4 @@
+import { EVM_ADDRESS_RE } from '../../core/index.js'
 import type { StockRegistry, TokenInfo, TokenRegistry } from './types.js'
 
 /**
@@ -20,9 +21,14 @@ import type { StockRegistry, TokenInfo, TokenRegistry } from './types.js'
  *     which is how a plain token, or an xStock the stock data does not
  *     index, is still found.
  *
- * A stock registry that could not answer at all reads as "none": the trade
- * is a token the general registry probably knows, and a vendor's bad minute
- * should not take every lookup down with it.
+ * A stock registry that could not answer at all is not "none". Until the
+ * stock side has said whether a symbol is a stock, the general registry
+ * must not be asked, or a vendor's bad minute would resolve "NVDAB" to the
+ * wrong contract, which is the one thing this composite exists to prevent.
+ * So a symbol answers null through an outage, plain tokens included: a
+ * lookup that fails is a plan not built, and a lookup that lies is a plan
+ * bound to the wrong token. An address is different. It names one contract
+ * whoever answers, so the general registry may still describe it.
  */
 
 export interface CompositeTokenOptions {
@@ -41,9 +47,12 @@ export function compositeTokens({ stocks, tokens }: CompositeTokenOptions): Toke
     },
 
     async find(chainId, query): Promise<TokenInfo | null> {
-      const found = await stocks?.variants(chainId, query)
-      if (found && found.length === 1) return found[0]!
-      if (found && found.length > 1) return null
+      if (stocks) {
+        const found = await stocks.variants(chainId, query)
+        if (found === null && !EVM_ADDRESS_RE.test(query.trim())) return null
+        if (found && found.length === 1) return found[0]!
+        if (found && found.length > 1) return null
+      }
       return (await tokens?.find(chainId, query)) ?? null
     },
   }

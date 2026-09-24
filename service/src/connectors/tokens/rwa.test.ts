@@ -241,6 +241,30 @@ describe('the RWA registry', () => {
     expect(seen.filter((p) => p.startsWith(search('NVDA')))).toHaveLength(2)
   })
 
+  /** A success code over a body that is not a list is a vendor fault. It is not a miss, and it is not remembered. */
+  it('does not remember a malformed search answer as an absence', async () => {
+    const routes = { [search('NVDA')]: ok(null), [tokens('56')]: ok(TOKENS_BSC) }
+    const { registry, seen } = vendor(routes)
+    expect(await registry.variants(BSC, 'NVDA')).toBeNull()
+    routes[search('NVDA')] = ok({ unexpected: true })
+    expect(await registry.variants(BSC, 'NVDA')).toBeNull()
+    routes[search('NVDA')] = ok(SEARCH_NVDA)
+    expect((await registry.variants(BSC, 'NVDA'))?.map((v) => v.symbol)).toEqual(['NVDAon', 'NVDAB'])
+    expect(seen.filter((p) => p.startsWith(search('NVDA')))).toHaveLength(3)
+  })
+
+  it('keeps the stale list when the refresh comes back malformed', async () => {
+    const routes = { [search('NVDA')]: ok(SEARCH_NVDA), [tokens('56')]: ok(TOKENS_BSC) }
+    const { registry, at } = vendor(routes)
+    await registry.variants(BSC, 'NVDA')
+
+    at.now += 90_000
+    routes[tokens('56')] = ok(null)
+    const found = await registry.variants(BSC, 'NVDA')
+    expect(found?.map((v) => v.symbol)).toEqual(['NVDAon', 'NVDAB'])
+    expect(await registry.byAssetId(`${BSC}/erc20:${NVDAB}`)).toMatchObject({ symbol: 'NVDAB' })
+  })
+
   it('answers "none" on a chain the vendor does not speak for', async () => {
     const { registry, seen } = bsc()
     expect(await registry.variants('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', 'NVDA')).toEqual([])

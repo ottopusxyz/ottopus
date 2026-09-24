@@ -110,12 +110,28 @@ describe('the composite registry', () => {
     expect(g.asked).toEqual([])
   })
 
-  /** A vendor outage on the stock side reads as "not a stock": the general side still answers. */
-  it('falls through when the stock side could not answer at all', async () => {
-    const s = stocks({ PEPE: null })
+  /**
+   * A vendor outage on the stock side is not "not a stock". The general
+   * registry would answer "NVDAB" with an ETF, so no symbol reaches it until
+   * the stock side can say. Plain tokens wait out the outage too.
+   */
+  it('answers nothing for a symbol when the stock side could not answer, rather than asking the general one', async () => {
+    const s = stocks({ NVDAB: null, PEPE: null })
     const g = general()
     const registry = compositeTokens({ stocks: s.registry, tokens: g.registry })
-    expect(await registry.find(BSC, 'PEPE')).toMatchObject({ symbol: 'PEPE' })
+    expect(await registry.find(BSC, 'NVDAB')).toBeNull()
+    expect(await registry.find(BSC, 'PEPE')).toBeNull()
+    expect(g.asked).toEqual([])
+  })
+
+  /** An address names one contract whoever answers, so the general side may still describe it. */
+  it('still lets the general registry describe an address through a stock-side outage', async () => {
+    const address = PEPE.slice(PEPE.lastIndexOf(':') + 1)
+    const s = stocks({ [address]: null })
+    const g = general()
+    g.registry.find = async (_chain, query) => (query === address ? token('PEPE', PEPE) : null)
+    const registry = compositeTokens({ stocks: s.registry, tokens: g.registry })
+    expect(await registry.find(BSC, address)).toMatchObject({ symbol: 'PEPE' })
   })
 
   it('works with either side missing', async () => {

@@ -124,9 +124,16 @@ export function rwaTokens(options: RwaTokenOptions): RwaRegistry {
     return started
   }
 
-  async function get<T>(path: string, query: Record<string, string>): Promise<Answer<T>> {
+  /**
+   * Both endpoints answer with an array. Anything else under a success code
+   * is a vendor fault, not an empty answer: caching it as a miss would hide
+   * a recovered vendor for ten minutes, and a list that is not a list must
+   * not replace the stale rows that are.
+   */
+  async function get<T>(path: string, query: Record<string, string>): Promise<Answer<T[]>> {
     try {
-      return { kind: 'found', body: await client.get<T>(path, query) }
+      const body = await client.get<unknown>(path, query)
+      return Array.isArray(body) ? { kind: 'found', body: body as T[] } : { kind: 'failed' }
     } catch (err) {
       if (err instanceof BinanceError && err.vendorCode === CODE_NO_MATCH) return { kind: 'absent' }
       return { kind: 'failed' }
@@ -142,11 +149,11 @@ export function rwaTokens(options: RwaTokenOptions): RwaRegistry {
     const held = facts.get(binanceChain)
     if (held && now() - held.at <= (held.rows.size > 0 ? factsTtl : missTtl)) return Promise.resolve(held.rows)
     return once(`list|${binanceChain}`, async () => {
-      const answer = await get<RwaToken[]>(TOKENS_PATH, { binanceChainId: binanceChain })
+      const answer = await get<RwaToken>(TOKENS_PATH, { binanceChainId: binanceChain })
       if (answer.kind === 'failed') return held?.rows ?? null
       const asOf = new Date(now()).toISOString()
       const rows: Facts = new Map()
-      for (const row of answer.kind === 'found' && Array.isArray(answer.body) ? answer.body : []) {
+      for (const row of answer.kind === 'found' ? answer.body : []) {
         const info = shape(chainId, row, asOf)
         if (info) rows.set(addressOf(info.assetId), info)
       }
@@ -166,9 +173,9 @@ export function rwaTokens(options: RwaTokenOptions): RwaRegistry {
       searches.delete(key)
     }
     return once(`search|${key}`, async () => {
-      const answer = await get<RwaSearchGroup[]>(SEARCH_PATH, { keyword })
+      const answer = await get<RwaSearchGroup>(SEARCH_PATH, { keyword })
       if (answer.kind === 'failed') return answer
-      const groups = answer.kind === 'found' && Array.isArray(answer.body) ? answer.body : []
+      const groups = answer.kind === 'found' ? answer.body : []
       searches.set(key, { at: now(), groups: groups.length > 0 ? groups : null })
       return groups.length > 0 ? { kind: 'found', body: groups } : { kind: 'absent' }
     })
