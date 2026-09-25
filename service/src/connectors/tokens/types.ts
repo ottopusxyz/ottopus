@@ -76,7 +76,7 @@ export interface StockFacts {
   /** The underlying's price off-chain, in USD. Null when the source had none. */
   referencePriceUsd: number | null
   status: {
-    /** Whether the token can be traded now. False is a halt, not a closed market. */
+    /** Whether the underlying's venue is trading now. False for a halt and for a closed session alike; `reason` tells which. */
     open: boolean
     /** The source's session word — `overnight`, `regular` — when it gives one. */
     marketStatus: string | null

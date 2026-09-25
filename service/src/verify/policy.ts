@@ -20,6 +20,7 @@ import {
   sourceAssetOf,
   sourceChainOf,
 } from '../core/index.js'
+import type { StockInfo } from '../connectors/tokens/types.js'
 import { KNOWN_ABI, KNOWN_BY_SELECTOR, PERMIT2_APPROVE } from './abi.js'
 
 /**
@@ -62,7 +63,52 @@ export interface VerifyInput {
         nativeFee?: string | undefined | null
       }
     | undefined
+  /**
+   * The sides of a trade that are tokenized stocks, with the market facts
+   * read for them. Absent or empty for a plain trade, which then runs the
+   * old path untouched.
+   */
+  stocks?: readonly StockSide[] | undefined
+  /**
+   * The clock the rules read, for anything that has an age: today, the
+   * stock facts. The wall clock unless a test pins it.
+   */
+  now?: Date | undefined
 }
+
+/**
+ * A side of a trade that is a tokenized stock, with what the registry knows
+ * about it. `role` says which side: what is spent, or what is received. The
+ * direction matters, because a premium hurts a buyer and a discount hurts a
+ * seller, and only the adverse one is worth a warning.
+ */
+export interface StockSide {
+  role: 'from' | 'to'
+  info: StockInfo
+}
+
+/**
+ * How far the on-chain price may sit from par before a plan says so.
+ *
+ * One percent. The stock tokens Ottopus routes are minted and redeemed
+ * against the underlying, so on-chain they track the reference to within a
+ * spread, and a gap wider than this is a thin pool or a reference the vendor
+ * has not refreshed. Either way the person is about to pay more than the
+ * share is worth, or take less, and should read that before signing.
+ */
+export const STOCK_PREMIUM_THRESHOLD = 0.01
+
+/**
+ * How old the stock facts may be before the rules stop trusting them.
+ *
+ * The registry reads the token list every minute and, when the vendor stops
+ * answering, serves the last list it got for as long as the outage lasts. A
+ * status read before an outage cannot say what happened during it, and a
+ * halt is the one thing most worth knowing, so facts older than this block
+ * the plan rather than pass it on a stale "open". Five minutes: a few
+ * missed refreshes, not an afternoon.
+ */
+export const STOCK_FACTS_MAX_AGE_MS = 5 * 60_000
 
 export type Verdict =
   | { ok: true; warnings: Warning[] }
@@ -614,6 +660,172 @@ function carriesOpaqueCalldata(action: DecodedAction): boolean {
   })
 }
 
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+/**
+ * What a stock token has that a plain token does not: a market that opens
+ * and closes, and a price it is meant to track.
+ *
+ * A market that is not open is a block, whatever the vendor's reason. The
+ * reason is kept in the vendor's words, and it decides how hard the rule
+ * pushes back. A halt or suspension blocks: that stock is not trading
+ * anywhere, and a review link would promise a check that cannot be made. A
+ * scheduled close (weekend, overnight break, session transition) only warns,
+ * with the next open named: the token trades on-chain around the clock, and
+ * that is the point of it. What the person loses on a closed market is a live
+ * reference price, so the warning says so, and the premium check still runs
+ * against the last session's reference so the drift is named beside it.
+ * Decided 2026-09-25, in the plan's ledger.
+ *
+ * The premium is measured against par, not the bare reference: a token
+ * stands for `tokenToShareRatio` shares, which drifts above one as dividends
+ * accrue, so a token at reference × ratio is exactly at par. Only the
+ * adverse direction warns: over par when buying, under par when selling. A
+ * discount when buying is the person's gain and nobody's warning. The
+ * warning names the basis it measured against, so a reader can check it.
+ *
+ * Neither check runs on facts older than `STOCK_FACTS_MAX_AGE_MS`. The
+ * registry serves its last answer through a vendor outage, and an "open"
+ * from before the outage says nothing about a halt during it, so stale
+ * facts block on their own. Identity does not age, so the Ondo note stays.
+ *
+ * Ondo's tokens carry a note: Ondo restricts who may hold them by
+ * jurisdiction, and the chain does not check. A note rather than a block,
+ * because eligibility is the person's fact and not Ottopus's to guess.
+ */
+const stockRules: Rule = ({ stocks = [], now = new Date() }) => {
+  const findings: Finding[] = []
+  for (const { role, info } of stocks) {
+    const stale = stockFactsStale(info, now)
+    if (stale) findings.push({ block: stockStaleReason(info, now) })
+    else if (stockHalted(info)) findings.push({ block: stockStatusReason(info) })
+    else if (!info.stock.status.open) {
+      findings.push({
+        warn: {
+          severity: 'caution',
+          code: 'stock_market_closed',
+          message: stockClosedNote(info),
+          saferAlternative: 'Wait for the market to reopen if you want a live reference price behind the trade.',
+        },
+      })
+    }
+
+    const premium = stale ? null : stockPremium(info)
+    if (premium !== null && info.stock.referencePriceUsd !== null) {
+      const adverse = role === 'to' ? premium : -premium
+      if (adverse > STOCK_PREMIUM_THRESHOLD) {
+        const pct = (adverse * 100).toFixed(1)
+        const { referencePriceUsd: reference, tokenToShareRatio: ratio } = info.stock
+        // A ratio of exactly one makes par the reference, and saying so twice
+        // helps nobody. A drifted one is named, with the arithmetic, so the
+        // figure on the page is the one the percentage was taken from.
+        const atPar = Math.abs(ratio - 1) < 0.00005
+        const basis = atPar
+          ? `the reference price of ${money.format(reference)}`
+          : `par of ${money.format(reference * ratio)} (reference ${money.format(reference)} × ${ratio.toFixed(4)} shares per token)`
+        findings.push({
+          warn: {
+            severity: 'caution',
+            code: role === 'to' ? 'stock_premium' : 'stock_discount',
+            message: `On-chain price of ${info.symbol} is ${pct}% ${role === 'to' ? 'above' : 'below'} ${basis}.`,
+            saferAlternative: `Wait for the on-chain price to return to ${atPar ? 'the reference' : 'par'}, or trade a smaller amount.`,
+          },
+        })
+      }
+    }
+
+    if (info.stock.platformId === 'ondo') {
+      findings.push({
+        warn: {
+          severity: 'info',
+          code: 'stock_jurisdiction',
+          message:
+            `${info.symbol} is an Ondo token. Ondo restricts who may hold its tokens by jurisdiction ` +
+            'and the chain does not check, so make sure the person is eligible.',
+        },
+      })
+    }
+  }
+  return findings
+}
+
+/**
+ * How far the token trades from par, as a fraction: 0.014 is 1.4% over.
+ * Null when the vendor gave no on-chain or reference price to compare.
+ */
+export function stockPremium(info: StockInfo): number | null {
+  const { referencePriceUsd, tokenToShareRatio } = info.stock
+  if (info.priceUsd === null || referencePriceUsd === null) return null
+  const par = referencePriceUsd * tokenToShareRatio
+  return par > 0 ? info.priceUsd / par - 1 : null
+}
+
+/**
+ * Whether the facts are too old to act on. An `asOf` that does not parse is
+ * stale too: an unreadable time is no time.
+ */
+export function stockFactsStale(info: StockInfo, now: Date): boolean {
+  const age = now.getTime() - Date.parse(info.stock.asOf)
+  return !(age <= STOCK_FACTS_MAX_AGE_MS)
+}
+
+/**
+ * Why stale facts block, as a sentence: "The market status of NVDAB was
+ * last read at 2026-09-25T14:00:00.000Z, about 12 minutes ago, and has not
+ * been refreshed since. Try again shortly."
+ */
+export function stockStaleReason(info: StockInfo, now: Date): string {
+  const read = Date.parse(info.stock.asOf)
+  const when = Number.isFinite(read)
+    ? `at ${info.stock.asOf}, about ${Math.max(1, Math.round((now.getTime() - read) / 60_000))} minutes ago`
+    : 'at a time the data source did not give'
+  return `The market status of ${info.symbol} was last read ${when}, and has not been refreshed since. Try again shortly.`
+}
+
+/**
+ * Whether the vendor's reason for `open: false` reads as a halt rather than
+ * a closed session. The vendor names halts (`TRADING_HALT`,
+ * `CORPORATE_ACTION`) and session breaks (`MARKET_PAUSED`, `MARKET_CLOSED`)
+ * in its reason code; a close with no code at all is a close, because a halt
+ * is the thing worth a name. The stem `suspen` covers both `SUSPENDED` and
+ * `SUSPENSION`, which `suspend` would not.
+ */
+export function stockHalted(info: StockInfo): boolean {
+  const { open, reason } = info.stock.status
+  return !open && /halt|suspen|corporate/i.test(reason ?? '')
+}
+
+/** The vendor's reason or session word, as plain words: "halted: corporate action", "market paused". */
+function stockStatusWords(info: StockInfo): string {
+  const { reason, marketStatus } = info.stock.status
+  const plain = reason?.replace(/_/g, ' ').toLowerCase()
+  if (!plain) return marketStatus ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}` : 'the market is not open'
+  return stockHalted(info) ? `halted: ${plain}` : plain
+}
+
+/**
+ * Why a halted stock blocks, as a sentence: "NVDAB is not trading right now
+ * (halted: corporate action). Next open 2026-09-28T13:30:00.000Z."
+ */
+export function stockStatusReason(info: StockInfo): string {
+  const { nextOpenAt } = info.stock.status
+  return `${info.symbol} is not trading right now (${stockStatusWords(info)}).${nextOpenAt ? ` Next open ${nextOpenAt}.` : ''}`
+}
+
+/**
+ * What a closed market means for the trade, as a sentence: "The market for
+ * NVDAB is closed (market paused). The token still trades on-chain, but the
+ * reference price of $224.13 is from the last session, so the on-chain price
+ * can drift from it until the market reopens at 2026-09-28T13:30:00.000Z."
+ */
+export function stockClosedNote(info: StockInfo): string {
+  const { referencePriceUsd: reference, status } = info.stock
+  const anchor = reference === null ? 'there is no reference price to check it against' : `the reference price of ${money.format(reference)} is from the last session`
+  const drift = reference === null ? '' : ', so the on-chain price can drift from it'
+  const reopen = status.nextOpenAt ? ` until the market reopens at ${status.nextOpenAt}` : ' until the market reopens'
+  return `The market for ${info.symbol} is closed (${stockStatusWords(info)}). The token still trades on-chain, but ${anchor}${drift}${reopen}.`
+}
+
 /**
  * The heightened tier for calls the agent authored.
  *
@@ -799,8 +1011,8 @@ const BY_KIND: Readonly<Record<Intent['kind'], readonly Rule[]>> = {
   transfer: [transferRules],
   // One rule set. Everything a swap must satisfy a bridge must too; what
   // differs is only what a source-chain simulation can see.
-  swap: [tradeRules],
-  bridge: [tradeRules],
+  swap: [tradeRules, stockRules],
+  bridge: [tradeRules, stockRules],
   // Supply lands with #79. Until then it fails closed rather than passing on
   // the global rules alone.
   supply: [() => [{ block: 'supply plans cannot be verified yet' }]],

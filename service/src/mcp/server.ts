@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
-import type { StockRegistry } from '../connectors/tokens/index.js'
 import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
@@ -50,12 +49,6 @@ export interface ToolContext {
 export interface ToolDeps extends StatusDeps, SwapDeps, CustomDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
-  /**
-   * The stock side of the registry, for the one thing `tokens.find` cannot
-   * say: that a symbol names several tokens. Null when no stock data is
-   * configured, and a stock symbol then resolves like any other.
-   */
-  stocks: StockRegistry | null
 }
 
 export const SERVER_INFO = {

@@ -1,10 +1,11 @@
 import { encodeFunctionData, maxUint160, maxUint256 } from 'viem'
 import { describe, expect, it } from 'vitest'
+import type { StockInfo } from '../connectors/tokens/index.js'
 import type { AssetDelta, Call, DecodedAction, Intent, Simulation } from '../core/index.js'
 import { KNOWN_ABI } from './abi.js'
 import { decodeCalls } from './decode.js'
 import type { Lookups } from './lookups.js'
-import { blockWarnings, verifyPlan } from './policy.js'
+import { STOCK_FACTS_MAX_AGE_MS, type StockSide, blockWarnings, stockHalted, stockPremium, verifyPlan } from './policy.js'
 
 /**
  * Decoding is real (with lookups answered from memory), so a rule is tested
@@ -851,5 +852,223 @@ describe('an agent-authored plan', () => {
       const verdict = await verifyCustom(intent({ expectedChanges: [], approvals: [], nativeValue: '1000' }), twice, traced([]))
       expect(verdict).toMatchObject({ ok: false, reasons: [expect.stringMatching(/above the 1000 the declaration allows/)] })
     })
+  })
+})
+
+/**
+ * A stock token has a market and a reference price, and both bear on
+ * whether the trade is built. The route is the ordinary two-call swap; what
+ * changes is what the registry said about the asset on one side.
+ */
+describe('a tokenized stock on one side', () => {
+  const ROUTER_ID = `${CHAIN}:${ROUTER}`
+  const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
+  const STOCK = `${CHAIN}/erc20:${NVDAB}`
+  const buy: Intent = { kind: 'swap', from: `${CHAIN}/erc20:${USDC}`, to: STOCK, amountIn: '500000000' }
+  const sell: Intent = { kind: 'swap', from: STOCK, to: `${CHAIN}/erc20:${USDC}`, amountIn: '1000000000000000000' }
+  const approve = (spender: string, amount: bigint) =>
+    encodeFunctionData({ abi: KNOWN_ABI, functionName: 'approve', args: [spender, amount] })
+  const buyCalls = [call(USDC, approve(ROUTER, 500_000_000n)), call(ROUTER, '0xdeadbeef')]
+  const sellCalls = [call(NVDAB, approve(ROUTER, 1_000_000_000_000_000_000n)), call(ROUTER, '0xdeadbeef')]
+
+  /** NVDAB as the registry describes it on an ordinary open day, unless a test says otherwise. */
+  const nvdab = (
+    over: Partial<StockInfo['stock']['status']> = {},
+    prices: { priceUsd?: number | null; reference?: number | null; ratio?: number } = {},
+    platformId = 'bstock',
+  ): StockInfo => ({
+    assetId: STOCK,
+    symbol: 'NVDAB',
+    name: 'NVIDIA (bStocks)',
+    decimals: 18,
+    iconUrl: null,
+    priceUsd: prices.priceUsd === undefined ? 224.13 : prices.priceUsd,
+    verified: true,
+    stock: {
+      platformId,
+      ticker: 'NVDA',
+      companyName: 'Nvidia Corp',
+      tokenToShareRatio: prices.ratio ?? 1,
+      referencePriceUsd: prices.reference === undefined ? 224.13 : prices.reference,
+      status: { open: true, marketStatus: 'regular', reason: 'TRADING', nextOpenAt: null, nextCloseAt: null, ...over },
+      asOf: '2026-09-25T14:00:00.000Z',
+    },
+  })
+
+  /** The facts were read at 14:00; the rules run two minutes later unless a test moves the clock. */
+  const READ_AT = Date.parse('2026-09-25T14:00:00.000Z')
+  async function judge(intent: Intent, calls: Call[], stocks: StockSide[], now = new Date(READ_AT + 2 * 60_000)) {
+    const decodedActions = await decodeCalls(calls, lookups)
+    return verifyPlan({
+      intent,
+      calls,
+      decodedActions,
+      allowedSpenders: [ROUTER_ID],
+      quote: { expectedOut: '1000000', minOut: '995000' },
+      stocks,
+      now,
+    })
+  }
+  /** The router's own unverified-target cautions are not what these tests are about. */
+  const stockWarnings = (verdict: { warnings: { code: string }[] }) => verdict.warnings.filter((w) => w.code.startsWith('stock_'))
+
+  it('blocks a halted market, with the reason and the next open', async () => {
+    const halted = nvdab({ open: false, reason: 'CORPORATE_ACTION', nextOpenAt: '2026-09-28T13:30:00.000Z' })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: halted }])
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'NVDAB is not trading right now (halted: corporate action). Next open 2026-09-28T13:30:00.000Z.',
+    )
+  })
+
+  /**
+   * The token trades on-chain around the clock; that is the point of it. A
+   * closed market only costs the person a live reference, so it warns, in
+   * the vendor's words and with the next open when one is given.
+   */
+  it('warns on a closed market and still passes the plan', async () => {
+    const closed = nvdab({ open: false, reason: 'MARKET_CLOSED', marketStatus: 'closed' })
+    const verdict = await judge(sell, sellCalls, [{ role: 'from', info: closed }])
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+    expect(stockWarnings(verdict)).toMatchObject([
+      {
+        severity: 'caution',
+        code: 'stock_market_closed',
+        message:
+          'The market for NVDAB is closed (market closed). The token still trades on-chain, but the reference price of ' +
+          '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens.',
+        saferAlternative: 'Wait for the market to reopen if you want a live reference price behind the trade.',
+      },
+    ])
+  })
+
+  it('names the session and the next open when the vendor gives them, and reads a session pause as a close', async () => {
+    const weekend = nvdab({ open: false, reason: null, marketStatus: 'weekend', nextOpenAt: '2026-09-28T13:30:00.000Z' })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: weekend }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)[0]?.message).toBe(
+      'The market for NVDAB is closed (market weekend). The token still trades on-chain, but the reference price of ' +
+        '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens at 2026-09-28T13:30:00.000Z.',
+    )
+    const paused = nvdab({ open: false, reason: 'MARKET_PAUSED', marketStatus: 'paused' })
+    expect(stockHalted(paused)).toBe(false)
+    expect(stockHalted(nvdab({ open: false, reason: 'TRADING_HALT' }))).toBe(true)
+    expect(stockHalted(nvdab({ open: true, reason: 'TRADING_HALT' }))).toBe(false)
+    // Both spellings of a suspension are halts, not closes.
+    expect(stockHalted(nvdab({ open: false, reason: 'SUSPENSION' }))).toBe(true)
+    expect(stockHalted(nvdab({ open: false, reason: 'TRADING_SUSPENDED' }))).toBe(true)
+    const suspended = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({ open: false, reason: 'SUSPENSION' }) }])
+    expect(suspended.ok).toBe(false)
+    expect(suspended.ok === false && suspended.reasons.join(' ')).toContain('halted: suspension')
+    const pausedVerdict = await judge(buy, buyCalls, [{ role: 'to', info: paused }])
+    expect(pausedVerdict.ok).toBe(true)
+    expect(stockWarnings(pausedVerdict)[0]?.message).toContain('The market for NVDAB is closed (market paused).')
+  })
+
+  /** Over a weekend the drift from the last close is exactly what the person wants named, so the premium check runs on a closed market. */
+  it('still measures the premium against the last session on a closed market', async () => {
+    const drifted = nvdab({ open: false, reason: 'MARKET_CLOSED' }, { priceUsd: 224.13 * 1.03 })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: drifted }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict).map((w) => w.code)).toEqual(['stock_market_closed', 'stock_premium'])
+    const unpriced = nvdab({ open: false, reason: 'MARKET_CLOSED' }, { reference: null })
+    expect(stockWarnings(await judge(buy, buyCalls, [{ role: 'to', info: unpriced }]))[0]?.message).toBe(
+      'The market for NVDAB is closed (market closed). The token still trades on-chain, but there is no reference price to check it against until the market reopens.',
+    )
+  })
+
+  /**
+   * The registry serves its last list through a vendor outage. An "open"
+   * read before the outage says nothing about a halt during it, so old
+   * facts refuse the plan on their own, and the halt check is not even asked.
+   */
+  it('blocks on facts older than the registry could have refreshed, whatever they say', async () => {
+    const later = new Date(READ_AT + STOCK_FACTS_MAX_AGE_MS + 60_000)
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab() }], later)
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'The market status of NVDAB was last read at 2026-09-25T14:00:00.000Z, about 6 minutes ago, ' +
+        'and has not been refreshed since. Try again shortly.',
+    )
+    const halted = nvdab({ open: false, reason: 'CORPORATE_ACTION' })
+    const stale = await judge(buy, buyCalls, [{ role: 'to', info: halted }], later)
+    expect(stale.ok === false && stale.reasons.join(' ')).not.toContain('not trading')
+    const pricey = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 224.13 * 1.015 }) }], later)
+    expect(stockWarnings(pricey)).toEqual([])
+  })
+
+  it('trusts facts up to the limit, and none stamped at a time it cannot read', async () => {
+    const atLimit = await judge(buy, buyCalls, [{ role: 'to', info: nvdab() }], new Date(READ_AT + STOCK_FACTS_MAX_AGE_MS))
+    expect(atLimit.ok, JSON.stringify(!atLimit.ok && atLimit.reasons)).toBe(true)
+    const unreadable = { ...nvdab(), stock: { ...nvdab().stock, asOf: 'a while ago' } }
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: unreadable }])
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'The market status of NVDAB was last read at a time the data source did not give, and has not been refreshed since. Try again shortly.',
+    )
+  })
+
+  it('lets a half-percent premium through without a word', async () => {
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 224.13 * 1.005 }) }])
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+    expect(stockWarnings(verdict)).toEqual([])
+  })
+
+  it('warns when buying more than a percent over the reference', async () => {
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 224.13 * 1.015 }) }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)).toMatchObject([
+      { severity: 'caution', code: 'stock_premium', message: 'On-chain price of NVDAB is 1.5% above the reference price of $224.13.' },
+    ])
+  })
+
+  it('warns when selling more than a percent under the reference, and not when buying under it', async () => {
+    const cheap = nvdab({}, { priceUsd: 224.13 * 0.985 })
+    const selling = await judge(sell, sellCalls, [{ role: 'from', info: cheap }])
+    expect(stockWarnings(selling)).toMatchObject([
+      { code: 'stock_discount', message: 'On-chain price of NVDAB is 1.5% below the reference price of $224.13.' },
+    ])
+    const buying = await judge(buy, buyCalls, [{ role: 'to', info: cheap }])
+    expect(stockWarnings(buying)).toEqual([])
+  })
+
+  /** A token that stands for 1.02 shares is at par at 1.02 × reference, not at the reference. */
+  it('measures the premium against the share ratio', async () => {
+    const accrued = nvdab({}, { priceUsd: 101.5, reference: 100, ratio: 1.02 })
+    expect(stockPremium(accrued)).toBeCloseTo(-0.0049, 4)
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: accrued }])
+    expect(stockWarnings(verdict)).toEqual([])
+  })
+
+  /** The warning names the figure the percentage was taken from, which is par and not the reference once the ratio has drifted. */
+  it('names par, with the arithmetic, when the ratio is not one', async () => {
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 103.53, reference: 100, ratio: 1.02 }) }])
+    expect(stockWarnings(verdict)).toMatchObject([
+      {
+        code: 'stock_premium',
+        message: 'On-chain price of NVDAB is 1.5% above par of $102.00 (reference $100.00 × 1.0200 shares per token).',
+        saferAlternative: 'Wait for the on-chain price to return to par, or trade a smaller amount.',
+      },
+    ])
+  })
+
+  it('says nothing about the price when the vendor gave none', async () => {
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: null }) }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)).toEqual([])
+    expect(stockPremium(nvdab({}, { reference: null }))).toBeNull()
+  })
+
+  it('notes the jurisdiction on an Ondo token, and not on a bStock', async () => {
+    const ondo = await judge(buy, buyCalls, [{ role: 'to', info: { ...nvdab({}, {}, 'ondo'), symbol: 'NVDAon' } }])
+    expect(ondo.ok).toBe(true)
+    expect(stockWarnings(ondo)).toMatchObject([{ severity: 'info', code: 'stock_jurisdiction' }])
+    expect(stockWarnings(ondo)[0]!.message).toContain('NVDAon is an Ondo token')
+    expect(stockWarnings(await judge(buy, buyCalls, [{ role: 'to', info: nvdab() }]))).toEqual([])
+  })
+
+  it('leaves a plain trade untouched', async () => {
+    const verdict = await judge(buy, buyCalls, [])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)).toEqual([])
   })
 })
