@@ -128,6 +128,68 @@ describe('an asset the portfolio has never seen', () => {
     })
   })
 
+  /** The issuer's mark beside the symbol comes from the registry's stock facts, trimmed to what the page draws. */
+  it('carries the issuer and the ticker of a stock the registry knows', async () => {
+    const stocks = {
+      ...registry,
+      async byAssetId(assetId: string) {
+        const known = await registry.byAssetId(assetId)
+        return known && {
+          ...known,
+          symbol: 'NVDAB',
+          name: 'NVIDIA (bStocks)',
+          stock: {
+            platformId: 'bstock',
+            ticker: 'NVDA',
+            companyName: 'Nvidia Corp',
+            tokenToShareRatio: 1,
+            referencePriceUsd: 224.88,
+            status: { open: true, marketStatus: null, reason: 'TRADING', nextOpenAt: null, nextCloseAt: null },
+            asOf: '2026-09-25T10:00:00.000Z',
+          },
+        }
+      },
+    }
+    const visuals = await visualsFor(swap(), [], null, stocks)
+    expect(visuals.assets['eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed']).toEqual({
+      symbol: 'NVDAB',
+      name: 'NVIDIA (bStocks)',
+      iconUrl: 'https://cdn/degen.webp',
+      priceUsd: 0.001,
+      stock: { issuer: 'bstock', ticker: 'NVDA' },
+    })
+  })
+
+  /** A held stock's row already carries the registry's words and mark; the page gets them as they are. */
+  it('carries a held stock’s mark from the portfolio row', async () => {
+    const holding = {
+      ...portfolio,
+      assets: [
+        {
+          ...portfolio.assets[0],
+          assetId: 'eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed',
+          asset: {
+            symbol: 'NVDAB',
+            name: 'NVIDIA (bStocks)',
+            decimals: 18,
+            iconUrl: 'https://cdn/nvdab.png',
+            verified: true,
+            stock: { issuer: 'bstock', ticker: 'NVDA' },
+          },
+          price: 225,
+        },
+      ],
+    } as unknown as Portfolio
+    const visuals = await visualsFor(swap(), [], holding, registry)
+    expect(visuals.assets['eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed']).toEqual({
+      symbol: 'NVDAB',
+      name: 'NVIDIA (bStocks)',
+      iconUrl: 'https://cdn/nvdab.png',
+      priceUsd: 225,
+      stock: { issuer: 'bstock', ticker: 'NVDA' },
+    })
+  })
+
   it('leaves the row out rather than inventing one when nobody knows it', async () => {
     const visuals = await visualsFor(swap(), [], null, { ...registry, async byAssetId() {
       return null
