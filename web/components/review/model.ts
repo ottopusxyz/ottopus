@@ -2,6 +2,7 @@ import type { Tone } from '@/components/ui'
 import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StockMarketState } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
+import { issuerName } from '@/lib/stocks'
 
 /**
  * What the page shows, derived from the stored plan and nothing else. Every
@@ -518,13 +519,6 @@ export const STOCK_PREMIUM_THRESHOLD_BPS = 100
 /** How old a reference price may be before the panel says its age. */
 const STALE_REFERENCE_MS = 15 * 60_000
 
-/** The issuer's name as people write it. The mark itself comes with the registry's icons. */
-export const ISSUER_NAMES: Readonly<Record<string, string>> = {
-  bstock: 'bStock',
-  ondo: 'Ondo',
-  xstocks: 'xStocks',
-}
-
 /**
  * The Stock panel for one side of the trade, read off the hashed section
  * and nothing else: the plan was judged on these figures, and the page
@@ -584,7 +578,7 @@ function stockPanel(stock: PlanStock, now: number): StockPanelModel {
   return {
     symbol: stock.symbol,
     title: `${stock.companyName} · ${stock.ticker}`,
-    issuer: ISSUER_NAMES[stock.issuer] ?? stock.issuer,
+    issuer: issuerName(stock.issuer),
     side,
     market: MARKET_CHIP[state],
     reference,
