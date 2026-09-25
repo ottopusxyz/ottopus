@@ -1,35 +1,13 @@
 import type { StockInfo } from '../connectors/tokens/types.js'
+import type { PlanStock, StockMarketState } from '../core/index.js'
 import { nyseSession } from './market-calendar.js'
 
 /**
- * The state of a stock's market, as one word the review page can colour.
- *
- * `regular` is green and says nothing. The three extended sessions are
- * information: the token trades and the reference is live, but from a
- * thinner book than regular hours. `closed` is a caution, because the
- * reference is the last close and the on-chain price can drift from it.
- * `halted` is the block it always was.
+ * The market's state and where the reading came from. The same shape the
+ * plan stores under `humanPlan.stocks[].market`, so what verify judged and
+ * what the page shows are one object.
  */
-export const STOCK_MARKET_STATES = ['regular', 'premarket', 'afterhours', 'overnight', 'closed', 'halted'] as const
-export type StockMarketState = (typeof STOCK_MARKET_STATES)[number]
-
-export interface StockMarket {
-  state: StockMarketState
-  /**
-   * Who named the session. `vendor` when the data source gave a session
-   * word or said the market is not open; `calendar` when it said open and
-   * nothing more, and the exchange calendar labelled the hour.
-   */
-  source: 'vendor' | 'calendar'
-  /** The vendor's session word as it arrived, null when it gave none. */
-  session: string | null
-  /** The vendor's reason code, `TRADING` when open. */
-  reason: string | null
-  /** The vendor's sentence about the reason ("Paused for session transition"), when it gave one. */
-  note: string | null
-  nextOpenAt: string | null
-  nextCloseAt: string | null
-}
+export type StockMarket = PlanStock['market']
 
 /**
  * Whether the vendor's reason for `open: false` reads as a halt rather than

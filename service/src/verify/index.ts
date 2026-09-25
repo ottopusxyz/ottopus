@@ -16,12 +16,5 @@ export {
   stockStatusReason,
   verifyPlan,
 } from './policy.js'
-export {
-  STOCK_MARKET_STATES,
-  type StockMarket,
-  type StockMarketState,
-  sessionOf,
-  stockMarket,
-  stockMarketWords,
-} from './stock-market.js'
+export { type StockMarket, sessionOf, stockMarket, stockMarketWords } from './stock-market.js'
 export { type CalendarReading, type CalendarSession, nyseSession } from './market-calendar.js'
