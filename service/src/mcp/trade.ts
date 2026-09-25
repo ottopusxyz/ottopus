@@ -22,7 +22,7 @@ import {
   sourceChainOf,
   swapIntentSchema,
 } from '../core/index.js'
-import { type PlanStock, assemblePlan } from '../core/index.js'
+import { type PlanStock, assemblePlan, decimalString, effectiveStockPrice } from '../core/index.js'
 import {
   type StockSide,
   blockWarnings,
@@ -122,10 +122,12 @@ export type TradeOutcome =
 interface AssetWords {
   symbol: string
   decimals: number
+  /** The unit price the same source gave, when it gave one. Null is "nobody priced it", not zero. */
+  priceUsd: number | null
 }
 
 /**
- * What to call an asset.
+ * What to call an asset, and what it is worth.
  *
  * The portfolio first, because it is what the person actually holds and it
  * is priced. Then the token registry, which is the only source for the side
@@ -135,21 +137,27 @@ interface AssetWords {
  * "9.5 DEGEN". The last resort stays, and now means nobody at all knows this
  * token.
  */
+function wordsOf(info: Pick<StockInfo, 'symbol' | 'decimals' | 'priceUsd'>): AssetWords {
+  return { symbol: info.symbol, decimals: info.decimals, priceUsd: info.priceUsd }
+}
+
 export async function wordsFor(
   assetId: string,
   portfolio: Portfolio | null,
   tokens: TokenRegistry | null,
 ): Promise<AssetWords> {
   const held = portfolio?.assets.find((a) => a.assetId.toLowerCase() === assetId.toLowerCase())
-  if (held) return { symbol: held.asset.symbol, decimals: held.asset.decimals }
+  if (held) return { symbol: held.asset.symbol, decimals: held.asset.decimals, priceUsd: held.price }
   const known = await tokens?.byAssetId(assetId)
-  if (known) return { symbol: known.symbol, decimals: known.decimals }
+  if (known) return { symbol: known.symbol, decimals: known.decimals, priceUsd: known.priceUsd }
   const parsed = parseAssetId(assetId)
   if (isNativeAsset(assetId)) {
     const info = findChain({ namespace: parsed.namespace, reference: parsed.reference })
-    return info ? { symbol: info.nativeCurrency.symbol, decimals: info.nativeCurrency.decimals } : { symbol: 'units', decimals: 0 }
+    return info
+      ? { symbol: info.nativeCurrency.symbol, decimals: info.nativeCurrency.decimals, priceUsd: null }
+      : { symbol: 'units', decimals: 0, priceUsd: null }
   }
-  return { symbol: `units of ${truncateAddress(parsed.assetReference)}`, decimals: 0 }
+  return { symbol: `units of ${truncateAddress(parsed.assetReference)}`, decimals: 0, priceUsd: null }
 }
 
 function holdingOf(portfolio: Portfolio | null, assetId: string, walletId: string): bigint {
@@ -279,12 +287,16 @@ export async function prepareTrade(
   // side is the one the portfolio cannot answer. The stock facts ride along:
   // whether either side is a stock, and if so whether its market is open and
   // what it trades at, read before the plan is built so the rules can refuse it.
-  const [fromWords, toWords, fromStock, toStock] = await Promise.all([
+  const [fromLooked, toLooked, fromStock, toStock] = await Promise.all([
     wordsFor(intent.from, portfolio, deps.tokens),
     wordsFor(intent.to, portfolio, deps.tokens),
     deps.stocks?.byAssetId(intent.from) ?? null,
     deps.stocks?.byAssetId(intent.to) ?? null,
   ])
+  // A stock is named by the stock registry, which knows it by address: the
+  // portfolio provider may call the same token something else, or nothing.
+  const fromWords = fromStock ? wordsOf(fromStock) : fromLooked
+  const toWords = toStock ? wordsOf(toStock) : toLooked
   const stocks: StockSide[] = [
     ...(fromStock ? [{ role: 'from' as const, info: fromStock }] : []),
     ...(toStock ? [{ role: 'to' as const, info: toStock }] : []),
@@ -339,6 +351,7 @@ export async function prepareTrade(
           : `${quote.provider} estimates ${durationWords(quote.etaSeconds)} to arrive. That is the bridge's estimate, not Ottopus's.`,
       ]
     : []
+  const stockSections = stocks.map((s) => planStock(s, now, { intent, quote, from: fromWords, to: toWords }))
   const draft: PlanDraft = planDraftSchema.parse({
     id: randomUUID(),
     version: 1,
@@ -360,7 +373,7 @@ export async function prepareTrade(
         ...quote.steps,
         floor,
         ...arrival,
-        ...stocks.map((s) => stockStep(s.info, now)),
+        ...stocks.map((s, i) => stockStep(s.info, now, stockSections[i]!.effective)),
         ...(intent.note ? [`Note from the request: ${intent.note}`] : []),
       ],
       feesUsd: quote.feesUsd ?? 'unknown',
@@ -370,7 +383,7 @@ export async function prepareTrade(
         { id: intent.to, symbol: toWords.symbol, decimals: toWords.decimals },
       ],
       // Only when there is one: a plain trade's plan stays byte-identical.
-      ...(stocks.length > 0 ? { stocks: stocks.map((s) => planStock(s, now)) } : {}),
+      ...(stockSections.length > 0 ? { stocks: stockSections } : {}),
     },
     status: 'awaiting_review',
     expiresAt,
@@ -425,13 +438,21 @@ export async function prepareTrade(
   }
 }
 
+/** The trade the stock side sits in, as much of it as pricing a share needs. */
+export interface StockTrade {
+  intent: Pick<TradeIntent, 'amountIn'>
+  quote: Pick<RouteQuote, 'expectedOut'>
+  from: AssetWords
+  to: AssetWords
+}
+
 /**
  * The stock side as the plan stores it: the registry's facts at the moment
- * the plan was built, and the market's state as verify read it. The same
- * resolver the rules use, at the same clock, so the state the rules judged
- * is the state the page shows.
+ * the plan was built, the market's state as verify read it, and what this
+ * quote comes to per share. The same resolver the rules use, at the same
+ * clock, so the state the rules judged is the state the page shows.
  */
-export function planStock({ role, info }: StockSide, now: Date): PlanStock {
+export function planStock({ role, info }: StockSide, now: Date, trade: StockTrade): PlanStock {
   const { stock } = info
   const premium = stockPremium(info)
   return {
@@ -441,22 +462,31 @@ export function planStock({ role, info }: StockSide, now: Date): PlanStock {
     issuer: stock.platformId,
     ticker: stock.ticker,
     companyName: stock.companyName,
-    tokenToShareRatio: decimal(stock.tokenToShareRatio),
-    referencePriceUsd: stock.referencePriceUsd === null ? null : decimal(stock.referencePriceUsd),
-    onChainPriceUsd: info.priceUsd === null ? null : decimal(info.priceUsd),
+    tokenToShareRatio: decimalString(stock.tokenToShareRatio),
+    referencePriceUsd: stock.referencePriceUsd === null ? null : decimalString(stock.referencePriceUsd),
+    onChainPriceUsd: info.priceUsd === null ? null : decimalString(info.priceUsd),
     premiumBps: premium === null ? null : Math.round(premium * 10_000),
     asOf: stock.asOf,
+    effective: stockEffective(role, info, trade),
     market: stockMarket(info, now),
   }
 }
 
 /**
- * A number as the decimal string the plan stores: the hash takes no floats.
- * Eight places, trailing zeros dropped, never exponent form: "224.13", "1",
- * "1.00077822". Eight is past what any price or share ratio here carries.
+ * The per-share price of this trade. A buy is priced by what goes in, a sell
+ * by what comes out. A quote fixed on what arrives does not say what it
+ * spends, so it has no price here; the plan says so rather than guessing.
  */
-function decimal(n: number): string {
-  return n.toFixed(8).replace(/\.?0+$/, '')
+function stockEffective(role: StockSide['role'], info: StockInfo, { intent, quote, from, to }: StockTrade) {
+  if (intent.amountIn === undefined) return null
+  const buying = role === 'to'
+  return effectiveStockPrice({
+    role,
+    tokens: buying ? { amount: quote.expectedOut, decimals: to.decimals } : { amount: intent.amountIn, decimals: from.decimals },
+    tokenToShareRatio: info.stock.tokenToShareRatio,
+    counter: buying ? { ...from, amount: intent.amountIn } : { ...to, amount: quote.expectedOut },
+    referencePriceUsd: info.stock.referencePriceUsd,
+  })
 }
 
 /**
@@ -465,7 +495,7 @@ function decimal(n: number): string {
  * the other steps, so the review page shows it without a lookup and it
  * cannot drift from the prices the plan was judged on.
  */
-export function stockStep(info: StockInfo, now: Date): string {
+export function stockStep(info: StockInfo, now: Date, effective: PlanStock['effective'] = null): string {
   const { stock } = info
   const reference = stock.referencePriceUsd === null ? 'reference price unavailable' : `reference price ${usd(stock.referencePriceUsd)}`
   const onChain = info.priceUsd === null ? 'on-chain price unavailable' : `on-chain ${usd(info.priceUsd)}`
@@ -479,7 +509,19 @@ export function stockStep(info: StockInfo, now: Date): string {
       : market.state === 'closed'
         ? `market closed${session ? ` (${session})` : market.source === 'calendar' ? ' (outside exchange hours)' : ''}`
         : `market open (${stockMarketWords(market.state)}${market.source === 'calendar' ? ', by the exchange calendar' : ''})`
-  return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${state}`
+  // What this trade comes to, beside what the share is worth: the figure a
+  // person would work out by hand, worked out for them.
+  const perShare = effective === null ? '' : `; this quote ${perShareWords(effective)}`
+  return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${state}${perShare}`
+}
+
+/** "comes to $227.27 per share, 1.4% above the reference" */
+function perShareWords(effective: NonNullable<PlanStock['effective']>): string {
+  const price = usd(Number(effective.priceUsd))
+  if (effective.premiumBps === null) return `comes to ${price} per share`
+  const pct = Math.abs(effective.premiumBps / 100).toFixed(1)
+  const gap = effective.premiumBps === 0 ? 'at the reference' : `${pct}% ${effective.premiumBps > 0 ? 'above' : 'below'} the reference`
+  return `comes to ${price} per share, ${gap}`
 }
 
 /** Seconds as something a person reads. Rounded: nobody needs 187 seconds. */
