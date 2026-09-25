@@ -185,6 +185,14 @@ describe('what the page says', () => {
       expect(panels(near)[0]!.premium).toEqual({ value: '+0.2%', words: 'above the reference', tone: 'neutral' })
     })
 
+    it('reads a plan written before the per-share price existed as unpriced', () => {
+      const early: PlanStock = { ...stock() }
+      delete early.effective
+      const [panel] = panels(early)
+      expect(panel!.effective).toEqual({ label: 'You pay per share', missing: 'This quote does not price the trade in dollars.' })
+      expect(panel!.premium).toEqual(panels(stock({ effective: null }))[0]!.premium)
+    })
+
     it('reads a sell the other way: what arrives per share, and under the reference hurts', () => {
       const sell = stock({
         role: 'from',

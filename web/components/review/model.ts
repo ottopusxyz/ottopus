@@ -568,7 +568,7 @@ function stockPanel(stock: PlanStock, now: number): StockPanelModel {
         }
   const effectiveLabel = side === 'buy' ? 'You pay per share' : 'You receive per share'
   const effective =
-    stock.effective === null
+    !stock.effective
       ? { label: effectiveLabel, missing: 'This quote does not price the trade in dollars.' }
       : {
           label: effectiveLabel,

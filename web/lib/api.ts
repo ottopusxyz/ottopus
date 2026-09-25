@@ -572,8 +572,11 @@ export interface PlanStock {
   onChainPriceUsd: string | null
   premiumBps: number | null
   asOf: string
-  /** What this quote comes to per share. Null when the other side had no price or the quote fixed what arrives. */
-  effective: {
+  /**
+   * What this quote comes to per share. Null when the other side had no price
+   * or the quote fixed what arrives; absent on plans written before it existed.
+   */
+  effective?: {
     counterSymbol: string
     counterPriceUsd: string
     shares: string
