@@ -20,6 +20,7 @@ import {
   sourceAssetOf,
   sourceChainOf,
 } from '../core/index.js'
+import type { StockInfo } from '../connectors/tokens/types.js'
 import { KNOWN_ABI, KNOWN_BY_SELECTOR, PERMIT2_APPROVE } from './abi.js'
 
 /**
@@ -62,7 +63,35 @@ export interface VerifyInput {
         nativeFee?: string | undefined | null
       }
     | undefined
+  /**
+   * The sides of a trade that are tokenized stocks, with the market facts
+   * read for them. Absent or empty for a plain trade, which then runs the
+   * old path untouched.
+   */
+  stocks?: readonly StockSide[] | undefined
 }
+
+/**
+ * A side of a trade that is a tokenized stock, with what the registry knows
+ * about it. `role` says which side: what is spent, or what is received. The
+ * direction matters, because a premium hurts a buyer and a discount hurts a
+ * seller, and only the adverse one is worth a warning.
+ */
+export interface StockSide {
+  role: 'from' | 'to'
+  info: StockInfo
+}
+
+/**
+ * How far the on-chain price may sit from par before a plan says so.
+ *
+ * One percent. The stock tokens Ottopus routes are minted and redeemed
+ * against the underlying, so on-chain they track the reference to within a
+ * spread, and a gap wider than this is a thin pool or a reference the vendor
+ * has not refreshed. Either way the person is about to pay more than the
+ * share is worth, or take less, and should read that before signing.
+ */
+export const STOCK_PREMIUM_THRESHOLD = 0.01
 
 export type Verdict =
   | { ok: true; warnings: Warning[] }
@@ -614,6 +643,99 @@ function carriesOpaqueCalldata(action: DecodedAction): boolean {
   })
 }
 
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+/**
+ * What a stock token has that a plain token does not: a market that opens
+ * and closes, and a price it is meant to track.
+ *
+ * A market that is not open is a block, whatever the vendor's reason. The
+ * reason is kept in the vendor's words so a halt reads as a halt and a
+ * scheduled close reads as a close, and the next open is named when the
+ * vendor gives one. Whether a scheduled close should block or only warn
+ * stays open until the vendor's weekend answer has been read; until then
+ * both block, as the plan says.
+ *
+ * The premium is measured against par, not the bare reference: a token
+ * stands for `tokenToShareRatio` shares, which drifts above one as dividends
+ * accrue, so a token at reference × ratio is exactly at par. Only the
+ * adverse direction warns: over par when buying, under par when selling. A
+ * discount when buying is the person's gain and nobody's warning.
+ *
+ * Ondo's tokens carry a note: Ondo restricts who may hold them by
+ * jurisdiction, and the chain does not check. A note rather than a block,
+ * because eligibility is the person's fact and not Ottopus's to guess.
+ */
+const stockRules: Rule = ({ stocks = [] }) => {
+  const findings: Finding[] = []
+  for (const { role, info } of stocks) {
+    if (!info.stock.status.open) findings.push({ block: stockStatusReason(info) })
+
+    const premium = stockPremium(info)
+    if (premium !== null && info.stock.referencePriceUsd !== null) {
+      const adverse = role === 'to' ? premium : -premium
+      if (adverse > STOCK_PREMIUM_THRESHOLD) {
+        const pct = (adverse * 100).toFixed(1)
+        findings.push({
+          warn: {
+            severity: 'caution',
+            code: role === 'to' ? 'stock_premium' : 'stock_discount',
+            message:
+              `On-chain price of ${info.symbol} is ${pct}% ${role === 'to' ? 'above' : 'below'} ` +
+              `the reference price of ${money.format(info.stock.referencePriceUsd)}.`,
+            saferAlternative: 'Wait for the on-chain price to return to the reference, or trade a smaller amount.',
+          },
+        })
+      }
+    }
+
+    if (info.stock.platformId === 'ondo') {
+      findings.push({
+        warn: {
+          severity: 'info',
+          code: 'stock_jurisdiction',
+          message:
+            `${info.symbol} is an Ondo token. Ondo restricts who may hold its tokens by jurisdiction ` +
+            'and the chain does not check, so make sure the person is eligible.',
+        },
+      })
+    }
+  }
+  return findings
+}
+
+/**
+ * How far the token trades from par, as a fraction: 0.014 is 1.4% over.
+ * Null when the vendor gave no on-chain or reference price to compare.
+ */
+export function stockPremium(info: StockInfo): number | null {
+  const { referencePriceUsd, tokenToShareRatio } = info.stock
+  if (info.priceUsd === null || referencePriceUsd === null) return null
+  const par = referencePriceUsd * tokenToShareRatio
+  return par > 0 ? info.priceUsd / par - 1 : null
+}
+
+/**
+ * Why a stock is not trading, as a sentence: "NVDAB is not trading right now
+ * (halted: corporate action). Next open 2026-09-28T13:30:00.000Z."
+ *
+ * The vendor's reason code is kept in its own words; one that reads as a
+ * halt is called one, so a halt and a scheduled close read differently even
+ * though both block today.
+ */
+export function stockStatusReason(info: StockInfo): string {
+  const { reason, marketStatus, nextOpenAt } = info.stock.status
+  const plain = reason?.replace(/_/g, ' ').toLowerCase()
+  const why = !plain
+    ? marketStatus
+      ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}`
+      : 'the market is not open'
+    : /halt|suspend|corporate/i.test(plain)
+      ? `halted: ${plain}`
+      : plain
+  return `${info.symbol} is not trading right now (${why}).${nextOpenAt ? ` Next open ${nextOpenAt}.` : ''}`
+}
+
 /**
  * The heightened tier for calls the agent authored.
  *
@@ -799,8 +921,8 @@ const BY_KIND: Readonly<Record<Intent['kind'], readonly Rule[]>> = {
   transfer: [transferRules],
   // One rule set. Everything a swap must satisfy a bridge must too; what
   // differs is only what a source-chain simulation can see.
-  swap: [tradeRules],
-  bridge: [tradeRules],
+  swap: [tradeRules, stockRules],
+  bridge: [tradeRules, stockRules],
   // Supply lands with #79. Until then it fails closed rather than passing on
   // the global rules alone.
   supply: [() => [{ block: 'supply plans cannot be verified yet' }]],
