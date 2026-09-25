@@ -22,8 +22,19 @@ import {
   sourceChainOf,
   swapIntentSchema,
 } from '../core/index.js'
-import { assemblePlan } from '../core/index.js'
-import { type StockSide, blockWarnings, decodeCalls, stockClosedNote, stockHalted, stockMarket, stockStatusReason, verifyPlan } from '../verify/index.js'
+import { type PlanStock, assemblePlan } from '../core/index.js'
+import {
+  type StockSide,
+  blockWarnings,
+  decodeCalls,
+  stockClosedNote,
+  stockHalted,
+  stockMarket,
+  stockMarketWords,
+  stockPremium,
+  stockStatusReason,
+  verifyPlan,
+} from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
@@ -349,7 +360,7 @@ export async function prepareTrade(
         ...quote.steps,
         floor,
         ...arrival,
-        ...stocks.map((s) => stockStep(s.info)),
+        ...stocks.map((s) => stockStep(s.info, now)),
         ...(intent.note ? [`Note from the request: ${intent.note}`] : []),
       ],
       feesUsd: quote.feesUsd ?? 'unknown',
@@ -358,6 +369,8 @@ export async function prepareTrade(
         { id: intent.from, symbol: fromWords.symbol, decimals: fromWords.decimals },
         { id: intent.to, symbol: toWords.symbol, decimals: toWords.decimals },
       ],
+      // Only when there is one: a plain trade's plan stays byte-identical.
+      ...(stocks.length > 0 ? { stocks: stocks.map((s) => planStock(s, now)) } : {}),
     },
     status: 'awaiting_review',
     expiresAt,
@@ -413,20 +426,60 @@ export async function prepareTrade(
 }
 
 /**
+ * The stock side as the plan stores it: the registry's facts at the moment
+ * the plan was built, and the market's state as verify read it. The same
+ * resolver the rules use, at the same clock, so the state the rules judged
+ * is the state the page shows.
+ */
+export function planStock({ role, info }: StockSide, now: Date): PlanStock {
+  const { stock } = info
+  const premium = stockPremium(info)
+  return {
+    assetId: info.assetId,
+    symbol: info.symbol,
+    role,
+    issuer: stock.platformId,
+    ticker: stock.ticker,
+    companyName: stock.companyName,
+    tokenToShareRatio: decimal(stock.tokenToShareRatio),
+    referencePriceUsd: stock.referencePriceUsd === null ? null : decimal(stock.referencePriceUsd),
+    onChainPriceUsd: info.priceUsd === null ? null : decimal(info.priceUsd),
+    premiumBps: premium === null ? null : Math.round(premium * 10_000),
+    asOf: stock.asOf,
+    market: stockMarket(info, now),
+  }
+}
+
+/**
+ * A number as the decimal string the plan stores: the hash takes no floats.
+ * Eight places, trailing zeros dropped, never exponent form: "224.13", "1",
+ * "1.00077822". Eight is past what any price or share ratio here carries.
+ */
+function decimal(n: number): string {
+  return n.toFixed(8).replace(/\.?0+$/, '')
+}
+
+/**
  * The stock line on the plan: what the share is worth, what the token
- * trades at, whose token it is, and whether the market is open. Hashed with
+ * trades at, whose token it is, and what state the market is in. Hashed with
  * the other steps, so the review page shows it without a lookup and it
  * cannot drift from the prices the plan was judged on.
  */
-export function stockStep(info: StockInfo): string {
+export function stockStep(info: StockInfo, now: Date): string {
   const { stock } = info
   const reference = stock.referencePriceUsd === null ? 'reference price unavailable' : `reference price ${usd(stock.referencePriceUsd)}`
   const onChain = info.priceUsd === null ? 'on-chain price unavailable' : `on-chain ${usd(info.priceUsd)}`
   // A ratio of exactly one is the norm and says nothing; a drifted one changes what par is.
   const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
-  const session = stock.status.marketStatus ? ` (${stock.status.marketStatus.replace(/_/g, ' ').toLowerCase()})` : ''
-  const market = stock.status.open ? `market open${session}` : stockHalted(info) ? 'halted' : `market closed${session}`
-  return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${market}`
+  const market = stockMarket(info, now)
+  const session = market.session?.replace(/_/g, ' ').toLowerCase() ?? null
+  const state =
+    market.state === 'halted'
+      ? 'halted'
+      : market.state === 'closed'
+        ? `market closed${session ? ` (${session})` : market.source === 'calendar' ? ' (outside exchange hours)' : ''}`
+        : `market open (${stockMarketWords(market.state)}${market.source === 'calendar' ? ', by the exchange calendar' : ''})`
+  return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${state}`
 }
 
 /** Seconds as something a person reads. Rounded: nobody needs 187 seconds. */

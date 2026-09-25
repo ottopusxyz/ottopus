@@ -1277,6 +1277,23 @@ describe('prepare_trade', () => {
       expect(sink.created[0]!.plan.humanPlan.steps).toContain(
         'NVDAB: reference price $224.13, on-chain $227.49 (bstock); market open (overnight)',
       )
+      expect(res.content[0]!.text).toContain('Heads up: NVDAB is trading overnight.')
+      expect(sink.created[0]!.plan.humanPlan.stocks).toEqual([
+        {
+          assetId: STOCK,
+          symbol: 'NVDAB',
+          role: 'to',
+          issuer: 'bstock',
+          ticker: 'NVDA',
+          companyName: 'Nvidia Corp',
+          tokenToShareRatio: '1',
+          referencePriceUsd: '224.13',
+          onChainPriceUsd: '227.49195',
+          premiumBps: 150,
+          asOf: expect.any(String),
+          market: { state: 'overnight', source: 'vendor', session: 'overnight', reason: 'TRADING', note: null, nextOpenAt: null, nextCloseAt: null },
+        },
+      ])
       expect(sink.created[0]!.plan.status).toBe('awaiting_review')
     })
 
@@ -1329,6 +1346,8 @@ describe('prepare_trade', () => {
       expect(stocks.asked).toHaveLength(2)
       expect(sink.created[0]!.plan.humanPlan.steps.some((step) => step.includes('reference price'))).toBe(false)
       expect(sink.created[0]!.plan.humanPlan.warnings.filter((w) => w.code.startsWith('stock_'))).toEqual([])
+      // Absent, not empty: the plan hashes exactly as it did before the section existed.
+      expect('stocks' in sink.created[0]!.plan.humanPlan).toBe(false)
     })
   })
 
