@@ -6,6 +6,7 @@ import { KNOWN_ABI } from './abi.js'
 import { decodeCalls } from './decode.js'
 import type { Lookups } from './lookups.js'
 import { STOCK_FACTS_MAX_AGE_MS, type StockSide, blockWarnings, stockHalted, stockPremium, verifyPlan } from './policy.js'
+import { sessionOf, stockMarket } from './stock-market.js'
 
 /**
  * Decoding is real (with lookups answered from memory), so a rule is tested
@@ -1070,5 +1071,109 @@ describe('a tokenized stock on one side', () => {
     const verdict = await judge(buy, buyCalls, [])
     expect(verdict.ok).toBe(true)
     expect(stockWarnings(verdict)).toEqual([])
+  })
+
+  /**
+   * The vendor's open flag is true in the extended sessions too. When it
+   * names the session, the plan carries it as information: the token
+   * trades and the reference is live, but from a thinner book.
+   */
+  it('notes an extended session the vendor names, as information', async () => {
+    const early = nvdab({ marketStatus: 'premarket', nextOpenAt: '2026-09-25T13:31:00.000Z', nextCloseAt: '2026-09-25T13:29:00.000Z' })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: early }], new Date('2026-09-25T12:22:00Z'))
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)).toEqual([
+      {
+        severity: 'info',
+        code: 'stock_extended_hours',
+        message:
+          'NVDAB is trading pre-market. The reference price of $224.13 is from a thinner market than regular hours, ' +
+          'which resume at 2026-09-25T13:31:00.000Z.',
+      },
+    ])
+    expect(stockMarket(early, new Date('2026-09-25T12:22:00Z'))).toMatchObject({ state: 'premarket', source: 'vendor', session: 'premarket' })
+    const late = nvdab({ marketStatus: 'after_hours' }, { reference: null })
+    expect(stockWarnings(await judge(buy, buyCalls, [{ role: 'to', info: late }]))[0]?.message).toBe(
+      'NVDAB is trading after-hours. There is no reference price to check the on-chain price against until regular hours.',
+    )
+  })
+
+  /**
+   * bStocks rows say open and nothing else, so a bStock in pre-market read
+   * exactly like one at noon. The exchange calendar labels the hour when the
+   * vendor gives no session, and says so in the note.
+   */
+  it('labels the session by the exchange calendar when the vendor gives none', async () => {
+    const silent = nvdab({ marketStatus: null })
+    // 08:22 ET on a Friday, the reading that started this. The facts were stamped later; freshness is not what this tests.
+    const premarket = await judge(buy, buyCalls, [{ role: 'to', info: silent }], new Date('2026-09-25T12:22:00Z'))
+    expect(premarket.ok).toBe(true)
+    expect(stockWarnings(premarket)).toEqual([
+      {
+        severity: 'info',
+        code: 'stock_extended_hours',
+        message:
+          'NVDAB is trading pre-market, by the exchange calendar. The reference price of $224.13 is from a thinner market than ' +
+          'regular hours, which resume at 2026-09-25T13:30:00.000Z.',
+      },
+    ])
+    expect(stockMarket(silent, new Date('2026-09-25T12:22:00Z'))).toEqual({
+      state: 'premarket',
+      source: 'calendar',
+      session: null,
+      reason: 'TRADING',
+      note: null,
+      nextOpenAt: '2026-09-25T13:30:00.000Z',
+      nextCloseAt: '2026-09-25T20:00:00.000Z',
+    })
+    // 10:02 ET the same day: regular hours, nothing to say.
+    expect(stockWarnings(await judge(buy, buyCalls, [{ role: 'to', info: silent }]))).toEqual([])
+    expect(stockMarket(silent, new Date(READ_AT + 2 * 60_000)).state).toBe('regular')
+  })
+
+  /**
+   * Vendor says open, calendar says Saturday. The flag still says the token
+   * trades; the reference cannot be live. That is the closed-market caution,
+   * in the calendar's words, with Monday's bell as the next open.
+   */
+  it('reads a calendar close over a vendor "open" as the closed-market caution', async () => {
+    const saturday = new Date('2026-09-26T16:00:00Z')
+    const fresh = nvdab({ marketStatus: null })
+    const silent = { ...fresh, stock: { ...fresh.stock, asOf: saturday.toISOString() } }
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: silent }], saturday)
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)).toMatchObject([
+      {
+        severity: 'caution',
+        code: 'stock_market_closed',
+        message:
+          'The market for NVDAB is closed (outside exchange hours). The token still trades on-chain, but the reference price of ' +
+          '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens at 2026-09-28T13:30:00.000Z.',
+      },
+    ])
+    expect(stockMarket(silent, saturday)).toMatchObject({ state: 'closed', source: 'calendar', nextOpenAt: '2026-09-28T13:30:00.000Z' })
+  })
+
+  it('carries the vendor’s sentence about a close into the note', async () => {
+    const paused = nvdab({ open: false, reason: 'MARKET_PAUSED', marketStatus: 'paused', reasonMessage: 'Paused for session transition' })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: paused }])
+    expect(stockWarnings(verdict)[0]?.message).toContain('The market for NVDAB is closed (market paused: Paused for session transition).')
+    expect(stockMarket(paused, new Date(READ_AT)).note).toBe('Paused for session transition')
+  })
+
+  /** The calendar labels the hour and nothing more: a halt or a vendor close wins whatever time it is in New York. */
+  it('lets the vendor’s halt and close beat the calendar, and reads its session spellings', () => {
+    const noon = new Date('2026-09-25T16:00:00Z')
+    expect(stockMarket(nvdab({ open: false, reason: 'TRADING_HALT' }), noon)).toMatchObject({ state: 'halted', source: 'vendor' })
+    expect(stockMarket(nvdab({ open: false, reason: 'UNSUPPORTED', marketStatus: 'premarket' }), noon)).toMatchObject({ state: 'closed', source: 'vendor' })
+    expect(stockMarket(nvdab({ marketStatus: 'overnight' }), noon)).toMatchObject({ state: 'overnight', source: 'vendor' })
+    // A session word the resolver cannot read falls through to the calendar, which keeps the word beside it.
+    expect(stockMarket(nvdab({ marketStatus: 'lunch' }), noon)).toMatchObject({ state: 'regular', source: 'calendar', session: 'lunch' })
+    expect(sessionOf('pre_market')).toBe('premarket')
+    expect(sessionOf('After-Hours')).toBe('afterhours')
+    expect(sessionOf('post_market')).toBe('afterhours')
+    expect(sessionOf('REGULAR')).toBe('regular')
+    expect(sessionOf('paused')).toBeNull()
+    expect(sessionOf(null)).toBeNull()
   })
 })

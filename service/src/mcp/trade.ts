@@ -23,7 +23,7 @@ import {
   swapIntentSchema,
 } from '../core/index.js'
 import { assemblePlan } from '../core/index.js'
-import { type StockSide, blockWarnings, decodeCalls, stockClosedNote, stockHalted, stockStatusReason, verifyPlan } from '../verify/index.js'
+import { type StockSide, blockWarnings, decodeCalls, stockClosedNote, stockHalted, stockMarket, stockStatusReason, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
@@ -304,7 +304,7 @@ export async function prepareTrade(
       // does not just retry.
       const market = stocks
         .filter((s) => !s.info.stock.status.open)
-        .map((s) => (stockHalted(s.info) ? stockStatusReason(s.info) : stockClosedNote(s.info)))
+        .map((s) => (stockHalted(s.info) ? stockStatusReason(s.info, now) : stockClosedNote(s.info, stockMarket(s.info, now))))
       return { kind: 'no_route', reasons: [err.message, ...market] }
     }
     throw err
