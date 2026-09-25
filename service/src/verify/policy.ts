@@ -787,11 +787,12 @@ export function stockStaleReason(info: StockInfo, now: Date): string {
  * a closed session. The vendor names halts (`TRADING_HALT`,
  * `CORPORATE_ACTION`) and session breaks (`MARKET_PAUSED`, `MARKET_CLOSED`)
  * in its reason code; a close with no code at all is a close, because a halt
- * is the thing worth a name.
+ * is the thing worth a name. The stem `suspen` covers both `SUSPENDED` and
+ * `SUSPENSION`, which `suspend` would not.
  */
 export function stockHalted(info: StockInfo): boolean {
   const { open, reason } = info.stock.status
-  return !open && /halt|suspend|corporate/i.test(reason ?? '')
+  return !open && /halt|suspen|corporate/i.test(reason ?? '')
 }
 
 /** The vendor's reason or session word, as plain words: "halted: corporate action", "market paused". */

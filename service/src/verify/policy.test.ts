@@ -954,6 +954,12 @@ describe('a tokenized stock on one side', () => {
     expect(stockHalted(paused)).toBe(false)
     expect(stockHalted(nvdab({ open: false, reason: 'TRADING_HALT' }))).toBe(true)
     expect(stockHalted(nvdab({ open: true, reason: 'TRADING_HALT' }))).toBe(false)
+    // Both spellings of a suspension are halts, not closes.
+    expect(stockHalted(nvdab({ open: false, reason: 'SUSPENSION' }))).toBe(true)
+    expect(stockHalted(nvdab({ open: false, reason: 'TRADING_SUSPENDED' }))).toBe(true)
+    const suspended = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({ open: false, reason: 'SUSPENSION' }) }])
+    expect(suspended.ok).toBe(false)
+    expect(suspended.ok === false && suspended.reasons.join(' ')).toContain('halted: suspension')
     const pausedVerdict = await judge(buy, buyCalls, [{ role: 'to', info: paused }])
     expect(pausedVerdict.ok).toBe(true)
     expect(stockWarnings(pausedVerdict)[0]?.message).toContain('The market for NVDAB is closed (market paused).')
