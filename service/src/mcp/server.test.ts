@@ -3,6 +3,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
 import { encodeFunctionData, maxUint256 } from 'viem'
 import type { Portfolio } from '../connectors/portfolio/index.js'
+import type { StockInfo } from '../connectors/tokens/index.js'
 import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
 import { PlanError } from '../plans/index.js'
 import { planFor } from '../plans/fixtures.js'
@@ -1179,6 +1180,116 @@ describe('prepare_trade', () => {
     const res = (await send(client)) as { structuredContent: Record<string, unknown> }
     expect(res.structuredContent).toMatchObject({ trade: 'swap' })
     expect(sink.created[0]!.plan.intent.kind).toBe('swap')
+  })
+
+  /**
+   * A stock on the receiving side. The route is the same two calls; what
+   * the registry says about the asset decides whether a link is issued.
+   */
+  describe('into a tokenized stock', () => {
+    const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
+    const STOCK = `${BASE}/erc20:${NVDAB}`
+    const nvdab = (over: Partial<StockInfo['stock']['status']> = {}, priceUsd = 224.13): StockInfo => ({
+      assetId: STOCK,
+      symbol: 'NVDAB',
+      name: 'NVIDIA (bStocks)',
+      decimals: 18,
+      iconUrl: null,
+      priceUsd,
+      verified: true,
+      stock: {
+        platformId: 'bstock',
+        ticker: 'NVDA',
+        companyName: 'Nvidia Corp',
+        tokenToShareRatio: 1,
+        referencePriceUsd: 224.13,
+        status: { open: true, marketStatus: 'overnight', reason: 'TRADING', nextOpenAt: null, nextCloseAt: null, ...over },
+        asOf: '2026-09-25T14:00:00.000Z',
+      },
+    })
+    const stocksOf = (info: StockInfo | null) => {
+      const asked: string[] = []
+      return {
+        asked,
+        name: 'fake-stocks',
+        async byAssetId(assetId: string) {
+          asked.push(assetId)
+          return info && assetId === info.assetId ? info : null
+        },
+        async variants() {
+          return info ? [info] : []
+        },
+      }
+    }
+    type Result = { isError?: boolean; content: { text: string }[]; structuredContent: Record<string, unknown> }
+
+    it('refuses a halted market, records the refusal, and issues no link', async () => {
+      const sink = planSink()
+      const stocks = stocksOf(nvdab({ open: false, reason: 'CORPORATE_ACTION', nextOpenAt: '2026-09-28T13:30:00.000Z' }))
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter(),
+        createPlan: sink.createPlan,
+        stocks,
+      }, { grantId: 'grant-1' })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError).toBe(true)
+      expect(res.content[0]!.text).toContain('Ottopus refused to build')
+      expect(res.content[0]!.text).toContain(
+        'NVDAB is not trading right now (halted: corporate action). Next open 2026-09-28T13:30:00.000Z.',
+      )
+      expect(res.content[0]!.text).not.toContain('Review and sign')
+      expect(res.structuredContent).toMatchObject({ status: 'blocked' })
+      expect(sink.created[0]!.plan.status).toBe('blocked')
+      expect(sink.created[0]!.plan.humanPlan.warnings[0]).toMatchObject({ severity: 'block', code: 'verify_failed' })
+      expect(stocks.asked).toEqual([`${BASE}/erc20:${USDC}`, STOCK])
+    })
+
+    it('puts the prices on the plan and says when the on-chain price runs ahead', async () => {
+      const sink = planSink()
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter(),
+        createPlan: sink.createPlan,
+        stocks: stocksOf(nvdab({}, 224.13 * 1.015)),
+      }, { grantId: 'grant-1' })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError, res.content[0]?.text).toBeFalsy()
+      expect(res.content[0]!.text).toContain('Heads up: On-chain price of NVDAB is 1.5% above the reference price of $224.13.')
+      expect(res.content[0]!.text).toContain('Review and sign')
+      expect(sink.created[0]!.plan.humanPlan.steps).toContain(
+        'NVDAB: reference price $224.13, on-chain $227.49 (bstock); market open (overnight)',
+      )
+      expect(sink.created[0]!.plan.status).toBe('awaiting_review')
+    })
+
+    it('adds the halt to a router’s refusal, so the agent does not just retry', async () => {
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter({}, new RouteError('no_route', 'No valid quote result from any vendor')),
+        stocks: stocksOf(nvdab({ open: false, reason: 'TRADING_HALT' })),
+      })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError).toBe(true)
+      expect(res.content[0]!.text).toContain('No valid quote result from any vendor')
+      expect(res.content[0]!.text).toContain('NVDAB is not trading right now (halted: trading halt).')
+    })
+
+    it('runs the old path when neither side is a stock', async () => {
+      const sink = planSink()
+      const stocks = stocksOf(null)
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter(),
+        createPlan: sink.createPlan,
+        stocks,
+      }, { grantId: 'grant-1' })
+      const res = (await send(client)) as Result
+      expect(res.isError, res.content[0]?.text).toBeFalsy()
+      expect(stocks.asked).toHaveLength(2)
+      expect(sink.created[0]!.plan.humanPlan.steps.some((step) => step.includes('reference price'))).toBe(false)
+      expect(sink.created[0]!.plan.humanPlan.warnings.filter((w) => w.code.startsWith('stock_'))).toEqual([])
+    })
   })
 
   it('refuses without plans:write', async () => {

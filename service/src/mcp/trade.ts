@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import { RouteError, type RouteConnector, type RouteQuote } from '../connectors/route/index.js'
-import type { TokenRegistry } from '../connectors/tokens/index.js'
+import type { StockInfo, StockRegistry, TokenRegistry } from '../connectors/tokens/index.js'
 import {
   type PlanDraft,
   type TradeIntent,
@@ -23,9 +23,9 @@ import {
   swapIntentSchema,
 } from '../core/index.js'
 import { assemblePlan } from '../core/index.js'
-import { blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
+import { type StockSide, blockWarnings, decodeCalls, stockStatusReason, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { humanAmount, resolveWallet, truncateAddress } from './readable.js'
+import { humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
 /**
@@ -62,6 +62,13 @@ export interface SwapDeps extends PrepareDeps {
    * words, never the plan.
    */
   tokens: TokenRegistry | null
+  /**
+   * The stock side of the registry: whether an asset is a tokenized stock,
+   * and if so its market status and prices, which decide whether the trade
+   * is built at all. Null when no stock data is configured, and a stock then
+   * trades like any other token, with nothing to say about its market.
+   */
+  stocks: StockRegistry | null
 }
 
 export interface PrepareTradeInput {
@@ -258,11 +265,19 @@ export async function prepareTrade(
     arms.map((arm) => ({ walletId: arm.id, namespace: arm.namespace, address: arm.address })),
   )
   // Both sides in one round trip: the registry caches, and the receiving
-  // side is the one the portfolio cannot answer.
-  const [fromWords, toWords] = await Promise.all([
+  // side is the one the portfolio cannot answer. The stock facts ride along:
+  // whether either side is a stock, and if so whether its market is open and
+  // what it trades at, read before the plan is built so the rules can refuse it.
+  const [fromWords, toWords, fromStock, toStock] = await Promise.all([
     wordsFor(intent.from, portfolio, deps.tokens),
     wordsFor(intent.to, portfolio, deps.tokens),
+    deps.stocks?.byAssetId(intent.from) ?? null,
+    deps.stocks?.byAssetId(intent.to) ?? null,
   ])
+  const stocks: StockSide[] = [
+    ...(fromStock ? [{ role: 'from' as const, info: fromStock }] : []),
+    ...(toStock ? [{ role: 'to' as const, info: toStock }] : []),
+  ]
   const native = isNativeAsset(intent.from)
   const chosen = resolveTradeWallet({
     intent,
@@ -283,7 +298,12 @@ export async function prepareTrade(
       slippageBps: intent.slippageBps,
     })
   } catch (err) {
-    if (err instanceof RouteError) return { kind: 'no_route', reasons: [err.message] }
+    if (err instanceof RouteError) {
+      // A stock that is not trading is often why a router has nothing to
+      // offer. Said beside the router's own words, so the agent does not retry.
+      const halted = stocks.filter((s) => !s.info.stock.status.open).map((s) => stockStatusReason(s.info))
+      return { kind: 'no_route', reasons: [err.message, ...halted] }
+    }
     throw err
   }
 
@@ -322,7 +342,13 @@ export async function prepareTrade(
     },
     humanPlan: {
       summary,
-      steps: [...quote.steps, floor, ...arrival, ...(intent.note ? [`Note from the request: ${intent.note}`] : [])],
+      steps: [
+        ...quote.steps,
+        floor,
+        ...arrival,
+        ...stocks.map((s) => stockStep(s.info)),
+        ...(intent.note ? [`Note from the request: ${intent.note}`] : []),
+      ],
       feesUsd: quote.feesUsd ?? 'unknown',
       warnings: [],
       assets: [
@@ -346,6 +372,7 @@ export async function prepareTrade(
       ? [quote.approval.spender, ...(quote.approval.through ? [quote.approval.through] : [])]
       : [],
     quote: { expectedOut: quote.expectedOut, minOut: quote.minOut, nativeFee: quote.nativeFee },
+    stocks,
   })
   const warnings = blockWarnings(verdict)
   const plan = assemblePlan(
@@ -379,6 +406,24 @@ export async function prepareTrade(
     reviewUrl: link.url,
     linkExpiresAt: link.expiresAt,
   }
+}
+
+/**
+ * The stock line on the plan: what the share is worth, what the token
+ * trades at, whose token it is, and whether the market is open. Hashed with
+ * the other steps, so the review page shows it without a lookup and it
+ * cannot drift from the prices the plan was judged on.
+ */
+export function stockStep(info: StockInfo): string {
+  const { stock } = info
+  const reference = stock.referencePriceUsd === null ? 'reference price unavailable' : `reference price ${usd(stock.referencePriceUsd)}`
+  const onChain = info.priceUsd === null ? 'on-chain price unavailable' : `on-chain ${usd(info.priceUsd)}`
+  // A ratio of exactly one is the norm and says nothing; a drifted one changes what par is.
+  const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
+  const market = stock.status.open
+    ? `market open${stock.status.marketStatus ? ` (${stock.status.marketStatus.replace(/_/g, ' ').toLowerCase()})` : ''}`
+    : 'not trading'
+  return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${market}`
 }
 
 /** Seconds as something a person reads. Rounded: nobody needs 187 seconds. */
