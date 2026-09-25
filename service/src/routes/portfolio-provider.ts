@@ -3,9 +3,11 @@ import { ZerionActivityConnector, type ActivityConnector } from '../connectors/a
 import {
   ZerionPortfolioConnector,
   cached,
+  stockNamed,
   type PortfolioConnector,
 } from '../connectors/portfolio/index.js'
 import { ZerionClient } from '../connectors/zerion/client.js'
+import { stockRegistry } from './token-registry.js'
 
 /**
  * The one portfolio connector, behind the one cache.
@@ -27,9 +29,18 @@ const client: ZerionClient | null = config.zerionApiKey
     })
   : null
 
-export const portfolioProvider: PortfolioConnector | null = client
+/**
+ * Stock tokens named by the stock registry, over the cache rather than
+ * under it: the cache holds the provider's rows as read, and the name a
+ * stock address gets is looked up fresh each time from the registry's own
+ * short-lived list. Without a stock registry the provider's names stand.
+ */
+const zerion: PortfolioConnector | null = client
   ? cached(new ZerionPortfolioConnector({ apiKey: config.zerionApiKey!, client }))
   : null
+
+export const portfolioProvider: PortfolioConnector | null =
+  zerion && stockRegistry ? stockNamed(zerion, stockRegistry) : zerion
 
 /**
  * The history reader, on the same client so the chain list loads once. No

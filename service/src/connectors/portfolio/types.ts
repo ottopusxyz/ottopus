@@ -97,6 +97,12 @@ export interface AssetInfo {
   iconUrl: string | null
   /** The provider vouches for this token's identity. Shown, never trusted. */
   verified: boolean
+  /**
+   * Present when the stock registry knows this address as a tokenized
+   * stock, in which case the words above are its and not the portfolio
+   * provider's. `issuer` in the registry's vocabulary: `bstock`, `ondo`.
+   */
+  stock?: { issuer: string; ticker: string }
 }
 
 /** One position held by one account, as the connector reports it. */

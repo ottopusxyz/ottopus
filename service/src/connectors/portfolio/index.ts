@@ -15,6 +15,7 @@ export {
   type ValueByType,
 } from './aggregate.js'
 export { cached, type CacheOptions } from './cache.js'
+export { stockNamed, type StockNamedOptions } from './stocks.js'
 export { ChainMap, evmChainIdOf, type ChainEntry } from './chains.js'
 export {
   POSITION_TYPES,
