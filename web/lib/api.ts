@@ -225,6 +225,14 @@ export interface AssetInfo {
   decimals: number
   iconUrl: string | null
   verified: boolean
+  /** Present when the service knows this address as a tokenized stock; its words above are then the stock registry's. */
+  stock?: StockMark
+}
+
+/** Which issuer a tokenized stock is from, in the service's words (`bstock`, `ondo`, `xstocks`), and the ticker it tracks. */
+export interface StockMark {
+  issuer: string
+  ticker: string
 }
 
 /** A loose balance: one asset, on one chain, across every arm. Every amount here is spendable. */
@@ -711,8 +719,8 @@ export interface Simulation {
  * must never make a plan unreadable.
  */
 export interface Visuals {
-  /** `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. */
-  assets: Record<string, { symbol: string; name: string; iconUrl: string | null; priceUsd: number | null }>
+  /** `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. `stock` is present for a tokenized stock the service knows by address. */
+  assets: Record<string, { symbol: string; name: string; iconUrl: string | null; priceUsd: number | null; stock?: StockMark }>
   chains: Record<string, ChainVisual>
   wallets: Record<string, { walletType: string; label: string | null }>
 }

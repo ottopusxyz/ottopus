@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { Otto } from '@/components/brand'
 import { AssetIcon } from '@/components/portfolio/asset-icon'
-import { Badge } from '@/components/ui'
+import { Badge, IssuerMark } from '@/components/ui'
 import { walletClientName, walletMark } from '@/components/wallets/naming'
 import type { Plan, Visuals } from '@/lib/api'
 import { chainName } from '@/lib/chains'
@@ -143,6 +143,13 @@ export function ReviewCard({
                     {change.direction === 'out' ? '−' : '+'}
                     {change.amount} {change.symbol}
                   </code>
+                  {visuals.assets[change.assetId]?.stock ? (
+                    <IssuerMark
+                      issuer={visuals.assets[change.assetId]!.stock!.issuer}
+                      ticker={visuals.assets[change.assetId]!.stock!.ticker}
+                      className="mr-auto self-center"
+                    />
+                  ) : null}
                   {/* Today's price, an estimate; the figure beside it is what gets signed. */}
                   {usd(change.amount, change.assetId) ? (
                     <code className="flex-none font-mono text-[12px] text-[var(--ot-text-3)] tabular-nums">
