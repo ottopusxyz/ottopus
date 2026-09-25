@@ -115,6 +115,23 @@ export interface StockRegistry {
    * answer at all, which is not the same thing.
    */
   variants(chainId: string, query: string): Promise<StockInfo[] | null>
-  /** The stock behind an asset id. Null when it is not a stock, or on failure. */
-  byAssetId(assetId: string): Promise<StockInfo | null>
+  /**
+   * The stock behind an asset id, by address on its chain and never by
+   * symbol. Three answers, because two of them used to share a null and a
+   * caller could not tell a vendor's bad minute from "not a stock".
+   */
+  stockOf(assetId: string): Promise<StockLookup>
 }
+
+/**
+ * What the stock side says about one asset id.
+ *
+ * `none` is an answer: the registry has heard the question and this is not
+ * a stock it knows, so whoever answers for plain tokens may. `unknown` is
+ * not: the registry could not say, and nobody else may name the asset in
+ * its place, or a stock would be named by a source that calls it "N4B".
+ */
+export type StockLookup =
+  | { kind: 'stock'; info: StockInfo }
+  | { kind: 'none' }
+  | { kind: 'unknown' }

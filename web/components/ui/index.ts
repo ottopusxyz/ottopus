@@ -9,6 +9,7 @@ export { NOTHING_SIGNED } from './copy'
 export { EmptyState, type EmptyStateProps } from './empty-state'
 export { ErrorState, type ErrorStateProps } from './error-state'
 export { Input, type InputProps } from './input'
+export { IssuerMark, type IssuerMarkProps } from './issuer-mark'
 export {
   PLAN_STATUSES,
   PLAN_STATUS_LABELS,

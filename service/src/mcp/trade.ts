@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import { RouteError, type RouteConnector, type RouteQuote } from '../connectors/route/index.js'
-import type { StockInfo, StockRegistry, TokenRegistry } from '../connectors/tokens/index.js'
+import type { StockInfo, StockLookup, StockRegistry, TokenRegistry } from '../connectors/tokens/index.js'
 import {
   type PlanDraft,
   type TradeIntent,
@@ -129,13 +129,22 @@ interface AssetWords {
 /**
  * What to call an asset, and what it is worth.
  *
- * The portfolio first, because it is what the person actually holds and it
- * is priced. Then the token registry, which is the only source for the side
- * of a trade they do not have yet — and getting that wrong is not cosmetic:
- * the summary is hashed, so a swap into an unheld token was permanently
+ * The stock side first, by address, because the words go into a summary
+ * that is hashed and approved, and the portfolio provider calls the NVIDIA
+ * bStock "N4B". Then the portfolio, because it is what the person actually
+ * holds and it is priced. Then the token registry, which is the only source
+ * for the side of a trade they do not have yet — and getting that wrong is
+ * not cosmetic either: a swap into an unheld token was once permanently
  * recorded as "9,500,037,168,996,562,157 units of 0x4ed4…efed" rather than
- * "9.5 DEGEN". The last resort stays, and now means nobody at all knows this
+ * "9.5 DEGEN". The last resort stays, and means nobody at all knows this
  * token.
+ *
+ * A stock side that could not answer is not "not a stock". Nobody else gets
+ * to name the asset in its place: the summary carries the address, the
+ * miss goes on the log, and the decimals and price come from the portfolio
+ * when it holds the asset, since those are facts about the contract and not
+ * a name. The cost is a summary that reads "0.0002 units of 0x02fc…7436"
+ * through an outage, rather than one that reads "0.0002 N4B" for good.
  */
 function wordsOf(info: Pick<StockInfo, 'symbol' | 'decimals' | 'priceUsd'>): AssetWords {
   return { symbol: info.symbol, decimals: info.decimals, priceUsd: info.priceUsd }
@@ -145,11 +154,22 @@ export async function wordsFor(
   assetId: string,
   portfolio: Portfolio | null,
   tokens: TokenRegistry | null,
+  stock: StockLookup = { kind: 'none' },
 ): Promise<AssetWords> {
+  if (stock.kind === 'stock') return wordsOf(stock.info)
   const held = portfolio?.assets.find((a) => a.assetId.toLowerCase() === assetId.toLowerCase())
+  if (stock.kind === 'unknown') {
+    console.error(`[mcp] the stock registry could not say whether ${assetId} is a stock; the plan names it by address`)
+    return { ...lastWords(assetId), decimals: held?.asset.decimals ?? 0, priceUsd: held?.price ?? null }
+  }
   if (held) return { symbol: held.asset.symbol, decimals: held.asset.decimals, priceUsd: held.price }
   const known = await tokens?.byAssetId(assetId)
   if (known) return { symbol: known.symbol, decimals: known.decimals, priceUsd: known.priceUsd }
+  return lastWords(assetId)
+}
+
+/** The words when no source names an asset: the chain's currency by its table, anything else by its address. */
+function lastWords(assetId: string): AssetWords {
   const parsed = parseAssetId(assetId)
   if (isNativeAsset(assetId)) {
     const info = findChain({ namespace: parsed.namespace, reference: parsed.reference })
@@ -283,23 +303,23 @@ export async function prepareTrade(
   const portfolio = await deps.readPortfolio(
     arms.map((arm) => ({ walletId: arm.id, namespace: arm.namespace, address: arm.address })),
   )
-  // Both sides in one round trip: the registry caches, and the receiving
-  // side is the one the portfolio cannot answer. The stock facts ride along:
-  // whether either side is a stock, and if so whether its market is open and
-  // what it trades at, read before the plan is built so the rules can refuse it.
-  const [fromLooked, toLooked, fromStock, toStock] = await Promise.all([
-    wordsFor(intent.from, portfolio, deps.tokens),
-    wordsFor(intent.to, portfolio, deps.tokens),
-    deps.stocks?.byAssetId(intent.from) ?? null,
-    deps.stocks?.byAssetId(intent.to) ?? null,
+  // The stock side first, for both sides at once: whether either is a stock,
+  // and if so whether its market is open and what it trades at, read before
+  // the plan is built so the rules can refuse it. Then the words, which
+  // defer to that answer: a stock is named by the registry that knows it by
+  // address, never by what the portfolio provider calls the same token.
+  const none: StockLookup = { kind: 'none' }
+  const [fromStock, toStock] = await Promise.all([
+    deps.stocks?.stockOf(intent.from) ?? none,
+    deps.stocks?.stockOf(intent.to) ?? none,
   ])
-  // A stock is named by the stock registry, which knows it by address: the
-  // portfolio provider may call the same token something else, or nothing.
-  const fromWords = fromStock ? wordsOf(fromStock) : fromLooked
-  const toWords = toStock ? wordsOf(toStock) : toLooked
+  const [fromWords, toWords] = await Promise.all([
+    wordsFor(intent.from, portfolio, deps.tokens, fromStock),
+    wordsFor(intent.to, portfolio, deps.tokens, toStock),
+  ])
   const stocks: StockSide[] = [
-    ...(fromStock ? [{ role: 'from' as const, info: fromStock }] : []),
-    ...(toStock ? [{ role: 'to' as const, info: toStock }] : []),
+    ...(fromStock.kind === 'stock' ? [{ role: 'from' as const, info: fromStock.info }] : []),
+    ...(toStock.kind === 'stock' ? [{ role: 'to' as const, info: toStock.info }] : []),
   ]
   const native = isNativeAsset(intent.from)
   const chosen = resolveTradeWallet({

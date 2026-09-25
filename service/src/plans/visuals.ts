@@ -13,10 +13,23 @@ import type { PlanSummary } from './store.js'
  * hash should bind, and a missing one must never make a plan unreadable.
  */
 export interface Visuals {
-  /** `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. */
-  assets: Record<string, { symbol: string; name: string; iconUrl: string | null; priceUsd: number | null }>
+  assets: Record<string, AssetVisual>
   chains: Record<string, ChainVisual>
   wallets: Record<string, { walletType: string; label: string | null }>
+}
+
+/** An asset's words and icon. `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. */
+export interface AssetVisual {
+  symbol: string
+  name: string
+  iconUrl: string | null
+  priceUsd: number | null
+  /**
+   * Present when the asset is a tokenized stock the registry knows by
+   * address, so the page can put the issuer's mark beside the symbol.
+   * `issuer` in the registry's vocabulary: `bstock`, `ondo`, `xstocks`.
+   */
+  stock?: { issuer: string; ticker: string }
 }
 
 /**
@@ -87,11 +100,27 @@ export async function visualsFor(
     assetIdsOf(plan).map(async (id) => {
       const row = portfolio?.assets.find((a) => a.assetId.toLowerCase() === id.toLowerCase())
       if (row) {
-        visuals.assets[id] = { symbol: row.asset.symbol, name: row.asset.name, iconUrl: row.asset.iconUrl, priceUsd: row.price }
+        visuals.assets[id] = {
+          symbol: row.asset.symbol,
+          name: row.asset.name,
+          iconUrl: row.asset.iconUrl,
+          priceUsd: row.price,
+          // The portfolio's rows already carry the stock registry's words
+          // and its mark for every address it knows.
+          ...(row.asset.stock ? { stock: row.asset.stock } : {}),
+        }
         return
       }
       const known = await tokens?.byAssetId(id)
-      if (known) visuals.assets[id] = { symbol: known.symbol, name: known.name, iconUrl: known.iconUrl, priceUsd: known.priceUsd }
+      if (known) {
+        visuals.assets[id] = {
+          symbol: known.symbol,
+          name: known.name,
+          iconUrl: known.iconUrl,
+          priceUsd: known.priceUsd,
+          ...(known.stock ? { stock: { issuer: known.stock.platformId, ticker: known.stock.ticker } } : {}),
+        }
+      }
     }),
   )
 

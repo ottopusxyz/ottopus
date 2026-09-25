@@ -214,6 +214,22 @@ describe('the RWA registry', () => {
     expect(await registry.byAssetId(`${BSC}/slip44:60`)).toBeNull()
   })
 
+  /** The three answers a caller has to tell apart, and the one request behind them. */
+  it('tells a stock, a plain token and an unanswerable list apart by address', async () => {
+    const { registry, seen } = bsc()
+    expect(await registry.stockOf(`${BSC}/erc20:${NVDAB}`)).toMatchObject({ kind: 'stock', info: { symbol: 'NVDAB' } })
+    expect(await registry.stockOf(`${BSC}/erc20:0x000000000000000000000000000000000000dead`)).toEqual({ kind: 'none' })
+    // Not an ERC-20, not a chain the vendor numbers, not an asset id: none, and no request for any of them.
+    expect(await registry.stockOf(`${BSC}/slip44:60`)).toEqual({ kind: 'none' })
+    expect(await registry.stockOf('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/token:So11111111111111111111111111111111111111112')).toEqual({ kind: 'none' })
+    expect(await registry.stockOf('not-an-asset')).toEqual({ kind: 'none' })
+    expect(seen).toEqual([tokens('56')])
+
+    const down = vendor({ [tokens('56')]: outage })
+    expect(await down.registry.stockOf(`${BSC}/erc20:${NVDAB}`)).toEqual({ kind: 'unknown' })
+    expect(await down.registry.byAssetId(`${BSC}/erc20:${NVDAB}`)).toBeNull()
+  })
+
   it('finds one token for an exact symbol or an address, and none for a bare ticker', async () => {
     const { registry } = bsc()
     expect(await registry.find(BSC, 'NVDAB')).toMatchObject({ assetId: `${BSC}/erc20:${NVDAB}` })

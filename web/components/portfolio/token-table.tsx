@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Dialog } from '@/components/ui'
+import { Button, Dialog, IssuerMark } from '@/components/ui'
 import type { Arm, Portfolio, AssetRow } from '@/lib/api'
 import { formatAmount, formatMoneyFlat, formatShare } from '@/lib/format'
 import { AssetIcon } from './asset-icon'
@@ -98,6 +98,7 @@ export function TokenTable({ rows, chains, currency = 'usd', wallets = [] }: Tok
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span title={token.asset.name} className="truncate text-[13px] font-semibold sm:text-[14px]">{symbol}</span>
+                  {token.asset.stock ? <IssuerMark issuer={token.asset.stock.issuer} ticker={token.asset.stock.ticker} /> : null}
                   {!token.asset.verified ? (
                     <span onClick={stop} className="contents">
                     <DetailPopover label="Unverified token" className="shrink-0 text-[var(--ot-text-3)] hover:text-[var(--ot-warn-text)]"

@@ -1,9 +1,9 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { encodeFunctionData, maxUint256 } from 'viem'
 import type { Portfolio } from '../connectors/portfolio/index.js'
-import type { StockInfo } from '../connectors/tokens/index.js'
+import type { StockInfo, StockLookup } from '../connectors/tokens/index.js'
 import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
 import { PlanError } from '../plans/index.js'
 import { planFor } from '../plans/fixtures.js'
@@ -1213,9 +1213,9 @@ describe('prepare_trade', () => {
       return {
         asked,
         name: 'fake-stocks',
-        async byAssetId(assetId: string) {
+        async stockOf(assetId: string): Promise<StockLookup> {
           asked.push(assetId)
-          return info && assetId === info.assetId ? info : null
+          return info && assetId === info.assetId ? { kind: 'stock', info } : { kind: 'none' }
         },
         async variants() {
           return info ? [info] : []
@@ -1260,6 +1260,101 @@ describe('prepare_trade', () => {
       expect(res.content[0]!.text).toContain(`The market status of NVDAB was last read at ${tenMinutesAgo}, about 10 minutes ago`)
       expect(res.content[0]!.text).not.toContain('Review and sign')
       expect(sink.created[0]!.plan.status).toBe('blocked')
+    })
+
+    /** The portfolio provider's name for the same contract, which is what the summary used to say. */
+    const holdingN4B: Portfolio = {
+      ...holdings,
+      assets: [
+        ...holdings.assets,
+        {
+          assetId: STOCK,
+          chainId: BASE,
+          asset: { symbol: 'N4B', name: 'N4B', decimals: 18, iconUrl: null, verified: false },
+          amount: '1000000000000000000',
+          value: 224,
+          price: 224,
+          change1d: 0,
+          share: 0,
+          holdings: [{ walletId: 'w1', amount: '1000000000000000000', value: 224 }],
+        },
+      ],
+    }
+    /** A general registry that also calls it N4B, and remembers whether it was asked. */
+    const general = () => {
+      const asked: string[] = []
+      return {
+        asked,
+        name: 'fake-general',
+        async byAssetId(assetId: string) {
+          asked.push(assetId)
+          return assetId === STOCK ? { assetId, symbol: 'N4B', name: 'N4B', decimals: 18, iconUrl: null, priceUsd: 224, verified: false } : null
+        },
+        async find() {
+          return null
+        },
+      }
+    }
+
+    /** The summary is hashed and approved, so the name on it is the stock registry's, by address. */
+    it('names the stock by the registry’s word, not the portfolio provider’s', async () => {
+      const sink = planSink()
+      const tokens = general()
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdingN4B,
+        router: stubRouter({ expectedOut: '2200000000000000000', minOut: '2189000000000000000' }),
+        createPlan: sink.createPlan,
+        stocks: stocksOf(nvdab()),
+        tokens,
+      }, { grantId: 'grant-1' })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError, res.content[0]?.text).toBeFalsy()
+      expect(res.content[0]!.text).toContain('Swap 500 USDC for about 2.2 NVDAB from Main on Base')
+      expect(res.content[0]!.text).not.toContain('N4B')
+      expect(sink.created[0]!.plan.humanPlan.assets).toContainEqual({ id: STOCK, symbol: 'NVDAB', decimals: 18 })
+      expect(tokens.asked).toEqual([])
+    })
+
+    /**
+     * A stock side that could not answer is not "not a stock". Nobody else
+     * names the asset in its place: not the portfolio provider that holds
+     * it as N4B, not the general registry. The address goes on the summary
+     * and the miss goes on the log.
+     */
+    it('names an asset the stock registry could not answer by its address, and logs the miss', async () => {
+      const sink = planSink()
+      const tokens = general()
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const down = {
+        name: 'down-stocks',
+        async stockOf(assetId: string): Promise<StockLookup> {
+          return assetId === STOCK ? { kind: 'unknown' } : { kind: 'none' }
+        },
+        async variants() {
+          return null
+        },
+      }
+      try {
+        const { client } = await connected(undefined, {
+          readPortfolio: async () => holdingN4B,
+          router: stubRouter({ expectedOut: '2200000000000000000', minOut: '2189000000000000000' }),
+          createPlan: sink.createPlan,
+          stocks: down,
+          tokens,
+        }, { grantId: 'grant-1' })
+        const res = (await send(client, { to: STOCK })) as Result
+        expect(res.isError, res.content[0]?.text).toBeFalsy()
+        // The portfolio's decimals, which are a fact about the contract; not its name.
+        expect(res.content[0]!.text).toContain('Swap 500 USDC for about 2.2 units of 0x02fc…7436 from Main on Base')
+        expect(res.content[0]!.text).not.toContain('N4B')
+        expect(sink.created[0]!.plan.humanPlan.stocks).toBeUndefined()
+        expect(tokens.asked).toEqual([])
+        expect(logged.mock.calls.map((call) => String(call[0]))).toEqual([
+          `[mcp] the stock registry could not say whether ${STOCK} is a stock; the plan names it by address`,
+        ])
+      } finally {
+        logged.mockRestore()
+      }
     })
 
     it('puts the prices on the plan and says when the on-chain price runs ahead', async () => {
@@ -1441,8 +1536,8 @@ describe('find_asset', () => {
     })
     const stocks = {
       name: 'fake-stocks',
-      async byAssetId() {
-        return null
+      async stockOf(): Promise<StockLookup> {
+        return { kind: 'none' }
       },
       async variants(_chain: string, query: string) {
         return query === 'NVDA'
@@ -1470,8 +1565,8 @@ describe('find_asset', () => {
   it('says a symbol could not be looked up, not that it does not exist, when the stock data is down', async () => {
     const down = {
       name: 'down-stocks',
-      async byAssetId() {
-        return null
+      async stockOf(): Promise<StockLookup> {
+        return { kind: 'unknown' }
       },
       async variants() {
         return null
