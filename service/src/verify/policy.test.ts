@@ -5,7 +5,7 @@ import type { AssetDelta, Call, DecodedAction, Intent, Simulation } from '../cor
 import { KNOWN_ABI } from './abi.js'
 import { decodeCalls } from './decode.js'
 import type { Lookups } from './lookups.js'
-import { STOCK_FACTS_MAX_AGE_MS, type StockSide, blockWarnings, stockPremium, verifyPlan } from './policy.js'
+import { STOCK_FACTS_MAX_AGE_MS, type StockSide, blockWarnings, stockHalted, stockPremium, verifyPlan } from './policy.js'
 
 /**
  * Decoding is real (with lookups answered from memory), so a rule is tested
@@ -921,15 +921,54 @@ describe('a tokenized stock on one side', () => {
     )
   })
 
-  it('blocks a closed market too, in the vendor’s words, and without a next open when none is given', async () => {
+  /**
+   * The token trades on-chain around the clock; that is the point of it. A
+   * closed market only costs the person a live reference, so it warns, in
+   * the vendor's words and with the next open when one is given.
+   */
+  it('warns on a closed market and still passes the plan', async () => {
     const closed = nvdab({ open: false, reason: 'MARKET_CLOSED', marketStatus: 'closed' })
     const verdict = await judge(sell, sellCalls, [{ role: 'from', info: closed }])
-    expect(verdict.ok === false && verdict.reasons).toContain('NVDAB is not trading right now (market closed).')
+    expect(verdict.ok, JSON.stringify(!verdict.ok && verdict.reasons)).toBe(true)
+    expect(stockWarnings(verdict)).toMatchObject([
+      {
+        severity: 'caution',
+        code: 'stock_market_closed',
+        message:
+          'The market for NVDAB is closed (market closed). The token still trades on-chain, but the reference price of ' +
+          '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens.',
+        saferAlternative: 'Wait for the market to reopen if you want a live reference price behind the trade.',
+      },
+    ])
   })
 
-  it('names the session when the vendor gives no reason code', async () => {
-    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({ open: false, reason: null, marketStatus: 'weekend' }) }])
-    expect(verdict.ok === false && verdict.reasons).toContain('NVDAB is not trading right now (market weekend).')
+  it('names the session and the next open when the vendor gives them, and reads a session pause as a close', async () => {
+    const weekend = nvdab({ open: false, reason: null, marketStatus: 'weekend', nextOpenAt: '2026-09-28T13:30:00.000Z' })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: weekend }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict)[0]?.message).toBe(
+      'The market for NVDAB is closed (market weekend). The token still trades on-chain, but the reference price of ' +
+        '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens at 2026-09-28T13:30:00.000Z.',
+    )
+    const paused = nvdab({ open: false, reason: 'MARKET_PAUSED', marketStatus: 'paused' })
+    expect(stockHalted(paused)).toBe(false)
+    expect(stockHalted(nvdab({ open: false, reason: 'TRADING_HALT' }))).toBe(true)
+    expect(stockHalted(nvdab({ open: true, reason: 'TRADING_HALT' }))).toBe(false)
+    const pausedVerdict = await judge(buy, buyCalls, [{ role: 'to', info: paused }])
+    expect(pausedVerdict.ok).toBe(true)
+    expect(stockWarnings(pausedVerdict)[0]?.message).toContain('The market for NVDAB is closed (market paused).')
+  })
+
+  /** Over a weekend the drift from the last close is exactly what the person wants named, so the premium check runs on a closed market. */
+  it('still measures the premium against the last session on a closed market', async () => {
+    const drifted = nvdab({ open: false, reason: 'MARKET_CLOSED' }, { priceUsd: 224.13 * 1.03 })
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: drifted }])
+    expect(verdict.ok).toBe(true)
+    expect(stockWarnings(verdict).map((w) => w.code)).toEqual(['stock_market_closed', 'stock_premium'])
+    const unpriced = nvdab({ open: false, reason: 'MARKET_CLOSED' }, { reference: null })
+    expect(stockWarnings(await judge(buy, buyCalls, [{ role: 'to', info: unpriced }]))[0]?.message).toBe(
+      'The market for NVDAB is closed (market closed). The token still trades on-chain, but there is no reference price to check it against until the market reopens.',
+    )
   })
 
   /**

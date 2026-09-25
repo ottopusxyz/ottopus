@@ -667,11 +667,15 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
  * and closes, and a price it is meant to track.
  *
  * A market that is not open is a block, whatever the vendor's reason. The
- * reason is kept in the vendor's words so a halt reads as a halt and a
- * scheduled close reads as a close, and the next open is named when the
- * vendor gives one. Whether a scheduled close should block or only warn
- * stays open until the vendor's weekend answer has been read; until then
- * both block, as the plan says.
+ * reason is kept in the vendor's words, and it decides how hard the rule
+ * pushes back. A halt or suspension blocks: that stock is not trading
+ * anywhere, and a review link would promise a check that cannot be made. A
+ * scheduled close (weekend, overnight break, session transition) only warns,
+ * with the next open named: the token trades on-chain around the clock, and
+ * that is the point of it. What the person loses on a closed market is a live
+ * reference price, so the warning says so, and the premium check still runs
+ * against the last session's reference so the drift is named beside it.
+ * Decided 2026-09-25, in the plan's ledger.
  *
  * The premium is measured against par, not the bare reference: a token
  * stands for `tokenToShareRatio` shares, which drifts above one as dividends
@@ -694,7 +698,17 @@ const stockRules: Rule = ({ stocks = [], now = new Date() }) => {
   for (const { role, info } of stocks) {
     const stale = stockFactsStale(info, now)
     if (stale) findings.push({ block: stockStaleReason(info, now) })
-    else if (!info.stock.status.open) findings.push({ block: stockStatusReason(info) })
+    else if (stockHalted(info)) findings.push({ block: stockStatusReason(info) })
+    else if (!info.stock.status.open) {
+      findings.push({
+        warn: {
+          severity: 'caution',
+          code: 'stock_market_closed',
+          message: stockClosedNote(info),
+          saferAlternative: 'Wait for the market to reopen if you want a live reference price behind the trade.',
+        },
+      })
+    }
 
     const premium = stale ? null : stockPremium(info)
     if (premium !== null && info.stock.referencePriceUsd !== null) {
@@ -769,24 +783,46 @@ export function stockStaleReason(info: StockInfo, now: Date): string {
 }
 
 /**
- * Why a stock is not trading, as a sentence: "NVDAB is not trading right now
+ * Whether the vendor's reason for `open: false` reads as a halt rather than
+ * a closed session. The vendor names halts (`TRADING_HALT`,
+ * `CORPORATE_ACTION`) and session breaks (`MARKET_PAUSED`, `MARKET_CLOSED`)
+ * in its reason code; a close with no code at all is a close, because a halt
+ * is the thing worth a name.
+ */
+export function stockHalted(info: StockInfo): boolean {
+  const { open, reason } = info.stock.status
+  return !open && /halt|suspend|corporate/i.test(reason ?? '')
+}
+
+/** The vendor's reason or session word, as plain words: "halted: corporate action", "market paused". */
+function stockStatusWords(info: StockInfo): string {
+  const { reason, marketStatus } = info.stock.status
+  const plain = reason?.replace(/_/g, ' ').toLowerCase()
+  if (!plain) return marketStatus ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}` : 'the market is not open'
+  return stockHalted(info) ? `halted: ${plain}` : plain
+}
+
+/**
+ * Why a halted stock blocks, as a sentence: "NVDAB is not trading right now
  * (halted: corporate action). Next open 2026-09-28T13:30:00.000Z."
- *
- * The vendor's reason code is kept in its own words; one that reads as a
- * halt is called one, so a halt and a scheduled close read differently even
- * though both block today.
  */
 export function stockStatusReason(info: StockInfo): string {
-  const { reason, marketStatus, nextOpenAt } = info.stock.status
-  const plain = reason?.replace(/_/g, ' ').toLowerCase()
-  const why = !plain
-    ? marketStatus
-      ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}`
-      : 'the market is not open'
-    : /halt|suspend|corporate/i.test(plain)
-      ? `halted: ${plain}`
-      : plain
-  return `${info.symbol} is not trading right now (${why}).${nextOpenAt ? ` Next open ${nextOpenAt}.` : ''}`
+  const { nextOpenAt } = info.stock.status
+  return `${info.symbol} is not trading right now (${stockStatusWords(info)}).${nextOpenAt ? ` Next open ${nextOpenAt}.` : ''}`
+}
+
+/**
+ * What a closed market means for the trade, as a sentence: "The market for
+ * NVDAB is closed (market paused). The token still trades on-chain, but the
+ * reference price of $224.13 is from the last session, so the on-chain price
+ * can drift from it until the market reopens at 2026-09-28T13:30:00.000Z."
+ */
+export function stockClosedNote(info: StockInfo): string {
+  const { referencePriceUsd: reference, status } = info.stock
+  const anchor = reference === null ? 'there is no reference price to check it against' : `the reference price of ${money.format(reference)} is from the last session`
+  const drift = reference === null ? '' : ', so the on-chain price can drift from it'
+  const reopen = status.nextOpenAt ? ` until the market reopens at ${status.nextOpenAt}` : ' until the market reopens'
+  return `The market for ${info.symbol} is closed (${stockStatusWords(info)}). The token still trades on-chain, but ${anchor}${drift}${reopen}.`
 }
 
 /**

@@ -9,6 +9,8 @@ export {
   type Verdict,
   type VerifyInput,
   blockWarnings,
+  stockClosedNote,
+  stockHalted,
   stockPremium,
   stockStatusReason,
   verifyPlan,

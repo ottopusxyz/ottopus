@@ -23,7 +23,7 @@ import {
   swapIntentSchema,
 } from '../core/index.js'
 import { assemblePlan } from '../core/index.js'
-import { type StockSide, blockWarnings, decodeCalls, stockStatusReason, verifyPlan } from '../verify/index.js'
+import { type StockSide, blockWarnings, decodeCalls, stockClosedNote, stockHalted, stockStatusReason, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
@@ -299,10 +299,13 @@ export async function prepareTrade(
     })
   } catch (err) {
     if (err instanceof RouteError) {
-      // A stock that is not trading is often why a router has nothing to
-      // offer. Said beside the router's own words, so the agent does not retry.
-      const halted = stocks.filter((s) => !s.info.stock.status.open).map((s) => stockStatusReason(s.info))
-      return { kind: 'no_route', reasons: [err.message, ...halted] }
+      // A stock whose market is halted or closed is often why a router has
+      // nothing to offer. Said beside the router's own words, so the agent
+      // does not just retry.
+      const market = stocks
+        .filter((s) => !s.info.stock.status.open)
+        .map((s) => (stockHalted(s.info) ? stockStatusReason(s.info) : stockClosedNote(s.info)))
+      return { kind: 'no_route', reasons: [err.message, ...market] }
     }
     throw err
   }
@@ -421,9 +424,8 @@ export function stockStep(info: StockInfo): string {
   const onChain = info.priceUsd === null ? 'on-chain price unavailable' : `on-chain ${usd(info.priceUsd)}`
   // A ratio of exactly one is the norm and says nothing; a drifted one changes what par is.
   const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
-  const market = stock.status.open
-    ? `market open${stock.status.marketStatus ? ` (${stock.status.marketStatus.replace(/_/g, ' ').toLowerCase()})` : ''}`
-    : 'not trading'
+  const session = stock.status.marketStatus ? ` (${stock.status.marketStatus.replace(/_/g, ' ').toLowerCase()})` : ''
+  const market = stock.status.open ? `market open${session}` : stockHalted(info) ? 'halted' : `market closed${session}`
   return `${info.symbol}: ${reference}, ${onChain} (${stock.platformId})${ratio}; ${market}`
 }
 

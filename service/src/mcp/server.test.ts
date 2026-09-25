@@ -1280,6 +1280,29 @@ describe('prepare_trade', () => {
       expect(sink.created[0]!.plan.status).toBe('awaiting_review')
     })
 
+    it('issues a link on a closed market, with the drift from the last session named beside it', async () => {
+      const sink = planSink()
+      const closed = nvdab({ open: false, reason: 'MARKET_CLOSED', marketStatus: 'weekend', nextOpenAt: '2026-09-28T13:30:00.000Z' }, 224.13 * 1.03)
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter(),
+        createPlan: sink.createPlan,
+        stocks: stocksOf(closed),
+      }, { grantId: 'grant-1' })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError, res.content[0]?.text).toBeFalsy()
+      expect(res.content[0]!.text).toContain(
+        'Heads up: The market for NVDAB is closed (market closed). The token still trades on-chain, but the reference price of ' +
+          '$224.13 is from the last session, so the on-chain price can drift from it until the market reopens at 2026-09-28T13:30:00.000Z.',
+      )
+      expect(res.content[0]!.text).toContain('Heads up: On-chain price of NVDAB is 3.0% above the reference price of $224.13.')
+      expect(res.content[0]!.text).toContain('Review and sign')
+      expect(sink.created[0]!.plan.humanPlan.steps).toContain(
+        'NVDAB: reference price $224.13, on-chain $230.85 (bstock); market closed (weekend)',
+      )
+      expect(sink.created[0]!.plan.status).toBe('awaiting_review')
+    })
+
     it('adds the halt to a router’s refusal, so the agent does not just retry', async () => {
       const { client } = await connected(undefined, {
         readPortfolio: async () => holdings,
