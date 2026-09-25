@@ -377,10 +377,34 @@ export async function listPending(db: PlanDb, userId: string): Promise<PlanRecor
   for (const row of rows) {
     const event = byVersion.get(`${row.id}:${row.version}`)
     if (!event) throw new PlanIntegrityError(`plan ${row.id} v${row.version} has no events`)
-    const record = toRecord(row, event, now)
-    if (isPending(record.plan.status)) records.push(record)
+    const record = readable(row, event, now)
+    if (record && isPending(record.plan.status)) records.push(record)
   }
   return records
+}
+
+/**
+ * A row this build cannot read: a shape it does not know, or a hash that no
+ * longer matches its contents. That is one plan, and a list is everyone
+ * else's too, so it is skipped and logged rather than thrown; one such row
+ * must not take the requests page and the badge down with it. The review
+ * link and the single-plan reads still refuse it.
+ */
+function readable(row: PlanRow, event: EventRow, now: Date): PlanRecord | null {
+  try {
+    return toRecord(row, event, now)
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        msg: 'unreadable plan skipped',
+        planId: row.id,
+        version: row.version,
+        err: err instanceof Error ? err.message.split('\n')[0] : String(err),
+      }),
+    )
+    return null
+  }
 }
 
 /** How much history one list carries. Activity paging is #26's problem. */
@@ -426,7 +450,8 @@ export async function listPlans(db: PlanDb, userId: string): Promise<PlanRecord[
   for (const row of chosen) {
     const event = byVersion.get(`${row.id}:${row.version}`)
     if (!event) throw new PlanIntegrityError(`plan ${row.id} v${row.version} has no events`)
-    records.push(toRecord(row, event, now))
+    const record = readable(row, event, now)
+    if (record) records.push(record)
   }
   return records.sort(byAttentionThenNewest)
 }

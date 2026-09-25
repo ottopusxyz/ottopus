@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
@@ -327,6 +327,38 @@ describe('listPlans', () => {
       blockedReason: null,
     })
     expect(JSON.stringify(summary)).not.toContain('"calls"')
+  })
+
+  it('skips a row this build cannot read, and lists the rest', async () => {
+    const good = planFor(alice)
+    await createPlan(db, { plan: good })
+    // A payload in a shape this build does not know, as a newer or older build
+    // would leave it. Written straight to the table: createPlan never would.
+    const stale = planFor(alice)
+    const { status: _status, ...payload } = stale
+    await db.insert(schema.plans).values({
+      id: stale.id,
+      version: 1,
+      planHash: stale.planHash,
+      userId: alice,
+      walletId: null,
+      grantId: null,
+      intent: stale.intent,
+      payload: { ...payload, humanPlan: { ...payload.humanPlan, stocks: [{ symbol: 'NVDAB' }] } },
+      reason: stale.resolution.reason,
+      expiresAt: new Date(stale.expiresAt),
+    })
+    await db.insert(schema.planEvents).values({ planId: stale.id, planVersion: 1, status: 'awaiting_review' })
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect((await listPlans(db, alice)).map((r) => r.plan.id)).toEqual([good.id])
+      expect((await listPending(db, alice)).map((r) => r.plan.id)).toEqual([good.id])
+      expect(error).toHaveBeenCalled()
+      expect(String(error.mock.calls[0]?.[0])).toContain(stale.id)
+    } finally {
+      error.mockRestore()
+    }
   })
 
   it('names what a trade pays and what it buys, so a row is not blank for a swap', async () => {
