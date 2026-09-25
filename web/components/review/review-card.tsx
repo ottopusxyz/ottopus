@@ -20,7 +20,9 @@ import {
   headsUp,
   keyFacts,
   recipientOf,
+  stockPanels,
 } from './model'
+import { StockPanel } from './stock-panel'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -77,6 +79,7 @@ export function ReviewCard({
   const source = changeSource(plan, liveRun)
   const recipient = recipientOf(plan)
   const rows = keyFacts(plan)
+  const stocks = stockPanels(plan)
   const alerts = headsUp(plan)
   const verdict = executability(plan, liveRun)
   const usd = (amount: string, assetId: string) => approxUsd(amount, visuals.assets[assetId]?.priceUsd)
@@ -214,18 +217,19 @@ export function ReviewCard({
           >
             <span className="text-[13.5px] text-[var(--ot-text-2)]">{fact.label}</span>
             <span className="flex min-w-0 flex-col items-end gap-px text-right">
-              {fact.tone ? (
-                <Badge tone={fact.tone}>{fact.value}</Badge>
-              ) : (
-                <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>
-                  {fact.value}
-                </span>
-              )}
+              <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>
+                {fact.value}
+              </span>
               {fact.detail ? <span className="text-[11.5px] text-[var(--ot-text-3)]">{fact.detail}</span> : null}
             </span>
           </div>
         ))}
       </div>
+
+      {/* What the person pays or receives against the share price, when a side is a stock. */}
+      {stocks.map((stock) => (
+        <StockPanel key={stock.symbol} stock={stock} />
+      ))}
 
       {/*
         The card says how much there is to read and where; the reading is in

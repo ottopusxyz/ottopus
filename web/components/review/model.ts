@@ -311,8 +311,6 @@ export interface Fact {
   value: string
   detail?: string
   mono?: boolean
-  /** Set when the value is a state, not a figure: the card draws it as a chip in this tone. */
-  tone?: Tone
 }
 
 /**
@@ -514,33 +512,133 @@ export const MARKET_CHIP: Record<StockMarketState, { label: string; tone: Tone }
   halted: { label: 'Halted', tone: 'block' },
 }
 
-/**
- * One row per stock side: the market's state as a chip, and under it the
- * reference price the plan was judged against and when it was read. On a
- * closed market the reference is named as the last close, since that is
- * what it is. The as-of is the source's stamp in UTC, the same words the
- * plan carries, rather than a local time that would differ from them.
- */
-export function stockMarketFacts(plan: Plan): Fact[] {
-  return (plan.humanPlan.stocks ?? []).map((stock) => {
-    const chip = MARKET_CHIP[stock.market.state]
-    return { label: `${stock.symbol} market`, value: chip.label, tone: chip.tone, detail: referenceWords(stock) }
-  })
+/** How far this quote may sit from the reference before the panel colours it. Mirrors the service's rule. */
+export const STOCK_PREMIUM_THRESHOLD_BPS = 100
+
+/** How old a reference price may be before the panel says its age. */
+const STALE_REFERENCE_MS = 15 * 60_000
+
+/** The issuer's name as people write it. The mark itself comes with the registry's icons. */
+export const ISSUER_NAMES: Readonly<Record<string, string>> = {
+  bstock: 'bStock',
+  ondo: 'Ondo',
+  xstocks: 'xStocks',
 }
 
-function referenceWords(stock: PlanStock): string {
-  const { state, source } = stock.market
-  const price = stock.referencePriceUsd === null ? null : formatMoneyFlat(Number(stock.referencePriceUsd))
-  const anchor =
-    price === null ? 'no reference price' : state === 'closed' ? `last close ${price}` : state === 'halted' ? `last print ${price}` : `reference ${price}`
+/**
+ * The Stock panel for one side of the trade, read off the hashed section
+ * and nothing else: the plan was judged on these figures, and the page
+ * shows those rather than fetching newer ones that the hash does not cover.
+ */
+export interface StockPanelModel {
+  symbol: string
+  /** "Nvidia Corp · NVDA" */
+  title: string
+  issuer: string
+  side: 'buy' | 'sell'
+  market: { label: string; tone: Tone }
+  /** The share price the plan was judged against, named for what it is on a closed market. */
+  reference: { label: string; value: string; asOf: string } | null
+  /** What this quote comes to per share, or why it cannot say. */
+  effective: { label: string; value: string; detail: string } | { label: string; missing: string }
+  /** The gap between the two, coloured by the same threshold the service warns at. */
+  premium: { value: string; words: string; tone: Tone } | null
+  /** When regular hours change next, when the plan knows. */
+  next: string | null
+  /** Set when the reference is old enough that a person should know. */
+  stale: string | null
+}
+
+export function stockPanels(plan: Plan, now = Date.now()): StockPanelModel[] {
+  return (plan.humanPlan.stocks ?? []).map((stock) => stockPanel(stock, now))
+}
+
+function stockPanel(stock: PlanStock, now: number): StockPanelModel {
+  const side = stock.role === 'to' ? 'buy' : 'sell'
+  const { state } = stock.market
   const read = Date.parse(stock.asOf)
-  const asOf = Number.isFinite(read) ? ` · as of ${new Date(read).toISOString().slice(11, 16)} UTC` : ''
-  const by = source === 'calendar' && state !== 'regular' ? ' · session by the exchange calendar' : ''
-  return `${anchor}${asOf}${by}`
+  const asOf = Number.isFinite(read) ? `as of ${clockUtc(read)}` : 'as of a time the source did not give'
+  const reference =
+    stock.referencePriceUsd === null
+      ? null
+      : {
+          label: state === 'closed' ? 'Last close' : state === 'halted' ? 'Last print' : 'Reference price',
+          value: formatMoneyFlat(Number(stock.referencePriceUsd)),
+          asOf,
+        }
+  const effectiveLabel = side === 'buy' ? 'You pay per share' : 'You receive per share'
+  const effective =
+    stock.effective === null
+      ? { label: effectiveLabel, missing: 'This quote does not price the trade in dollars.' }
+      : {
+          label: effectiveLabel,
+          value: formatMoneyFlat(Number(stock.effective.priceUsd)),
+          detail: `${plainNumber(stock.effective.shares)} ${Number(stock.effective.shares) === 1 ? 'share' : 'shares'} for ${plainNumber(stock.effective.valueUsd)} ${stock.effective.counterSymbol}`,
+        }
+  const age = Number.isFinite(read) ? now - read : Number.POSITIVE_INFINITY
+  return {
+    symbol: stock.symbol,
+    title: `${stock.companyName} · ${stock.ticker}`,
+    issuer: ISSUER_NAMES[stock.issuer] ?? stock.issuer,
+    side,
+    market: MARKET_CHIP[state],
+    reference,
+    effective,
+    premium: premiumOf(stock.effective?.premiumBps ?? null, side),
+    next: nextSession(stock),
+    stale: !Number.isFinite(read)
+      ? 'The reference price carries no time, so its age is unknown.'
+      : age > STALE_REFERENCE_MS
+        ? `The reference price is ${Math.round(age / 60_000)} minutes old.`
+        : null,
+  }
+}
+
+/**
+ * "+1.4%, above the reference", coloured for the person: amber when the gap
+ * hurts them past the threshold, green when it helps them past it, plain
+ * within it. A premium hurts a buyer and helps a seller.
+ */
+function premiumOf(bps: number | null, side: 'buy' | 'sell'): StockPanelModel['premium'] {
+  if (bps === null) return null
+  if (bps === 0) return { value: '0.0%', words: 'at the reference', tone: 'neutral' }
+  const adverse = side === 'buy' ? bps : -bps
+  const pct = `${bps > 0 ? '+' : '−'}${(Math.abs(bps) / 100).toFixed(1)}%`
+  const tone: Tone = Math.abs(bps) <= STOCK_PREMIUM_THRESHOLD_BPS ? 'neutral' : adverse > 0 ? 'warn' : 'ok'
+  return { value: pct, words: bps > 0 ? 'above the reference' : 'below the reference', tone }
+}
+
+function nextSession(stock: PlanStock): string | null {
+  const { state, nextOpenAt, nextCloseAt } = stock.market
+  if (state === 'regular') return nextCloseAt ? `Regular hours close at ${whenUtc(nextCloseAt)}.` : null
+  if (state === 'halted') return nextOpenAt ? `Next open ${whenUtc(nextOpenAt)}.` : null
+  return nextOpenAt ? `Regular hours ${state === 'closed' ? 'resume' : 'open'} at ${whenUtc(nextOpenAt)}.` : null
+}
+
+/** "12:35 UTC": the source's stamp in UTC, the same words the plan carries, rather than a local time that would differ from them. */
+function clockUtc(ms: number): string {
+  return `${new Date(ms).toISOString().slice(11, 16)} UTC`
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Mon 28 Sep, 13:30 UTC", or the raw string when it does not parse. Spelled here, not by a locale that may say "Sept". */
+function whenUtc(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return iso
+  const d = new Date(ms)
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${clockUtc(ms)}`
+}
+
+/** A decimal string as people write it: "2.2", "500", "1,250". */
+function plainNumber(decimal: string): string {
+  const n = Number(decimal)
+  return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 4 }) : decimal
 }
 
 export function keyFacts(plan: Plan): Fact[] {
-  const rows: Fact[] = [...stockMarketFacts(plan)]
+  const rows: Fact[] = []
   if (plan.humanPlan.feesUsd && plan.humanPlan.feesUsd !== 'unknown') {
     rows.push({ label: 'Network fee', value: `$${plan.humanPlan.feesUsd}`, detail: 'estimated', mono: true })
   } else {

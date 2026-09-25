@@ -572,6 +572,15 @@ export interface PlanStock {
   onChainPriceUsd: string | null
   premiumBps: number | null
   asOf: string
+  /** What this quote comes to per share. Null when the other side had no price or the quote fixed what arrives. */
+  effective: {
+    counterSymbol: string
+    counterPriceUsd: string
+    shares: string
+    valueUsd: string
+    priceUsd: string
+    premiumBps: number | null
+  } | null
   market: {
     state: StockMarketState
     /** Who named the session: the data source, or the exchange calendar when it gave none. */

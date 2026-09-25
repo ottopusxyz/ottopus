@@ -20,6 +20,7 @@ import {
   simulationNote,
   standingApproval,
   verificationSummary,
+  stockPanels,
 } from './model'
 
 const BASE = 'eip155:8453'
@@ -132,13 +133,14 @@ describe('what the page says', () => {
   })
 
   /**
-   * A stock side puts its market's state on the card as a chip, ahead of the
-   * fee, with the reference price it was judged against underneath. The
-   * state decides the colour and the words for the reference.
+   * A stock side gets a panel: the share price the plan was judged against,
+   * what this quote comes to per share, and the gap between them coloured
+   * for the person. All of it read off the hashed section.
    */
-  describe('a stock side', () => {
+  describe('the stock panel', () => {
     const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
-    const stock = (market: Partial<PlanStock['market']>, referencePriceUsd: string | null = '224.13'): PlanStock => ({
+    const NOW = Date.parse('2026-09-25T12:40:00.000Z')
+    const stock = (over: Partial<PlanStock> = {}, market: Partial<PlanStock['market']> = {}): PlanStock => ({
       assetId: `eip155:56/erc20:${NVDAB}`,
       symbol: 'NVDAB',
       role: 'to',
@@ -146,58 +148,98 @@ describe('what the page says', () => {
       ticker: 'NVDA',
       companyName: 'Nvidia Corp',
       tokenToShareRatio: '1',
-      referencePriceUsd,
+      referencePriceUsd: '224.13',
       onChainPriceUsd: '225.1',
       premiumBps: 43,
       asOf: '2026-09-25T12:35:16.000Z',
-      market: { state: 'regular', source: 'vendor', session: 'regular', reason: 'TRADING', note: null, nextOpenAt: null, nextCloseAt: null, ...market },
+      effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: 140 },
+      ...over,
+      market: { state: 'regular', source: 'vendor', session: 'regular', reason: 'TRADING', note: null, nextOpenAt: null, nextCloseAt: '2026-09-25T20:00:00.000Z', ...market },
     })
-    const withStock = (...stocks: PlanStock[]): Plan => ({ ...plan, humanPlan: { ...plan.humanPlan, stocks } })
+    const panels = (...stocks: PlanStock[]) => stockPanels({ ...plan, humanPlan: { ...plan.humanPlan, stocks } }, NOW)
 
-    it('reads green in regular hours, with the reference and its as-of', () => {
-      const [row] = keyFacts(withStock(stock({})))
-      expect(row).toEqual({ label: 'NVDAB market', value: 'Market open', tone: 'ok', detail: 'reference $224.13 · as of 12:35 UTC' })
-      expect(keyFacts(withStock(stock({}))).map((f) => f.label)).toEqual(['NVDAB market', 'Network fee', 'Note'])
-    })
-
-    it('reads blue in an extended session, naming the calendar when it labelled the hour', () => {
-      expect(keyFacts(withStock(stock({ state: 'premarket', source: 'calendar', session: null })))[0]).toMatchObject({
-        value: 'Pre-market',
-        tone: 'plan',
-        detail: 'reference $224.13 · as of 12:35 UTC · session by the exchange calendar',
-      })
-      expect(keyFacts(withStock(stock({ state: 'afterhours' })))[0]).toMatchObject({ value: 'After-hours', tone: 'plan' })
-      expect(keyFacts(withStock(stock({ state: 'overnight', session: 'overnight' })))[0]).toMatchObject({
-        value: 'Overnight',
-        tone: 'plan',
-        detail: 'reference $224.13 · as of 12:35 UTC',
-      })
-    })
-
-    it('reads amber on a close, calling the reference the last close, and red on a halt', () => {
-      expect(keyFacts(withStock(stock({ state: 'closed', reason: 'MARKET_PAUSED', note: 'Paused for session transition' })))[0]).toEqual({
-        label: 'NVDAB market',
-        value: 'Market closed',
-        tone: 'warn',
-        detail: 'last close $224.13 · as of 12:35 UTC',
-      })
-      expect(keyFacts(withStock(stock({ state: 'halted', reason: 'TRADING_HALT' })))[0]).toMatchObject({
-        value: 'Halted',
-        tone: 'block',
-        detail: 'last print $224.13 · as of 12:35 UTC',
-      })
-    })
-
-    it('says so when there is no reference price, and draws one row per stock side', () => {
-      const rows = keyFacts(withStock(stock({}, null), { ...stock({ state: 'closed' }), symbol: 'NVDAon', role: 'from' }))
-      expect(rows.slice(0, 2).map((f) => [f.label, f.value, f.detail])).toEqual([
-        ['NVDAB market', 'Market open', 'no reference price · as of 12:35 UTC'],
-        ['NVDAon market', 'Market closed', 'last close $224.13 · as of 12:35 UTC'],
+    it('shows a buy at a premium in amber, with the reference and what was paid', () => {
+      expect(panels(stock())).toEqual([
+        {
+          symbol: 'NVDAB',
+          title: 'Nvidia Corp · NVDA',
+          issuer: 'bStock',
+          side: 'buy',
+          market: { label: 'Market open', tone: 'ok' },
+          reference: { label: 'Reference price', value: '$224.13', asOf: 'as of 12:35 UTC' },
+          effective: { label: 'You pay per share', value: '$227.27', detail: '2.2 shares for 500 USDC' },
+          premium: { value: '+1.4%', words: 'above the reference', tone: 'warn' },
+          next: 'Regular hours close at Fri 25 Sep, 20:00 UTC.',
+          stale: null,
+        },
       ])
     })
 
-    it('draws nothing for a plan without a stock side', () => {
-      expect(keyFacts(plan).some((f) => f.tone)).toBe(false)
+    it('shows a buy at a discount in green, and a small gap in neither', () => {
+      const cheap = stock({ effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.3', valueUsd: '500', priceUsd: '217.39130435', premiumBps: -301 } })
+      expect(panels(cheap)[0]).toMatchObject({
+        effective: { value: '$217.39', detail: '2.3 shares for 500 USDC' },
+        premium: { value: '−3.0%', words: 'below the reference', tone: 'ok' },
+      })
+      const near = stock({ effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '494', priceUsd: '224.54545454', premiumBps: 19 } })
+      expect(panels(near)[0]!.premium).toEqual({ value: '+0.2%', words: 'above the reference', tone: 'neutral' })
+    })
+
+    it('reads a sell the other way: what arrives per share, and under the reference hurts', () => {
+      const sell = stock({
+        role: 'from',
+        effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2', valueUsd: '440', priceUsd: '220', premiumBps: -184 },
+      })
+      expect(panels(sell)[0]).toMatchObject({
+        side: 'sell',
+        effective: { label: 'You receive per share', value: '$220.00', detail: '2 shares for 440 USDC' },
+        premium: { value: '−1.8%', words: 'below the reference', tone: 'warn' },
+      })
+      const well = stock({ role: 'from', effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2', valueUsd: '460', priceUsd: '230', premiumBps: 262 } })
+      expect(panels(well)[0]!.premium).toMatchObject({ value: '+2.6%', tone: 'ok' })
+    })
+
+    it('calls the reference the last close on a closed market, and names the reopening', () => {
+      const closed = stock({}, { state: 'closed', session: 'weekend', reason: 'MARKET_CLOSED', nextOpenAt: '2026-09-28T13:30:00.000Z', nextCloseAt: null })
+      expect(panels(closed)[0]).toMatchObject({
+        market: { label: 'Market closed', tone: 'warn' },
+        reference: { label: 'Last close', value: '$224.13' },
+        next: 'Regular hours resume at Mon 28 Sep, 13:30 UTC.',
+      })
+      const halted = stock({}, { state: 'halted', reason: 'TRADING_HALT', nextOpenAt: null, nextCloseAt: null })
+      expect(panels(halted)[0]).toMatchObject({ market: { tone: 'block' }, reference: { label: 'Last print' }, next: null })
+      const early = stock({}, { state: 'premarket', source: 'calendar', session: null, nextOpenAt: '2026-09-25T13:30:00.000Z' })
+      expect(panels(early)[0]).toMatchObject({ market: { label: 'Pre-market', tone: 'plan' }, next: 'Regular hours open at Fri 25 Sep, 13:30 UTC.' })
+    })
+
+    it('says how old a stale reference is, and when there is none at all', () => {
+      const later = Date.parse('2026-09-25T13:17:00.000Z')
+      expect(stockPanels({ ...plan, humanPlan: { ...plan.humanPlan, stocks: [stock()] } }, later)[0]!.stale).toBe(
+        'The reference price is 42 minutes old.',
+      )
+      expect(panels(stock({ referencePriceUsd: null, effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: null } }))[0]).toMatchObject({
+        reference: null,
+        effective: { value: '$227.27' },
+        premium: null,
+      })
+    })
+
+    it('says so when the quote could not be priced, and draws one panel per stock side', () => {
+      const unpriced = stock({ effective: null })
+      const other = stock({ symbol: 'NVDAon', role: 'from', issuer: 'ondo' })
+      expect(panels(unpriced, other).map((p) => [p.symbol, p.issuer, p.side])).toEqual([
+        ['NVDAB', 'bStock', 'buy'],
+        ['NVDAon', 'Ondo', 'sell'],
+      ])
+      expect(panels(unpriced)[0]).toMatchObject({
+        effective: { label: 'You pay per share', missing: 'This quote does not price the trade in dollars.' },
+        premium: null,
+      })
+    })
+
+    it('draws nothing for a plan without a stock side, and keeps it off the fact rows', () => {
+      expect(stockPanels(plan)).toEqual([])
+      expect(keyFacts(plan).map((f) => f.label)).toEqual(['Network fee', 'Note'])
     })
   })
 
