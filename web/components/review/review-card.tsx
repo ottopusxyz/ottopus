@@ -214,9 +214,13 @@ export function ReviewCard({
           >
             <span className="text-[13.5px] text-[var(--ot-text-2)]">{fact.label}</span>
             <span className="flex min-w-0 flex-col items-end gap-px text-right">
-              <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>
-                {fact.value}
-              </span>
+              {fact.tone ? (
+                <Badge tone={fact.tone}>{fact.value}</Badge>
+              ) : (
+                <span className={cn('text-[13.5px] font-semibold', fact.mono && 'font-mono tabular-nums')}>
+                  {fact.value}
+                </span>
+              )}
               {fact.detail ? <span className="text-[11.5px] text-[var(--ot-text-3)]">{fact.detail}</span> : null}
             </span>
           </div>

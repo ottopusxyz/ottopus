@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Plan } from '@/lib/api'
+import type { Plan, PlanStock } from '@/lib/api'
 import { gateFor } from './wallet-gate'
 import {
   approvalAmount,
@@ -129,6 +129,76 @@ describe('what the page says', () => {
   it('drops the note row when the request carried none', () => {
     const bare = { ...plan, intent: { ...plan.intent, note: undefined } } as Plan
     expect(keyFacts(bare).map((f) => f.label)).toEqual(['Network fee'])
+  })
+
+  /**
+   * A stock side puts its market's state on the card as a chip, ahead of the
+   * fee, with the reference price it was judged against underneath. The
+   * state decides the colour and the words for the reference.
+   */
+  describe('a stock side', () => {
+    const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
+    const stock = (market: Partial<PlanStock['market']>, referencePriceUsd: string | null = '224.13'): PlanStock => ({
+      assetId: `eip155:56/erc20:${NVDAB}`,
+      symbol: 'NVDAB',
+      role: 'to',
+      issuer: 'bstock',
+      ticker: 'NVDA',
+      companyName: 'Nvidia Corp',
+      tokenToShareRatio: '1',
+      referencePriceUsd,
+      onChainPriceUsd: '225.1',
+      premiumBps: 43,
+      asOf: '2026-09-25T12:35:16.000Z',
+      market: { state: 'regular', source: 'vendor', session: 'regular', reason: 'TRADING', note: null, nextOpenAt: null, nextCloseAt: null, ...market },
+    })
+    const withStock = (...stocks: PlanStock[]): Plan => ({ ...plan, humanPlan: { ...plan.humanPlan, stocks } })
+
+    it('reads green in regular hours, with the reference and its as-of', () => {
+      const [row] = keyFacts(withStock(stock({})))
+      expect(row).toEqual({ label: 'NVDAB market', value: 'Market open', tone: 'ok', detail: 'reference $224.13 · as of 12:35 UTC' })
+      expect(keyFacts(withStock(stock({}))).map((f) => f.label)).toEqual(['NVDAB market', 'Network fee', 'Note'])
+    })
+
+    it('reads blue in an extended session, naming the calendar when it labelled the hour', () => {
+      expect(keyFacts(withStock(stock({ state: 'premarket', source: 'calendar', session: null })))[0]).toMatchObject({
+        value: 'Pre-market',
+        tone: 'plan',
+        detail: 'reference $224.13 · as of 12:35 UTC · session by the exchange calendar',
+      })
+      expect(keyFacts(withStock(stock({ state: 'afterhours' })))[0]).toMatchObject({ value: 'After-hours', tone: 'plan' })
+      expect(keyFacts(withStock(stock({ state: 'overnight', session: 'overnight' })))[0]).toMatchObject({
+        value: 'Overnight',
+        tone: 'plan',
+        detail: 'reference $224.13 · as of 12:35 UTC',
+      })
+    })
+
+    it('reads amber on a close, calling the reference the last close, and red on a halt', () => {
+      expect(keyFacts(withStock(stock({ state: 'closed', reason: 'MARKET_PAUSED', note: 'Paused for session transition' })))[0]).toEqual({
+        label: 'NVDAB market',
+        value: 'Market closed',
+        tone: 'warn',
+        detail: 'last close $224.13 · as of 12:35 UTC',
+      })
+      expect(keyFacts(withStock(stock({ state: 'halted', reason: 'TRADING_HALT' })))[0]).toMatchObject({
+        value: 'Halted',
+        tone: 'block',
+        detail: 'last print $224.13 · as of 12:35 UTC',
+      })
+    })
+
+    it('says so when there is no reference price, and draws one row per stock side', () => {
+      const rows = keyFacts(withStock(stock({}, null), { ...stock({ state: 'closed' }), symbol: 'NVDAon', role: 'from' }))
+      expect(rows.slice(0, 2).map((f) => [f.label, f.value, f.detail])).toEqual([
+        ['NVDAB market', 'Market open', 'no reference price · as of 12:35 UTC'],
+        ['NVDAon market', 'Market closed', 'last close $224.13 · as of 12:35 UTC'],
+      ])
+    })
+
+    it('draws nothing for a plan without a stock side', () => {
+      expect(keyFacts(plan).some((f) => f.tone)).toBe(false)
+    })
   })
 
   it('pairs each call with its decoding and keeps the raw bytes', () => {

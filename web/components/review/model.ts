@@ -1,6 +1,7 @@
-import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning, Simulation } from '@/lib/api'
+import type { Tone } from '@/components/ui'
+import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StockMarketState } from '@/lib/api'
 import { chainName } from '@/lib/chains'
-import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
+import { addressOf, formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
 
 /**
  * What the page shows, derived from the stored plan and nothing else. Every
@@ -310,6 +311,8 @@ export interface Fact {
   value: string
   detail?: string
   mono?: boolean
+  /** Set when the value is a state, not a figure: the card draws it as a chip in this tone. */
+  tone?: Tone
 }
 
 /**
@@ -496,8 +499,48 @@ export function preparedBy(plan: Plan): string {
  * arguments — belongs in the advanced panel, where somebody who wants it
  * knows to look.
  */
+/**
+ * The market chip for each state. Green says nothing more; blue is the
+ * extended sessions, information rather than a warning; amber is a close,
+ * which the heads-up panel also carries as a caution; red is a halt.
+ * Tinted fills with matching text, never white on green or blue.
+ */
+export const MARKET_CHIP: Record<StockMarketState, { label: string; tone: Tone }> = {
+  regular: { label: 'Market open', tone: 'ok' },
+  premarket: { label: 'Pre-market', tone: 'plan' },
+  afterhours: { label: 'After-hours', tone: 'plan' },
+  overnight: { label: 'Overnight', tone: 'plan' },
+  closed: { label: 'Market closed', tone: 'warn' },
+  halted: { label: 'Halted', tone: 'block' },
+}
+
+/**
+ * One row per stock side: the market's state as a chip, and under it the
+ * reference price the plan was judged against and when it was read. On a
+ * closed market the reference is named as the last close, since that is
+ * what it is. The as-of is the source's stamp in UTC, the same words the
+ * plan carries, rather than a local time that would differ from them.
+ */
+export function stockMarketFacts(plan: Plan): Fact[] {
+  return (plan.humanPlan.stocks ?? []).map((stock) => {
+    const chip = MARKET_CHIP[stock.market.state]
+    return { label: `${stock.symbol} market`, value: chip.label, tone: chip.tone, detail: referenceWords(stock) }
+  })
+}
+
+function referenceWords(stock: PlanStock): string {
+  const { state, source } = stock.market
+  const price = stock.referencePriceUsd === null ? null : formatMoneyFlat(Number(stock.referencePriceUsd))
+  const anchor =
+    price === null ? 'no reference price' : state === 'closed' ? `last close ${price}` : state === 'halted' ? `last print ${price}` : `reference ${price}`
+  const read = Date.parse(stock.asOf)
+  const asOf = Number.isFinite(read) ? ` · as of ${new Date(read).toISOString().slice(11, 16)} UTC` : ''
+  const by = source === 'calendar' && state !== 'regular' ? ' · session by the exchange calendar' : ''
+  return `${anchor}${asOf}${by}`
+}
+
 export function keyFacts(plan: Plan): Fact[] {
-  const rows: Fact[] = []
+  const rows: Fact[] = [...stockMarketFacts(plan)]
   if (plan.humanPlan.feesUsd && plan.humanPlan.feesUsd !== 'unknown') {
     rows.push({ label: 'Network fee', value: `$${plan.humanPlan.feesUsd}`, detail: 'estimated', mono: true })
   } else {
