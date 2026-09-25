@@ -22,36 +22,52 @@ import type { StockRegistry, TokenInfo, TokenRegistry } from './types.js'
  *     index, is still found.
  *
  * A stock registry that could not answer at all is not "none". Until the
- * stock side has said whether a symbol is a stock, the general registry
+ * stock side has said whether a query is a stock, the general registry
  * must not be asked, or a vendor's bad minute would resolve "NVDAB" to the
- * wrong contract, which is the one thing this composite exists to prevent.
- * So a symbol answers null through an outage, plain tokens included: a
- * lookup that fails is a plan not built, and a lookup that lies is a plan
- * bound to the wrong token. An address is different. It names one contract
- * whoever answers, so the general registry may still describe it.
+ * wrong contract, or name the real one "N4B" on a plan summary that is then
+ * hashed and approved. So a query answers null through an outage, plain
+ * tokens and addresses included, and the miss is logged: a lookup that
+ * fails is a plan not built or an asset named by its address, and a lookup
+ * that lies is a plan bound to the wrong token or the wrong name. The
+ * accepted cost is that through an outage an unheld stock reads as its
+ * address rather than as a name somebody else made up for it.
  */
 
 export interface CompositeTokenOptions {
   stocks: StockRegistry | null
   tokens: TokenRegistry | null
+  /** Where a stock-side miss is reported. The service log by default. */
+  log?: (message: string) => void
 }
 
-export function compositeTokens({ stocks, tokens }: CompositeTokenOptions): TokenRegistry {
+export function compositeTokens({ stocks, tokens, log = console.error }: CompositeTokenOptions): TokenRegistry {
+  const missed = (what: string) =>
+    log(`[tokens] ${stocks?.name ?? 'stocks'} could not say whether ${what} is a stock; not asking ${tokens?.name ?? 'anyone'} in its place`)
+
   return {
     name: [stocks?.name, tokens?.name].filter(Boolean).join('+') || 'none',
 
     async byAssetId(assetId): Promise<TokenInfo | null> {
-      const stock = await stocks?.byAssetId(assetId)
-      if (stock) return stock
+      if (stocks) {
+        const looked = await stocks.stockOf(assetId)
+        if (looked.kind === 'stock') return looked.info
+        if (looked.kind === 'unknown') {
+          missed(assetId)
+          return null
+        }
+      }
       return (await tokens?.byAssetId(assetId)) ?? null
     },
 
     async find(chainId, query): Promise<TokenInfo | null> {
       if (stocks) {
         const found = await stocks.variants(chainId, query)
-        if (found === null && !EVM_ADDRESS_RE.test(query.trim())) return null
-        if (found && found.length === 1) return found[0]!
-        if (found && found.length > 1) return null
+        if (found === null) {
+          missed(`${EVM_ADDRESS_RE.test(query.trim()) ? query.trim() : `"${query}"`} on ${chainId}`)
+          return null
+        }
+        if (found.length === 1) return found[0]!
+        if (found.length > 1) return null
       }
       return (await tokens?.find(chainId, query)) ?? null
     },

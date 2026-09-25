@@ -1,6 +1,6 @@
 import { EVM_ADDRESS_RE, formatAssetId, parseAssetId, parseChainId, toEvmChainId } from '../../core/index.js'
 import { BinanceClient, BinanceError } from '../binance/index.js'
-import type { StockInfo, StockRegistry, TokenInfo, TokenRegistry } from './types.js'
+import type { StockInfo, StockLookup, StockRegistry, TokenInfo, TokenRegistry } from './types.js'
 
 /**
  * Tokenized stocks from Binance's RWA data, the one source that knows which
@@ -209,24 +209,38 @@ export function rwaTokens(options: RwaTokenOptions): RwaRegistry {
     return out
   }
 
-  async function byAssetId(assetId: string): Promise<StockInfo | null> {
+  /**
+   * By address on the chain's list. Anything that is not an ERC-20 on a
+   * chain the vendor has a number for is "none" without a request: a
+   * chain's own currency is not a stock, and neither is a Solana mint here.
+   * "Unknown" is only ever a list that could not be fetched and has never
+   * been fetched before; a stale list still answers.
+   */
+  async function stockOf(assetId: string): Promise<StockLookup> {
     let parsed: ReturnType<typeof parseAssetId>
     try {
       parsed = parseAssetId(assetId)
     } catch {
-      return null
+      return { kind: 'none' }
     }
-    if (parsed.assetNamespace !== 'erc20') return null
+    if (parsed.assetNamespace !== 'erc20') return { kind: 'none' }
     const chainId = `${parsed.namespace}:${parsed.reference}`
     const binanceChain = binanceChainOf(chainId)
-    if (!binanceChain) return null
+    if (!binanceChain) return { kind: 'none' }
     const rows = await listFor(chainId, binanceChain)
-    return rows?.get(parsed.assetReference.toLowerCase()) ?? null
+    if (!rows) return { kind: 'unknown' }
+    const found = rows.get(parsed.assetReference.toLowerCase())
+    return found ? { kind: 'stock', info: found } : { kind: 'none' }
   }
 
   return {
     name: RWA_REGISTRY,
-    byAssetId,
+    /** The token-registry view of the same question: one answer or none. */
+    async byAssetId(assetId): Promise<TokenInfo | null> {
+      const looked = await stockOf(assetId)
+      return looked.kind === 'stock' ? looked.info : null
+    },
+    stockOf,
     variants,
     /** One token, when the query names exactly one. Several is not an answer here. */
     async find(chainId, query): Promise<TokenInfo | null> {

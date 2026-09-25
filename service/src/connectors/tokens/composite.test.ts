@@ -38,14 +38,20 @@ const token = (symbol: string, assetId: string): TokenInfo => ({
 
 const VARIANTS = [stock('NVDAon', 'ondo', NVDAON), stock('NVDAB', 'bstock', NVDAB)]
 
-/** What the stock side says per query, and a log of what it was asked. */
-function stocks(answers: Record<string, StockInfo[] | null>) {
+/**
+ * What the stock side says per query, and a log of what it was asked. An
+ * asset id it is down for answers "unknown"; a variant it knows answers the
+ * stock; anything else is "none".
+ */
+function stocks(answers: Record<string, StockInfo[] | null>, down: string[] = []) {
   const asked: string[] = []
   const registry: StockRegistry = {
     name: 'stocks',
-    async byAssetId(assetId) {
+    async stockOf(assetId) {
       asked.push(`by:${assetId}`)
-      return VARIANTS.find((v) => v.assetId === assetId) ?? null
+      if (down.includes(assetId)) return { kind: 'unknown' }
+      const info = VARIANTS.find((v) => v.assetId === assetId)
+      return info ? { kind: 'stock', info } : { kind: 'none' }
     },
     async variants(_chain, query) {
       asked.push(`variants:${query}`)
@@ -53,6 +59,12 @@ function stocks(answers: Record<string, StockInfo[] | null>) {
     },
   }
   return { asked, registry }
+}
+
+/** A composite whose misses are collected rather than printed. */
+function composite(s: StockRegistry | null, g: TokenRegistry | null) {
+  const logged: string[] = []
+  return { logged, registry: compositeTokens({ stocks: s, tokens: g, log: (m) => logged.push(m) }) }
 }
 
 /** The general registry, which answers a stock symbol with the wrong token. */
@@ -118,20 +130,38 @@ describe('the composite registry', () => {
   it('answers nothing for a symbol when the stock side could not answer, rather than asking the general one', async () => {
     const s = stocks({ NVDAB: null, PEPE: null })
     const g = general()
-    const registry = compositeTokens({ stocks: s.registry, tokens: g.registry })
+    const { registry } = composite(s.registry, g.registry)
     expect(await registry.find(BSC, 'NVDAB')).toBeNull()
     expect(await registry.find(BSC, 'PEPE')).toBeNull()
     expect(g.asked).toEqual([])
   })
 
-  /** An address names one contract whoever answers, so the general side may still describe it. */
-  it('still lets the general registry describe an address through a stock-side outage', async () => {
-    const address = PEPE.slice(PEPE.lastIndexOf(':') + 1)
-    const s = stocks({ [address]: null })
+  /**
+   * An address is no exception. The general registry knows the NVDAB
+   * contract and calls it "N4B", and a name on a plan summary is hashed
+   * and approved, so through an outage nobody names the asset and the miss
+   * is on the log rather than on the plan.
+   */
+  it('names nothing for an address the stock side could not answer, and logs the miss', async () => {
+    const address = NVDAB.slice(NVDAB.lastIndexOf(':') + 1)
+    const s = stocks({ [address]: null }, [NVDAB, PEPE])
     const g = general()
-    g.registry.find = async (_chain, query) => (query === address ? token('PEPE', PEPE) : null)
-    const registry = compositeTokens({ stocks: s.registry, tokens: g.registry })
-    expect(await registry.find(BSC, address)).toMatchObject({ symbol: 'PEPE' })
+    g.registry.find = async (_chain, query) => (query === address ? token('N4B', NVDAB) : null)
+    const { logged, registry } = composite(s.registry, g.registry)
+    expect(await registry.byAssetId(NVDAB)).toBeNull()
+    expect(await registry.byAssetId(PEPE)).toBeNull()
+    expect(await registry.find(BSC, address)).toBeNull()
+    expect(g.asked).toEqual([])
+    expect(logged).toHaveLength(3)
+    expect(logged[0]).toContain(NVDAB)
+    expect(logged[0]).toContain('not asking general')
+  })
+
+  it('logs a symbol the stock side could not answer, once per lookup', async () => {
+    const s = stocks({ NVDAB: null })
+    const { logged, registry } = composite(s.registry, general().registry)
+    expect(await registry.find(BSC, 'NVDAB')).toBeNull()
+    expect(logged).toEqual([`[tokens] stocks could not say whether "NVDAB" on ${BSC} is a stock; not asking general in its place`])
   })
 
   it('works with either side missing', async () => {
