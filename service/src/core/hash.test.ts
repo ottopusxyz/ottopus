@@ -123,6 +123,14 @@ describe('planHash', () => {
     expect(planHashOf(requoted)).not.toBe(planHashOf(withStock))
     // No `stocks` key at all is the pre-section shape; an explicit empty list would not be.
     expect(planHashOf(planDraftSchema.parse({ ...draft }))).toBe(planHashOf(draft))
+    // Written between the section landing and the effective block: no key at
+    // all. Accepted, hashed as written, and not the same plan as an explicit null.
+    const { effective: _effective, ...early } = stock
+    const withEarly = planDraftSchema.parse({ ...draft, humanPlan: { ...draft.humanPlan, stocks: [early] } })
+    expect(withEarly.humanPlan.stocks?.[0]).not.toHaveProperty('effective')
+    const withNull = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, effective: null }] } }
+    expect(planHashOf(withEarly)).not.toBe(planHashOf(withNull))
+    expect(parsePlan(assemblePlan(withEarly)).humanPlan.stocks?.[0]).toEqual(early)
     expect(() =>
       planDraftSchema.parse({ ...draft, humanPlan: { ...draft.humanPlan, stocks: [{ ...stock, market: { ...stock.market, state: 'lunch' } }] } }),
     ).toThrow()

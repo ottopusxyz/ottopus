@@ -169,7 +169,10 @@ export const planStockSchema = z.strictObject({
       /** Against the reference price, signed basis points. Null without a reference. */
       premiumBps: z.number().int().nullable(),
     })
-    .nullable(),
+    .nullable()
+    // Absent on the rows written before this block existed. They hash as they
+    // were written, and the page reads absent as unpriced.
+    .optional(),
   market: z.strictObject({
     state: stockMarketStateSchema,
     /** Who named the session: the data source, or the exchange calendar when it gave no session. */
