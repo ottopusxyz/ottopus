@@ -82,6 +82,59 @@ describe('planHash', () => {
   ] as const)('changes when %s changes', (_, patch) => {
     expect(planHashOf({ ...draft, ...patch } as PlanDraft)).not.toBe(planHashOf(draft))
   })
+
+  /**
+   * The stock facts are what the person approves a stock trade against, so
+   * a plan built on a different reference price, or in a different market
+   * state, is a different plan. And a plan with no stock side must hash as
+   * it did before the section existed.
+   */
+  it('covers the stock section, and leaves a plan without one where it was', () => {
+    const stock = {
+      assetId: 'eip155:56/erc20:0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
+      symbol: 'NVDAB',
+      role: 'to' as const,
+      issuer: 'bstock',
+      ticker: 'NVDA',
+      companyName: 'Nvidia Corp',
+      tokenToShareRatio: '1',
+      referencePriceUsd: '224.13',
+      onChainPriceUsd: '225.1',
+      premiumBps: 43,
+      asOf: '2026-09-25T14:00:00.000Z',
+      effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: 140 },
+      market: {
+        state: 'premarket' as const,
+        source: 'calendar' as const,
+        session: null,
+        reason: 'TRADING',
+        note: null,
+        nextOpenAt: '2026-09-25T13:30:00.000Z',
+        nextCloseAt: '2026-09-25T20:00:00.000Z',
+      },
+    }
+    const withStock = planDraftSchema.parse({ ...draft, humanPlan: { ...draft.humanPlan, stocks: [stock] } })
+    expect(planHashOf(withStock)).not.toBe(planHashOf(draft))
+    const repriced = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, referencePriceUsd: '224.14' }] } }
+    expect(planHashOf(repriced)).not.toBe(planHashOf(withStock))
+    const reopened = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, market: { ...stock.market, state: 'regular' as const } }] } }
+    expect(planHashOf(reopened)).not.toBe(planHashOf(withStock))
+    const requoted = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, effective: { ...stock.effective, priceUsd: '227.28' } }] } }
+    expect(planHashOf(requoted)).not.toBe(planHashOf(withStock))
+    // No `stocks` key at all is the pre-section shape; an explicit empty list would not be.
+    expect(planHashOf(planDraftSchema.parse({ ...draft }))).toBe(planHashOf(draft))
+    // Written between the section landing and the effective block: no key at
+    // all. Accepted, hashed as written, and not the same plan as an explicit null.
+    const { effective: _effective, ...early } = stock
+    const withEarly = planDraftSchema.parse({ ...draft, humanPlan: { ...draft.humanPlan, stocks: [early] } })
+    expect(withEarly.humanPlan.stocks?.[0]).not.toHaveProperty('effective')
+    const withNull = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, effective: null }] } }
+    expect(planHashOf(withEarly)).not.toBe(planHashOf(withNull))
+    expect(parsePlan(assemblePlan(withEarly)).humanPlan.stocks?.[0]).toEqual(early)
+    expect(() =>
+      planDraftSchema.parse({ ...draft, humanPlan: { ...draft.humanPlan, stocks: [{ ...stock, market: { ...stock.market, state: 'lunch' } }] } }),
+    ).toThrow()
+  })
 })
 
 describe('assemble and parse', () => {

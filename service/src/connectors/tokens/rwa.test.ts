@@ -181,13 +181,14 @@ describe('the RWA registry', () => {
     })
   })
 
-  it('reads the market status, with the vendor’s epoch times as ISO', async () => {
+  it('reads the market status and the vendor’s sentence about it, with the epoch times as ISO', async () => {
     const { registry } = bsc({ [search('AAPLB')]: ok([SEARCH_LOOSE[1]]) })
     const [aapl] = (await registry.variants(BSC, 'AAPLB')) ?? []
     expect(aapl?.stock.status).toEqual({
       open: false,
       marketStatus: 'paused',
       reason: 'MARKET_PAUSED',
+      reasonMessage: 'Paused for session transition',
       nextOpenAt: '2026-09-24T13:31:00.000Z',
       nextCloseAt: '2026-09-24T19:59:00.000Z',
     })

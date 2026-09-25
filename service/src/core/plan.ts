@@ -107,11 +107,97 @@ export const quoteSchema = z.object({
   minOut: z.string().optional(),
 })
 
+/**
+ * The state of a stock's market, as one word the review page can colour.
+ *
+ * `regular` is green and says nothing. The three extended sessions are
+ * information: the token trades and the reference price is live, but from
+ * a thinner book than regular hours. `closed` is a caution, because the
+ * reference is the last close and the on-chain price can drift from it.
+ * `halted` is a block. Verify decides which applies; the vocabulary lives
+ * here because it is part of the plan format, and so of the hash.
+ */
+export const STOCK_MARKET_STATES = ['regular', 'premarket', 'afterhours', 'overnight', 'closed', 'halted'] as const
+export const stockMarketStateSchema = z.enum(STOCK_MARKET_STATES)
+
+/**
+ * What the plan knows about a side that is a tokenized stock: whose token
+ * it is, what share it stands for, what the share and the token were worth
+ * when the plan was built, and what state the market was in. Hashed with
+ * the rest of the human plan, so the facts the person approves are the
+ * facts the plan was judged on, and the price per share this quote comes to
+ * is one of them.
+ */
+/** A plain decimal, as a string: `224.13`, `1`, `-0.5`. */
+export const decimalSchema = z.string().regex(/^-?[0-9]+(\.[0-9]+)?$/, 'expected a decimal string')
+
+export const planStockSchema = z.strictObject({
+  assetId: assetIdSchema,
+  symbol: z.string().min(1),
+  /** Which side of the trade: what is spent, or what is received. */
+  role: z.enum(['from', 'to']),
+  /** The issuer's id in the data source's words: `bstock`, `ondo`. */
+  issuer: z.string().min(1),
+  ticker: z.string().min(1),
+  companyName: z.string().min(1),
+  // Decimal strings, not floats: the hash admits integers only, and "224.13"
+  // is one plan where 224.13 and 224.130000000001 would be two.
+  tokenToShareRatio: decimalSchema,
+  referencePriceUsd: decimalSchema.nullable(),
+  onChainPriceUsd: decimalSchema.nullable(),
+  /** How far the token trades from par, in signed basis points: 140 is 1.4% over. Null without both prices. */
+  premiumBps: z.number().int().nullable(),
+  /** When the connector read the facts, by its own clock. The source stamps no time on the price itself. */
+  asOf: z.string().min(1),
+  /**
+   * What this trade comes to per share, from the quote: the other side in
+   * dollars over the shares the stock side stands for. Null when the other
+   * side has no price, or the quote fixed what arrives rather than what is
+   * spent, so the page can say so instead of guessing.
+   */
+  effective: z
+    .strictObject({
+      /** The other side of the trade: paid for the stock, or received for it. */
+      counterSymbol: z.string().min(1),
+      counterPriceUsd: decimalSchema,
+      /** Tokens moved × ratio. */
+      shares: decimalSchema,
+      /** What the trade pays or receives for them, in dollars. */
+      valueUsd: decimalSchema,
+      /** Per share. */
+      priceUsd: decimalSchema,
+      /** Against the reference price, signed basis points. Null without a reference. */
+      premiumBps: z.number().int().nullable(),
+    })
+    .nullable()
+    // Absent on the rows written before this block existed. They hash as they
+    // were written, and the page reads absent as unpriced.
+    .optional(),
+  market: z.strictObject({
+    state: stockMarketStateSchema,
+    /** Who named the session: the data source, or the exchange calendar when it gave no session. */
+    source: z.enum(['vendor', 'calendar']),
+    /** The source's session word as it arrived, when it gave one. */
+    session: z.string().nullable(),
+    /** The source's reason code, `TRADING` when open. */
+    reason: z.string().nullable(),
+    /** The source's sentence about the reason, when it gave one. */
+    note: z.string().nullable(),
+    nextOpenAt: z.string().nullable(),
+    nextCloseAt: z.string().nullable(),
+  }),
+})
+
 export const humanPlanSchema = z.object({
   summary: z.string().min(1),
   steps: z.array(z.string()),
   feesUsd: z.string(),
   warnings: z.array(warningSchema),
+  /**
+   * The stock sides of a trade, when there are any. Absent, not empty, on a
+   * plain trade, so every plan stored before this existed hashes as it did.
+   */
+  stocks: z.array(planStockSchema).optional(),
   /**
    * What to call each asset the plan moves. Display data, hashed with the
    * rest: a page that read "500 USDC" over calls moving 500 of something else
@@ -310,4 +396,6 @@ export type Simulation = z.infer<typeof simulationSchema>
 export type AssetDelta = z.infer<typeof assetDeltaSchema>
 export type Call = z.infer<typeof callSchema>
 export type Warning = z.infer<typeof warningSchema>
+export type PlanStock = z.infer<typeof planStockSchema>
+export type StockMarketState = z.infer<typeof stockMarketStateSchema>
 export type Outcome = z.infer<typeof outcomeSchema>

@@ -1266,7 +1266,8 @@ describe('prepare_trade', () => {
       const sink = planSink()
       const { client } = await connected(undefined, {
         readPortfolio: async () => holdings,
-        router: stubRouter(),
+        // 500 USDC for 2.2 NVDAB: $227.27 a share against a $224.13 reference.
+        router: stubRouter({ expectedOut: '2200000000000000000', minOut: '2189000000000000000' }),
         createPlan: sink.createPlan,
         stocks: stocksOf(nvdab({}, 224.13 * 1.015)),
       }, { grantId: 'grant-1' })
@@ -1275,8 +1276,27 @@ describe('prepare_trade', () => {
       expect(res.content[0]!.text).toContain('Heads up: On-chain price of NVDAB is 1.5% above the reference price of $224.13.')
       expect(res.content[0]!.text).toContain('Review and sign')
       expect(sink.created[0]!.plan.humanPlan.steps).toContain(
-        'NVDAB: reference price $224.13, on-chain $227.49 (bstock); market open (overnight)',
+        'NVDAB: reference price $224.13, on-chain $227.49 (bstock); market open (overnight); ' +
+          'this quote comes to $227.27 per share, 1.4% above the reference',
       )
+      expect(res.content[0]!.text).toContain('Heads up: NVDAB is trading overnight.')
+      expect(sink.created[0]!.plan.humanPlan.stocks).toEqual([
+        {
+          assetId: STOCK,
+          symbol: 'NVDAB',
+          role: 'to',
+          issuer: 'bstock',
+          ticker: 'NVDA',
+          companyName: 'Nvidia Corp',
+          tokenToShareRatio: '1',
+          referencePriceUsd: '224.13',
+          onChainPriceUsd: '227.49195',
+          premiumBps: 150,
+          asOf: expect.any(String),
+          effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: 140 },
+          market: { state: 'overnight', source: 'vendor', session: 'overnight', reason: 'TRADING', note: null, nextOpenAt: null, nextCloseAt: null },
+        },
+      ])
       expect(sink.created[0]!.plan.status).toBe('awaiting_review')
     })
 
@@ -1285,7 +1305,7 @@ describe('prepare_trade', () => {
       const closed = nvdab({ open: false, reason: 'MARKET_CLOSED', marketStatus: 'weekend', nextOpenAt: '2026-09-28T13:30:00.000Z' }, 224.13 * 1.03)
       const { client } = await connected(undefined, {
         readPortfolio: async () => holdings,
-        router: stubRouter(),
+        router: stubRouter({ expectedOut: '2100000000000000000', minOut: '2089000000000000000' }),
         createPlan: sink.createPlan,
         stocks: stocksOf(closed),
       }, { grantId: 'grant-1' })
@@ -1298,8 +1318,10 @@ describe('prepare_trade', () => {
       expect(res.content[0]!.text).toContain('Heads up: On-chain price of NVDAB is 3.0% above the reference price of $224.13.')
       expect(res.content[0]!.text).toContain('Review and sign')
       expect(sink.created[0]!.plan.humanPlan.steps).toContain(
-        'NVDAB: reference price $224.13, on-chain $230.85 (bstock); market closed (weekend)',
+        'NVDAB: reference price $224.13, on-chain $230.85 (bstock); market closed (weekend); ' +
+          'this quote comes to $238.10 per share, 6.2% above the reference',
       )
+      expect(sink.created[0]!.plan.humanPlan.stocks?.[0]?.effective).toMatchObject({ priceUsd: '238.0952381', premiumBps: 623 })
       expect(sink.created[0]!.plan.status).toBe('awaiting_review')
     })
 
@@ -1329,6 +1351,8 @@ describe('prepare_trade', () => {
       expect(stocks.asked).toHaveLength(2)
       expect(sink.created[0]!.plan.humanPlan.steps.some((step) => step.includes('reference price'))).toBe(false)
       expect(sink.created[0]!.plan.humanPlan.warnings.filter((w) => w.code.startsWith('stock_'))).toEqual([])
+      // Absent, not empty: the plan hashes exactly as it did before the section existed.
+      expect('stocks' in sink.created[0]!.plan.humanPlan).toBe(false)
     })
   })
 

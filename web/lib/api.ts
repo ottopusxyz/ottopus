@@ -552,6 +552,50 @@ export interface PlanWarning {
   saferAlternative?: string
 }
 
+/** Mirrors STOCK_MARKET_STATES in the service's plan format. */
+export type StockMarketState = 'regular' | 'premarket' | 'afterhours' | 'overnight' | 'closed' | 'halted'
+
+/**
+ * A side of the trade that is a tokenized stock, as the plan stored it:
+ * hashed, so these are the facts the plan was judged on. Prices are decimal
+ * strings and the premium is in basis points, because the hash takes no floats.
+ */
+export interface PlanStock {
+  assetId: string
+  symbol: string
+  role: 'from' | 'to'
+  issuer: string
+  ticker: string
+  companyName: string
+  tokenToShareRatio: string
+  referencePriceUsd: string | null
+  onChainPriceUsd: string | null
+  premiumBps: number | null
+  asOf: string
+  /**
+   * What this quote comes to per share. Null when the other side had no price
+   * or the quote fixed what arrives; absent on plans written before it existed.
+   */
+  effective?: {
+    counterSymbol: string
+    counterPriceUsd: string
+    shares: string
+    valueUsd: string
+    priceUsd: string
+    premiumBps: number | null
+  } | null
+  market: {
+    state: StockMarketState
+    /** Who named the session: the data source, or the exchange calendar when it gave none. */
+    source: 'vendor' | 'calendar'
+    session: string | null
+    reason: string | null
+    note: string | null
+    nextOpenAt: string | null
+    nextCloseAt: string | null
+  }
+}
+
 export interface TransferIntent {
   kind: 'transfer'
   asset: string
@@ -621,6 +665,8 @@ export interface Plan {
     warnings: PlanWarning[]
     /** What to call each asset the plan moves. Absent on plans stored before it existed. */
     assets?: { id: string; symbol: string; decimals: number }[]
+    /** The stock sides of a trade. Absent on a plain trade. */
+    stocks?: PlanStock[]
   }
   status: PlanStatusName
   expiresAt: string

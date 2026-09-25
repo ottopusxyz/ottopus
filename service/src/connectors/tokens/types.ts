@@ -82,6 +82,8 @@ export interface StockFacts {
     marketStatus: string | null
     /** The source's reason code, `TRADING` when open. */
     reason: string | null
+    /** The source's sentence about the reason ("Paused for session transition"), when it gives one. */
+    reasonMessage?: string | null
     nextOpenAt: string | null
     nextCloseAt: string | null
   }

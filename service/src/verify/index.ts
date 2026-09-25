@@ -10,8 +10,11 @@ export {
   type VerifyInput,
   blockWarnings,
   stockClosedNote,
+  stockExtendedHoursNote,
   stockHalted,
   stockPremium,
   stockStatusReason,
   verifyPlan,
 } from './policy.js'
+export { type StockMarket, sessionOf, stockMarket, stockMarketWords } from './stock-market.js'
+export { type CalendarReading, type CalendarSession, nyseSession } from './market-calendar.js'

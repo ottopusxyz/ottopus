@@ -1,6 +1,7 @@
-import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanWarning, Simulation } from '@/lib/api'
+import type { Tone } from '@/components/ui'
+import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StockMarketState } from '@/lib/api'
 import { chainName } from '@/lib/chains'
-import { addressOf, formatAmount, truncateAddress } from '@/lib/format'
+import { addressOf, formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
 
 /**
  * What the page shows, derived from the stored plan and nothing else. Every
@@ -496,6 +497,151 @@ export function preparedBy(plan: Plan): string {
  * arguments — belongs in the advanced panel, where somebody who wants it
  * knows to look.
  */
+/**
+ * The market chip for each state. Green says nothing more; blue is the
+ * extended sessions, information rather than a warning; amber is a close,
+ * which the heads-up panel also carries as a caution; red is a halt.
+ * Tinted fills with matching text, never white on green or blue.
+ */
+export const MARKET_CHIP: Record<StockMarketState, { label: string; tone: Tone }> = {
+  regular: { label: 'Market open', tone: 'ok' },
+  premarket: { label: 'Pre-market', tone: 'plan' },
+  afterhours: { label: 'After-hours', tone: 'plan' },
+  overnight: { label: 'Overnight', tone: 'plan' },
+  closed: { label: 'Market closed', tone: 'warn' },
+  halted: { label: 'Halted', tone: 'block' },
+}
+
+/** How far this quote may sit from the reference before the panel colours it. Mirrors the service's rule. */
+export const STOCK_PREMIUM_THRESHOLD_BPS = 100
+
+/** How old a reference price may be before the panel says its age. */
+const STALE_REFERENCE_MS = 15 * 60_000
+
+/** The issuer's name as people write it. The mark itself comes with the registry's icons. */
+export const ISSUER_NAMES: Readonly<Record<string, string>> = {
+  bstock: 'bStock',
+  ondo: 'Ondo',
+  xstocks: 'xStocks',
+}
+
+/**
+ * The Stock panel for one side of the trade, read off the hashed section
+ * and nothing else: the plan was judged on these figures, and the page
+ * shows those rather than fetching newer ones that the hash does not cover.
+ */
+export interface StockPanelModel {
+  symbol: string
+  /** "Nvidia Corp · NVDA" */
+  title: string
+  issuer: string
+  side: 'buy' | 'sell'
+  market: { label: string; tone: Tone }
+  /** The share price the plan was judged against, named for what it is on a closed market, and when the plan read it. */
+  reference: { label: string; value: string; readAt: string } | null
+  /** What this quote comes to per share, or why it cannot say. */
+  effective: { label: string; value: string; detail: string } | { label: string; missing: string }
+  /** The gap between the two, coloured by the same threshold the service warns at. */
+  premium: { value: string; words: string; tone: Tone } | null
+  /** When regular hours change next, when the plan knows. */
+  next: string | null
+  /** Set when the figures were read long enough ago that a person should know. */
+  stale: string | null
+}
+
+export function stockPanels(plan: Plan, now = Date.now()): StockPanelModel[] {
+  return (plan.humanPlan.stocks ?? []).map((stock) => stockPanel(stock, now))
+}
+
+function stockPanel(stock: PlanStock, now: number): StockPanelModel {
+  const side = stock.role === 'to' ? 'buy' : 'sell'
+  const { state } = stock.market
+  // `asOf` is when the connector read the vendor's list, by its own clock.
+  // The vendor stamps no time on the price itself, so the page says when the
+  // figures were read and never how old the price is: on a Saturday, Friday's
+  // close read at 12:35 is not a price from 12:35.
+  const read = Date.parse(stock.asOf)
+  const readAt = Number.isFinite(read) ? `read at ${clockUtc(read)}` : 'read at a time the plan did not record'
+  const reference =
+    stock.referencePriceUsd === null
+      ? null
+      : {
+          label: state === 'closed' ? 'Last close' : state === 'halted' ? 'Last print' : 'Reference price',
+          value: formatMoneyFlat(Number(stock.referencePriceUsd)),
+          readAt,
+        }
+  const effectiveLabel = side === 'buy' ? 'You pay per share' : 'You receive per share'
+  const effective =
+    !stock.effective
+      ? { label: effectiveLabel, missing: 'This quote does not price the trade in dollars.' }
+      : {
+          label: effectiveLabel,
+          value: formatMoneyFlat(Number(stock.effective.priceUsd)),
+          // `valueUsd` is dollars, whatever was paid in: "$450.00 of BNB", never "450 BNB".
+          detail: `${plainNumber(stock.effective.shares)} ${Number(stock.effective.shares) === 1 ? 'share' : 'shares'} for ${formatMoneyFlat(Number(stock.effective.valueUsd))} of ${stock.effective.counterSymbol}`,
+        }
+  const age = Number.isFinite(read) ? now - read : Number.POSITIVE_INFINITY
+  return {
+    symbol: stock.symbol,
+    title: `${stock.companyName} · ${stock.ticker}`,
+    issuer: ISSUER_NAMES[stock.issuer] ?? stock.issuer,
+    side,
+    market: MARKET_CHIP[state],
+    reference,
+    effective,
+    premium: premiumOf(stock.effective?.premiumBps ?? null, side),
+    next: nextSession(stock),
+    stale: !Number.isFinite(read)
+      ? 'The plan does not say when these figures were read.'
+      : age > STALE_REFERENCE_MS
+        ? `These figures were read ${Math.round(age / 60_000)} minutes ago.`
+        : null,
+  }
+}
+
+/**
+ * "+1.4%, above the reference", coloured for the person: amber when the gap
+ * hurts them past the threshold, green when it helps them past it, plain
+ * within it. A premium hurts a buyer and helps a seller.
+ */
+function premiumOf(bps: number | null, side: 'buy' | 'sell'): StockPanelModel['premium'] {
+  if (bps === null) return null
+  if (bps === 0) return { value: '0.0%', words: 'at the reference', tone: 'neutral' }
+  const adverse = side === 'buy' ? bps : -bps
+  const pct = `${bps > 0 ? '+' : '−'}${(Math.abs(bps) / 100).toFixed(1)}%`
+  const tone: Tone = Math.abs(bps) <= STOCK_PREMIUM_THRESHOLD_BPS ? 'neutral' : adverse > 0 ? 'warn' : 'ok'
+  return { value: pct, words: bps > 0 ? 'above the reference' : 'below the reference', tone }
+}
+
+function nextSession(stock: PlanStock): string | null {
+  const { state, nextOpenAt, nextCloseAt } = stock.market
+  if (state === 'regular') return nextCloseAt ? `Regular hours close at ${whenUtc(nextCloseAt)}.` : null
+  if (state === 'halted') return nextOpenAt ? `Next open ${whenUtc(nextOpenAt)}.` : null
+  return nextOpenAt ? `Regular hours ${state === 'closed' ? 'resume' : 'open'} at ${whenUtc(nextOpenAt)}.` : null
+}
+
+/** "12:35 UTC": the source's stamp in UTC, the same words the plan carries, rather than a local time that would differ from them. */
+function clockUtc(ms: number): string {
+  return `${new Date(ms).toISOString().slice(11, 16)} UTC`
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "Mon 28 Sep, 13:30 UTC", or the raw string when it does not parse. Spelled here, not by a locale that may say "Sept". */
+function whenUtc(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return iso
+  const d = new Date(ms)
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${clockUtc(ms)}`
+}
+
+/** A decimal string as people write it: "2.2", "500", "1,250". */
+function plainNumber(decimal: string): string {
+  const n = Number(decimal)
+  return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 4 }) : decimal
+}
+
 export function keyFacts(plan: Plan): Fact[] {
   const rows: Fact[] = []
   if (plan.humanPlan.feesUsd && plan.humanPlan.feesUsd !== 'unknown') {

@@ -79,6 +79,7 @@ interface RwaToken {
     openState?: boolean
     marketStatus?: string | null
     reasonCode?: string | null
+    reasonMsg?: string | null
     nextOpenTime?: number | null
     nextCloseTime?: number | null
   } | null
@@ -323,6 +324,7 @@ function shape(chainId: string, row: RwaToken, asOf: string): StockInfo | null {
         open: status?.openState === true,
         marketStatus: status?.marketStatus ?? null,
         reason: status?.reasonCode ?? null,
+        reasonMessage: status?.reasonMsg?.trim() || null,
         nextOpenAt: isoOf(status?.nextOpenTime),
         nextCloseAt: isoOf(status?.nextCloseTime),
       },

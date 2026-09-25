@@ -20,7 +20,9 @@ import {
   headsUp,
   keyFacts,
   recipientOf,
+  stockPanels,
 } from './model'
+import { StockPanel } from './stock-panel'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -77,6 +79,7 @@ export function ReviewCard({
   const source = changeSource(plan, liveRun)
   const recipient = recipientOf(plan)
   const rows = keyFacts(plan)
+  const stocks = stockPanels(plan)
   const alerts = headsUp(plan)
   const verdict = executability(plan, liveRun)
   const usd = (amount: string, assetId: string) => approxUsd(amount, visuals.assets[assetId]?.priceUsd)
@@ -222,6 +225,11 @@ export function ReviewCard({
           </div>
         ))}
       </div>
+
+      {/* What the person pays or receives against the share price, when a side is a stock. */}
+      {stocks.map((stock) => (
+        <StockPanel key={stock.symbol} stock={stock} />
+      ))}
 
       {/*
         The card says how much there is to read and where; the reading is in

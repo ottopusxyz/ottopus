@@ -21,6 +21,7 @@ import {
   sourceChainOf,
 } from '../core/index.js'
 import type { StockInfo } from '../connectors/tokens/types.js'
+import { type StockMarket, stockHalted, stockMarket, stockMarketWords } from './stock-market.js'
 import { KNOWN_ABI, KNOWN_BY_SELECTOR, PERMIT2_APPROVE } from './abi.js'
 
 /**
@@ -677,6 +678,15 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
  * against the last session's reference so the drift is named beside it.
  * Decided 2026-09-25, in the plan's ledger.
  *
+ * Between open and closed sit the extended sessions. The vendor's open flag
+ * is true in pre-market and after-hours too, so a plan built at 08:00 ET
+ * used to read "market open" like one built at noon. Now `stockMarket`
+ * names the session, from the vendor's word or the exchange calendar when
+ * it gives none, and anything but regular hours is an info note: the token
+ * trades and the reference is live, but from a thinner book. A calendar
+ * close while the vendor still says open reads as the closed-market
+ * caution, since a reference price on a Saturday cannot be live.
+ *
  * The premium is measured against par, not the bare reference: a token
  * stands for `tokenToShareRatio` shares, which drifts above one as dividends
  * accrue, so a token at reference × ratio is exactly at par. Only the
@@ -697,17 +707,20 @@ const stockRules: Rule = ({ stocks = [], now = new Date() }) => {
   const findings: Finding[] = []
   for (const { role, info } of stocks) {
     const stale = stockFactsStale(info, now)
+    const market = stockMarket(info, now)
     if (stale) findings.push({ block: stockStaleReason(info, now) })
-    else if (stockHalted(info)) findings.push({ block: stockStatusReason(info) })
-    else if (!info.stock.status.open) {
+    else if (market.state === 'halted') findings.push({ block: stockStatusReason(info) })
+    else if (market.state === 'closed') {
       findings.push({
         warn: {
           severity: 'caution',
           code: 'stock_market_closed',
-          message: stockClosedNote(info),
+          message: stockClosedNote(info, market),
           saferAlternative: 'Wait for the market to reopen if you want a live reference price behind the trade.',
         },
       })
+    } else if (market.state !== 'regular') {
+      findings.push({ warn: { severity: 'info', code: 'stock_extended_hours', message: stockExtendedHoursNote(info, market) } })
     }
 
     const premium = stale ? null : stockPremium(info)
@@ -782,34 +795,30 @@ export function stockStaleReason(info: StockInfo, now: Date): string {
   return `The market status of ${info.symbol} was last read ${when}, and has not been refreshed since. Try again shortly.`
 }
 
-/**
- * Whether the vendor's reason for `open: false` reads as a halt rather than
- * a closed session. The vendor names halts (`TRADING_HALT`,
- * `CORPORATE_ACTION`) and session breaks (`MARKET_PAUSED`, `MARKET_CLOSED`)
- * in its reason code; a close with no code at all is a close, because a halt
- * is the thing worth a name. The stem `suspen` covers both `SUSPENDED` and
- * `SUSPENSION`, which `suspend` would not.
- */
-export function stockHalted(info: StockInfo): boolean {
-  const { open, reason } = info.stock.status
-  return !open && /halt|suspen|corporate/i.test(reason ?? '')
-}
+/** Moved beside the session resolver; re-exported so callers keep one import. */
+export { stockHalted }
 
-/** The vendor's reason or session word, as plain words: "halted: corporate action", "market paused". */
-function stockStatusWords(info: StockInfo): string {
+/**
+ * The vendor's reason or session word, as plain words: "halted: corporate
+ * action", "market paused: Paused for session transition", or "outside
+ * exchange hours" when the calendar closed a market the vendor calls open.
+ */
+function stockStatusWords(info: StockInfo, market: StockMarket): string {
+  if (market.state === 'closed' && market.source === 'calendar') return 'outside exchange hours'
   const { reason, marketStatus } = info.stock.status
   const plain = reason?.replace(/_/g, ' ').toLowerCase()
-  if (!plain) return marketStatus ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}` : 'the market is not open'
-  return stockHalted(info) ? `halted: ${plain}` : plain
+  const note = market.note ? `: ${market.note}` : ''
+  if (!plain) return marketStatus ? `market ${marketStatus.replace(/_/g, ' ').toLowerCase()}${note}` : `the market is not open${note}`
+  return market.state === 'halted' ? `halted: ${plain}${note}` : `${plain}${note}`
 }
 
 /**
  * Why a halted stock blocks, as a sentence: "NVDAB is not trading right now
  * (halted: corporate action). Next open 2026-09-28T13:30:00.000Z."
  */
-export function stockStatusReason(info: StockInfo): string {
-  const { nextOpenAt } = info.stock.status
-  return `${info.symbol} is not trading right now (${stockStatusWords(info)}).${nextOpenAt ? ` Next open ${nextOpenAt}.` : ''}`
+export function stockStatusReason(info: StockInfo, now = new Date()): string {
+  const market = stockMarket(info, now)
+  return `${info.symbol} is not trading right now (${stockStatusWords(info, market)}).${market.nextOpenAt ? ` Next open ${market.nextOpenAt}.` : ''}`
 }
 
 /**
@@ -818,12 +827,30 @@ export function stockStatusReason(info: StockInfo): string {
  * reference price of $224.13 is from the last session, so the on-chain price
  * can drift from it until the market reopens at 2026-09-28T13:30:00.000Z."
  */
-export function stockClosedNote(info: StockInfo): string {
-  const { referencePriceUsd: reference, status } = info.stock
+export function stockClosedNote(info: StockInfo, market: StockMarket): string {
+  const { referencePriceUsd: reference } = info.stock
   const anchor = reference === null ? 'there is no reference price to check it against' : `the reference price of ${money.format(reference)} is from the last session`
   const drift = reference === null ? '' : ', so the on-chain price can drift from it'
-  const reopen = status.nextOpenAt ? ` until the market reopens at ${status.nextOpenAt}` : ' until the market reopens'
-  return `The market for ${info.symbol} is closed (${stockStatusWords(info)}). The token still trades on-chain, but ${anchor}${drift}${reopen}.`
+  const reopen = market.nextOpenAt ? ` until the market reopens at ${market.nextOpenAt}` : ' until the market reopens'
+  return `The market for ${info.symbol} is closed (${stockStatusWords(info, market)}). The token still trades on-chain, but ${anchor}${drift}${reopen}.`
+}
+
+/**
+ * What an extended session means for the trade, as a sentence: "NVDAB is
+ * trading pre-market, by the exchange calendar. The reference price of
+ * $224.13 is from a thinner market than regular hours, which resume at
+ * 2026-09-25T13:30:00.000Z." Information, not a caution: the token trades
+ * and the reference is live, just thinner.
+ */
+export function stockExtendedHoursNote(info: StockInfo, market: StockMarket): string {
+  const { referencePriceUsd: reference } = info.stock
+  const by = market.source === 'calendar' ? ', by the exchange calendar' : ''
+  const resume = market.nextOpenAt ? `, which resume at ${market.nextOpenAt}` : ''
+  const anchor =
+    reference === null
+      ? `There is no reference price to check the on-chain price against until regular hours${resume}.`
+      : `The reference price of ${money.format(reference)} is from a thinner market than regular hours${resume}.`
+  return `${info.symbol} is trading ${stockMarketWords(market.state)}${by}. ${anchor}`
 }
 
 /**
