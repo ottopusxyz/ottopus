@@ -102,6 +102,7 @@ describe('planHash', () => {
       onChainPriceUsd: '225.1',
       premiumBps: 43,
       asOf: '2026-09-25T14:00:00.000Z',
+      effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: 140 },
       market: {
         state: 'premarket' as const,
         source: 'calendar' as const,
@@ -118,6 +119,8 @@ describe('planHash', () => {
     expect(planHashOf(repriced)).not.toBe(planHashOf(withStock))
     const reopened = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, market: { ...stock.market, state: 'regular' as const } }] } }
     expect(planHashOf(reopened)).not.toBe(planHashOf(withStock))
+    const requoted = { ...withStock, humanPlan: { ...withStock.humanPlan, stocks: [{ ...stock, effective: { ...stock.effective, priceUsd: '227.28' } }] } }
+    expect(planHashOf(requoted)).not.toBe(planHashOf(withStock))
     // No `stocks` key at all is the pre-section shape; an explicit empty list would not be.
     expect(planHashOf(planDraftSchema.parse({ ...draft }))).toBe(planHashOf(draft))
     expect(() =>

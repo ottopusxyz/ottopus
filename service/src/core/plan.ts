@@ -125,8 +125,8 @@ export const stockMarketStateSchema = z.enum(STOCK_MARKET_STATES)
  * it is, what share it stands for, what the share and the token were worth
  * when the plan was built, and what state the market was in. Hashed with
  * the rest of the human plan, so the facts the person approves are the
- * facts the plan was judged on. The effective price per share from this
- * quote is not here yet; it belongs to the fuller stock panel.
+ * facts the plan was judged on, and the price per share this quote comes to
+ * is one of them.
  */
 /** A plain decimal, as a string: `224.13`, `1`, `-0.5`. */
 export const decimalSchema = z.string().regex(/^-?[0-9]+(\.[0-9]+)?$/, 'expected a decimal string')
@@ -149,6 +149,27 @@ export const planStockSchema = z.strictObject({
   premiumBps: z.number().int().nullable(),
   /** When the facts were read, as the source stamped them. */
   asOf: z.string().min(1),
+  /**
+   * What this trade comes to per share, from the quote: the other side in
+   * dollars over the shares the stock side stands for. Null when the other
+   * side has no price, or the quote fixed what arrives rather than what is
+   * spent, so the page can say so instead of guessing.
+   */
+  effective: z
+    .strictObject({
+      /** The other side of the trade: paid for the stock, or received for it. */
+      counterSymbol: z.string().min(1),
+      counterPriceUsd: decimalSchema,
+      /** Tokens moved × ratio. */
+      shares: decimalSchema,
+      /** What the trade pays or receives for them, in dollars. */
+      valueUsd: decimalSchema,
+      /** Per share. */
+      priceUsd: decimalSchema,
+      /** Against the reference price, signed basis points. Null without a reference. */
+      premiumBps: z.number().int().nullable(),
+    })
+    .nullable(),
   market: z.strictObject({
     state: stockMarketStateSchema,
     /** Who named the session: the data source, or the exchange calendar when it gave no session. */
