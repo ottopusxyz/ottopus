@@ -373,6 +373,7 @@ export async function prepareTrade(
       : [],
     quote: { expectedOut: quote.expectedOut, minOut: quote.minOut, nativeFee: quote.nativeFee },
     stocks,
+    now,
   })
   const warnings = blockWarnings(verdict)
   const plan = assemblePlan(

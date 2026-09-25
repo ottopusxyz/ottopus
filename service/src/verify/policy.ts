@@ -69,6 +69,11 @@ export interface VerifyInput {
    * old path untouched.
    */
   stocks?: readonly StockSide[] | undefined
+  /**
+   * The clock the rules read, for anything that has an age: today, the
+   * stock facts. The wall clock unless a test pins it.
+   */
+  now?: Date | undefined
 }
 
 /**
@@ -92,6 +97,18 @@ export interface StockSide {
  * share is worth, or take less, and should read that before signing.
  */
 export const STOCK_PREMIUM_THRESHOLD = 0.01
+
+/**
+ * How old the stock facts may be before the rules stop trusting them.
+ *
+ * The registry reads the token list every minute and, when the vendor stops
+ * answering, serves the last list it got for as long as the outage lasts. A
+ * status read before an outage cannot say what happened during it, and a
+ * halt is the one thing most worth knowing, so facts older than this block
+ * the plan rather than pass it on a stale "open". Five minutes: a few
+ * missed refreshes, not an afternoon.
+ */
+export const STOCK_FACTS_MAX_AGE_MS = 5 * 60_000
 
 export type Verdict =
   | { ok: true; warnings: Warning[] }
@@ -660,30 +677,44 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
  * stands for `tokenToShareRatio` shares, which drifts above one as dividends
  * accrue, so a token at reference × ratio is exactly at par. Only the
  * adverse direction warns: over par when buying, under par when selling. A
- * discount when buying is the person's gain and nobody's warning.
+ * discount when buying is the person's gain and nobody's warning. The
+ * warning names the basis it measured against, so a reader can check it.
+ *
+ * Neither check runs on facts older than `STOCK_FACTS_MAX_AGE_MS`. The
+ * registry serves its last answer through a vendor outage, and an "open"
+ * from before the outage says nothing about a halt during it, so stale
+ * facts block on their own. Identity does not age, so the Ondo note stays.
  *
  * Ondo's tokens carry a note: Ondo restricts who may hold them by
  * jurisdiction, and the chain does not check. A note rather than a block,
  * because eligibility is the person's fact and not Ottopus's to guess.
  */
-const stockRules: Rule = ({ stocks = [] }) => {
+const stockRules: Rule = ({ stocks = [], now = new Date() }) => {
   const findings: Finding[] = []
   for (const { role, info } of stocks) {
-    if (!info.stock.status.open) findings.push({ block: stockStatusReason(info) })
+    const stale = stockFactsStale(info, now)
+    if (stale) findings.push({ block: stockStaleReason(info, now) })
+    else if (!info.stock.status.open) findings.push({ block: stockStatusReason(info) })
 
-    const premium = stockPremium(info)
+    const premium = stale ? null : stockPremium(info)
     if (premium !== null && info.stock.referencePriceUsd !== null) {
       const adverse = role === 'to' ? premium : -premium
       if (adverse > STOCK_PREMIUM_THRESHOLD) {
         const pct = (adverse * 100).toFixed(1)
+        const { referencePriceUsd: reference, tokenToShareRatio: ratio } = info.stock
+        // A ratio of exactly one makes par the reference, and saying so twice
+        // helps nobody. A drifted one is named, with the arithmetic, so the
+        // figure on the page is the one the percentage was taken from.
+        const atPar = Math.abs(ratio - 1) < 0.00005
+        const basis = atPar
+          ? `the reference price of ${money.format(reference)}`
+          : `par of ${money.format(reference * ratio)} (reference ${money.format(reference)} × ${ratio.toFixed(4)} shares per token)`
         findings.push({
           warn: {
             severity: 'caution',
             code: role === 'to' ? 'stock_premium' : 'stock_discount',
-            message:
-              `On-chain price of ${info.symbol} is ${pct}% ${role === 'to' ? 'above' : 'below'} ` +
-              `the reference price of ${money.format(info.stock.referencePriceUsd)}.`,
-            saferAlternative: 'Wait for the on-chain price to return to the reference, or trade a smaller amount.',
+            message: `On-chain price of ${info.symbol} is ${pct}% ${role === 'to' ? 'above' : 'below'} ${basis}.`,
+            saferAlternative: `Wait for the on-chain price to return to ${atPar ? 'the reference' : 'par'}, or trade a smaller amount.`,
           },
         })
       }
@@ -713,6 +744,28 @@ export function stockPremium(info: StockInfo): number | null {
   if (info.priceUsd === null || referencePriceUsd === null) return null
   const par = referencePriceUsd * tokenToShareRatio
   return par > 0 ? info.priceUsd / par - 1 : null
+}
+
+/**
+ * Whether the facts are too old to act on. An `asOf` that does not parse is
+ * stale too: an unreadable time is no time.
+ */
+export function stockFactsStale(info: StockInfo, now: Date): boolean {
+  const age = now.getTime() - Date.parse(info.stock.asOf)
+  return !(age <= STOCK_FACTS_MAX_AGE_MS)
+}
+
+/**
+ * Why stale facts block, as a sentence: "The market status of NVDAB was
+ * last read at 2026-09-25T14:00:00.000Z, about 12 minutes ago, and has not
+ * been refreshed since. Try again shortly."
+ */
+export function stockStaleReason(info: StockInfo, now: Date): string {
+  const read = Date.parse(info.stock.asOf)
+  const when = Number.isFinite(read)
+    ? `at ${info.stock.asOf}, about ${Math.max(1, Math.round((now.getTime() - read) / 60_000))} minutes ago`
+    : 'at a time the data source did not give'
+  return `The market status of ${info.symbol} was last read ${when}, and has not been refreshed since. Try again shortly.`
 }
 
 /**

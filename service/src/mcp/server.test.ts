@@ -1189,7 +1189,8 @@ describe('prepare_trade', () => {
   describe('into a tokenized stock', () => {
     const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
     const STOCK = `${BASE}/erc20:${NVDAB}`
-    const nvdab = (over: Partial<StockInfo['stock']['status']> = {}, priceUsd = 224.13): StockInfo => ({
+    // Stamped now: the server runs on the wall clock, and facts age out of trust.
+    const nvdab = (over: Partial<StockInfo['stock']['status']> = {}, priceUsd = 224.13, asOf = new Date().toISOString()): StockInfo => ({
       assetId: STOCK,
       symbol: 'NVDAB',
       name: 'NVIDIA (bStocks)',
@@ -1204,7 +1205,7 @@ describe('prepare_trade', () => {
         tokenToShareRatio: 1,
         referencePriceUsd: 224.13,
         status: { open: true, marketStatus: 'overnight', reason: 'TRADING', nextOpenAt: null, nextCloseAt: null, ...over },
-        asOf: '2026-09-25T14:00:00.000Z',
+        asOf,
       },
     })
     const stocksOf = (info: StockInfo | null) => {
@@ -1243,6 +1244,22 @@ describe('prepare_trade', () => {
       expect(sink.created[0]!.plan.status).toBe('blocked')
       expect(sink.created[0]!.plan.humanPlan.warnings[0]).toMatchObject({ severity: 'block', code: 'verify_failed' })
       expect(stocks.asked).toEqual([`${BASE}/erc20:${USDC}`, STOCK])
+    })
+
+    it('refuses on facts the registry has not refreshed, even when they say open', async () => {
+      const sink = planSink()
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60_000).toISOString()
+      const { client } = await connected(undefined, {
+        readPortfolio: async () => holdings,
+        router: stubRouter(),
+        createPlan: sink.createPlan,
+        stocks: stocksOf(nvdab({}, 224.13, tenMinutesAgo)),
+      }, { grantId: 'grant-1' })
+      const res = (await send(client, { to: STOCK })) as Result
+      expect(res.isError).toBe(true)
+      expect(res.content[0]!.text).toContain(`The market status of NVDAB was last read at ${tenMinutesAgo}, about 10 minutes ago`)
+      expect(res.content[0]!.text).not.toContain('Review and sign')
+      expect(sink.created[0]!.plan.status).toBe('blocked')
     })
 
     it('puts the prices on the plan and says when the on-chain price runs ahead', async () => {

@@ -5,7 +5,7 @@ import type { AssetDelta, Call, DecodedAction, Intent, Simulation } from '../cor
 import { KNOWN_ABI } from './abi.js'
 import { decodeCalls } from './decode.js'
 import type { Lookups } from './lookups.js'
-import { type StockSide, blockWarnings, stockPremium, verifyPlan } from './policy.js'
+import { STOCK_FACTS_MAX_AGE_MS, type StockSide, blockWarnings, stockPremium, verifyPlan } from './policy.js'
 
 /**
  * Decoding is real (with lookups answered from memory), so a rule is tested
@@ -895,7 +895,9 @@ describe('a tokenized stock on one side', () => {
     },
   })
 
-  async function judge(intent: Intent, calls: Call[], stocks: StockSide[]) {
+  /** The facts were read at 14:00; the rules run two minutes later unless a test moves the clock. */
+  const READ_AT = Date.parse('2026-09-25T14:00:00.000Z')
+  async function judge(intent: Intent, calls: Call[], stocks: StockSide[], now = new Date(READ_AT + 2 * 60_000)) {
     const decodedActions = await decodeCalls(calls, lookups)
     return verifyPlan({
       intent,
@@ -904,6 +906,7 @@ describe('a tokenized stock on one side', () => {
       allowedSpenders: [ROUTER_ID],
       quote: { expectedOut: '1000000', minOut: '995000' },
       stocks,
+      now,
     })
   }
   /** The router's own unverified-target cautions are not what these tests are about. */
@@ -927,6 +930,36 @@ describe('a tokenized stock on one side', () => {
   it('names the session when the vendor gives no reason code', async () => {
     const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({ open: false, reason: null, marketStatus: 'weekend' }) }])
     expect(verdict.ok === false && verdict.reasons).toContain('NVDAB is not trading right now (market weekend).')
+  })
+
+  /**
+   * The registry serves its last list through a vendor outage. An "open"
+   * read before the outage says nothing about a halt during it, so old
+   * facts refuse the plan on their own, and the halt check is not even asked.
+   */
+  it('blocks on facts older than the registry could have refreshed, whatever they say', async () => {
+    const later = new Date(READ_AT + STOCK_FACTS_MAX_AGE_MS + 60_000)
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab() }], later)
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'The market status of NVDAB was last read at 2026-09-25T14:00:00.000Z, about 6 minutes ago, ' +
+        'and has not been refreshed since. Try again shortly.',
+    )
+    const halted = nvdab({ open: false, reason: 'CORPORATE_ACTION' })
+    const stale = await judge(buy, buyCalls, [{ role: 'to', info: halted }], later)
+    expect(stale.ok === false && stale.reasons.join(' ')).not.toContain('not trading')
+    const pricey = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 224.13 * 1.015 }) }], later)
+    expect(stockWarnings(pricey)).toEqual([])
+  })
+
+  it('trusts facts up to the limit, and none stamped at a time it cannot read', async () => {
+    const atLimit = await judge(buy, buyCalls, [{ role: 'to', info: nvdab() }], new Date(READ_AT + STOCK_FACTS_MAX_AGE_MS))
+    expect(atLimit.ok, JSON.stringify(!atLimit.ok && atLimit.reasons)).toBe(true)
+    const unreadable = { ...nvdab(), stock: { ...nvdab().stock, asOf: 'a while ago' } }
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: unreadable }])
+    expect(verdict.ok === false && verdict.reasons).toContain(
+      'The market status of NVDAB was last read at a time the data source did not give, and has not been refreshed since. Try again shortly.',
+    )
   })
 
   it('lets a half-percent premium through without a word', async () => {
@@ -959,6 +992,18 @@ describe('a tokenized stock on one side', () => {
     expect(stockPremium(accrued)).toBeCloseTo(-0.0049, 4)
     const verdict = await judge(buy, buyCalls, [{ role: 'to', info: accrued }])
     expect(stockWarnings(verdict)).toEqual([])
+  })
+
+  /** The warning names the figure the percentage was taken from, which is par and not the reference once the ratio has drifted. */
+  it('names par, with the arithmetic, when the ratio is not one', async () => {
+    const verdict = await judge(buy, buyCalls, [{ role: 'to', info: nvdab({}, { priceUsd: 103.53, reference: 100, ratio: 1.02 }) }])
+    expect(stockWarnings(verdict)).toMatchObject([
+      {
+        code: 'stock_premium',
+        message: 'On-chain price of NVDAB is 1.5% above par of $102.00 (reference $100.00 × 1.0200 shares per token).',
+        saferAlternative: 'Wait for the on-chain price to return to par, or trade a smaller amount.',
+      },
+    ])
   })
 
   it('says nothing about the price when the vendor gave none', async () => {
