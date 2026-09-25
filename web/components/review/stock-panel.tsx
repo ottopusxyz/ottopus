@@ -56,7 +56,7 @@ export function StockPanel({ stock }: { stock: StockPanelModel }) {
           <div className="flex flex-col gap-px">
             <dt className="text-[11.5px] text-[var(--ot-text-2)]">{stock.reference?.label ?? 'Reference price'}</dt>
             <dd className="m-0 font-mono text-[15px] font-semibold tabular-nums">{stock.reference?.value ?? '—'}</dd>
-            <dd className="m-0 text-[11px] text-[var(--ot-text-3)]">{stock.reference?.asOf ?? 'none from the data source'}</dd>
+            <dd className="m-0 text-[11px] text-[var(--ot-text-3)]">{stock.reference?.readAt ?? 'none from the data source'}</dd>
           </div>
           <div className="flex flex-col gap-px text-right">
             <dt className="text-[11.5px] text-[var(--ot-text-2)]">{stock.effective.label}</dt>

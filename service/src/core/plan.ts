@@ -147,7 +147,7 @@ export const planStockSchema = z.strictObject({
   onChainPriceUsd: decimalSchema.nullable(),
   /** How far the token trades from par, in signed basis points: 140 is 1.4% over. Null without both prices. */
   premiumBps: z.number().int().nullable(),
-  /** When the facts were read, as the source stamped them. */
+  /** When the connector read the facts, by its own clock. The source stamps no time on the price itself. */
   asOf: z.string().min(1),
   /**
    * What this trade comes to per share, from the quote: the other side in

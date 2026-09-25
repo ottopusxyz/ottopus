@@ -166,8 +166,8 @@ describe('what the page says', () => {
           issuer: 'bStock',
           side: 'buy',
           market: { label: 'Market open', tone: 'ok' },
-          reference: { label: 'Reference price', value: '$224.13', asOf: 'as of 12:35 UTC' },
-          effective: { label: 'You pay per share', value: '$227.27', detail: '2.2 shares for 500 USDC' },
+          reference: { label: 'Reference price', value: '$224.13', readAt: 'read at 12:35 UTC' },
+          effective: { label: 'You pay per share', value: '$227.27', detail: '2.2 shares for $500.00 of USDC' },
           premium: { value: '+1.4%', words: 'above the reference', tone: 'warn' },
           next: 'Regular hours close at Fri 25 Sep, 20:00 UTC.',
           stale: null,
@@ -178,7 +178,7 @@ describe('what the page says', () => {
     it('shows a buy at a discount in green, and a small gap in neither', () => {
       const cheap = stock({ effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.3', valueUsd: '500', priceUsd: '217.39130435', premiumBps: -301 } })
       expect(panels(cheap)[0]).toMatchObject({
-        effective: { value: '$217.39', detail: '2.3 shares for 500 USDC' },
+        effective: { value: '$217.39', detail: '2.3 shares for $500.00 of USDC' },
         premium: { value: '−3.0%', words: 'below the reference', tone: 'ok' },
       })
       const near = stock({ effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '494', priceUsd: '224.54545454', premiumBps: 19 } })
@@ -200,7 +200,7 @@ describe('what the page says', () => {
       })
       expect(panels(sell)[0]).toMatchObject({
         side: 'sell',
-        effective: { label: 'You receive per share', value: '$220.00', detail: '2 shares for 440 USDC' },
+        effective: { label: 'You receive per share', value: '$220.00', detail: '2 shares for $440.00 of USDC' },
         premium: { value: '−1.8%', words: 'below the reference', tone: 'warn' },
       })
       const well = stock({ role: 'from', effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2', valueUsd: '460', priceUsd: '230', premiumBps: 262 } })
@@ -220,11 +220,20 @@ describe('what the page says', () => {
       expect(panels(early)[0]).toMatchObject({ market: { label: 'Pre-market', tone: 'plan' }, next: 'Regular hours open at Fri 25 Sep, 13:30 UTC.' })
     })
 
-    it('says how old a stale reference is, and when there is none at all', () => {
+    it('prices the trade in dollars whatever was paid in, and names the counter asset beside it', () => {
+      const bnb = stock({ effective: { counterSymbol: 'BNB', counterPriceUsd: '900', shares: '2', valueUsd: '450', priceUsd: '225', premiumBps: 39 } })
+      expect(panels(bnb)[0]!.effective).toEqual({ label: 'You pay per share', value: '$225.00', detail: '2 shares for $450.00 of BNB' })
+    })
+
+    it('says when the figures were read, never how old the price is, and when the plan did not record it', () => {
       const later = Date.parse('2026-09-25T13:17:00.000Z')
       expect(stockPanels({ ...plan, humanPlan: { ...plan.humanPlan, stocks: [stock()] } }, later)[0]!.stale).toBe(
-        'The reference price is 42 minutes old.',
+        'These figures were read 42 minutes ago.',
       )
+      expect(panels(stock({ asOf: 'never' }))[0]).toMatchObject({
+        reference: { readAt: 'read at a time the plan did not record' },
+        stale: 'The plan does not say when these figures were read.',
+      })
       expect(panels(stock({ referencePriceUsd: null, effective: { counterSymbol: 'USDC', counterPriceUsd: '1', shares: '2.2', valueUsd: '500', priceUsd: '227.27272727', premiumBps: null } }))[0]).toMatchObject({
         reference: null,
         effective: { value: '$227.27' },

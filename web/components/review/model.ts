@@ -537,15 +537,15 @@ export interface StockPanelModel {
   issuer: string
   side: 'buy' | 'sell'
   market: { label: string; tone: Tone }
-  /** The share price the plan was judged against, named for what it is on a closed market. */
-  reference: { label: string; value: string; asOf: string } | null
+  /** The share price the plan was judged against, named for what it is on a closed market, and when the plan read it. */
+  reference: { label: string; value: string; readAt: string } | null
   /** What this quote comes to per share, or why it cannot say. */
   effective: { label: string; value: string; detail: string } | { label: string; missing: string }
   /** The gap between the two, coloured by the same threshold the service warns at. */
   premium: { value: string; words: string; tone: Tone } | null
   /** When regular hours change next, when the plan knows. */
   next: string | null
-  /** Set when the reference is old enough that a person should know. */
+  /** Set when the figures were read long enough ago that a person should know. */
   stale: string | null
 }
 
@@ -556,15 +556,19 @@ export function stockPanels(plan: Plan, now = Date.now()): StockPanelModel[] {
 function stockPanel(stock: PlanStock, now: number): StockPanelModel {
   const side = stock.role === 'to' ? 'buy' : 'sell'
   const { state } = stock.market
+  // `asOf` is when the connector read the vendor's list, by its own clock.
+  // The vendor stamps no time on the price itself, so the page says when the
+  // figures were read and never how old the price is: on a Saturday, Friday's
+  // close read at 12:35 is not a price from 12:35.
   const read = Date.parse(stock.asOf)
-  const asOf = Number.isFinite(read) ? `as of ${clockUtc(read)}` : 'as of a time the source did not give'
+  const readAt = Number.isFinite(read) ? `read at ${clockUtc(read)}` : 'read at a time the plan did not record'
   const reference =
     stock.referencePriceUsd === null
       ? null
       : {
           label: state === 'closed' ? 'Last close' : state === 'halted' ? 'Last print' : 'Reference price',
           value: formatMoneyFlat(Number(stock.referencePriceUsd)),
-          asOf,
+          readAt,
         }
   const effectiveLabel = side === 'buy' ? 'You pay per share' : 'You receive per share'
   const effective =
@@ -573,7 +577,8 @@ function stockPanel(stock: PlanStock, now: number): StockPanelModel {
       : {
           label: effectiveLabel,
           value: formatMoneyFlat(Number(stock.effective.priceUsd)),
-          detail: `${plainNumber(stock.effective.shares)} ${Number(stock.effective.shares) === 1 ? 'share' : 'shares'} for ${plainNumber(stock.effective.valueUsd)} ${stock.effective.counterSymbol}`,
+          // `valueUsd` is dollars, whatever was paid in: "$450.00 of BNB", never "450 BNB".
+          detail: `${plainNumber(stock.effective.shares)} ${Number(stock.effective.shares) === 1 ? 'share' : 'shares'} for ${formatMoneyFlat(Number(stock.effective.valueUsd))} of ${stock.effective.counterSymbol}`,
         }
   const age = Number.isFinite(read) ? now - read : Number.POSITIVE_INFINITY
   return {
@@ -587,9 +592,9 @@ function stockPanel(stock: PlanStock, now: number): StockPanelModel {
     premium: premiumOf(stock.effective?.premiumBps ?? null, side),
     next: nextSession(stock),
     stale: !Number.isFinite(read)
-      ? 'The reference price carries no time, so its age is unknown.'
+      ? 'The plan does not say when these figures were read.'
       : age > STALE_REFERENCE_MS
-        ? `The reference price is ${Math.round(age / 60_000)} minutes old.`
+        ? `These figures were read ${Math.round(age / 60_000)} minutes ago.`
         : null,
   }
 }
