@@ -16,3 +16,14 @@ export const ISSUER_NAMES: Readonly<Record<string, string>> = {
 export function issuerName(issuer: string): string {
   return ISSUER_NAMES[issuer] ?? issuer
 }
+
+/** The issuers with a file in public/stocks. Kept in step with that folder. */
+export const ISSUER_MARKS: ReadonlySet<string> = new Set(['bstock', 'ondo'])
+
+/**
+ * The issuer's own mark, as a path under public/, or null for an issuer we
+ * have no mark for. See public/stocks/README.md for where they came from.
+ */
+export function issuerMark(issuer: string): string | null {
+  return ISSUER_MARKS.has(issuer) ? `/stocks/${issuer}.svg` : null
+}
