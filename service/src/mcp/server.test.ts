@@ -182,12 +182,13 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers five read tools and four that write, and says which is which', async () => {
+  it('offers six read tools and four that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       'cancel_plan',
       'find_asset',
+      'find_stock',
       'get_plan',
       'get_portfolio',
       'list_wallets',
@@ -1605,6 +1606,149 @@ describe('find_asset', () => {
   it('needs no scope at all', async () => {
     const { client } = await connected([], { tokens: registry })
     const res = (await call(client, 'find_asset', { chain: BASE, query: 'DEGEN' })) as Result
+    expect(res.isError).toBeFalsy()
+  })
+})
+
+describe('find_stock', () => {
+  const stock = (
+    symbol: string,
+    platformId: string,
+    address: string,
+    over: { priceUsd?: number | null; referencePriceUsd?: number | null; ratio?: number; status?: Partial<StockInfo['stock']['status']> } = {},
+  ): StockInfo => ({
+    assetId: `eip155:56/erc20:${address}`,
+    symbol,
+    name: `NVIDIA (${platformId})`,
+    decimals: 18,
+    iconUrl: null,
+    priceUsd: over.priceUsd === undefined ? 225.06 : over.priceUsd,
+    verified: true,
+    stock: {
+      platformId,
+      ticker: 'NVDA',
+      companyName: 'Nvidia Corp',
+      tokenToShareRatio: over.ratio ?? 1,
+      referencePriceUsd: over.referencePriceUsd === undefined ? 224.88 : over.referencePriceUsd,
+      status: { open: true, marketStatus: 'regular', reason: 'TRADING', nextOpenAt: null, nextCloseAt: '2026-09-25T20:00:00.000Z', ...over.status },
+      asOf: '2026-09-25T14:00:00.000Z',
+    },
+  })
+  const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
+  const NVDAON = '0xa9ee28c80f960b889dfbd1902055218cba016f75'
+  const registry = (answer: (query: string) => StockInfo[] | null) => ({
+    name: 'fake-stocks',
+    async stockOf(): Promise<StockLookup> {
+      return { kind: 'none' }
+    },
+    async variants(_chain: string, query: string) {
+      return answer(query)
+    },
+  })
+  const both = registry((q) =>
+    ['NVDA', 'NVIDIA'].includes(q.toUpperCase())
+      ? [stock('NVDAB', 'bstock', NVDAB), stock('NVDAon', 'ondo', NVDAON, { priceUsd: 221.73, ratio: 1.0012 })]
+      : q === 'NVDAB'
+        ? [stock('NVDAB', 'bstock', NVDAB)]
+        : [],
+  )
+
+  /**
+   * The demo question: "what NVIDIA tokens are on BSC?" One line per
+   * provider with the figures a person compares, the address beneath each,
+   * and the instruction to ask rather than pick.
+   */
+  it('lists every provider’s token for a ticker, with prices, premium, market state and address', async () => {
+    const { client } = await connected(undefined, { stocks: both })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
+    expect(res.isError).toBeFalsy()
+    const lines = res.content[0]!.text.split('\n')
+    expect(lines[0]).toBe('Nvidia Corp (NVDA) has 2 tokens on BNB Chain, from different providers:')
+    expect(lines[1]).toBe('NVDAB (bstock) $225.06, +0.08% over reference, market open (regular hours)')
+    expect(lines[2]).toBe(`  assetId eip155:56/erc20:${NVDAB}`)
+    // Par moves with the share ratio: 224.88 × 1.0012 = 225.15, and 221.73 sits 1.52% under it.
+    expect(lines[3]).toBe('NVDAon (ondo) $221.73, −1.52% under reference, market open (regular hours), 1.0012 shares per token')
+    expect(lines[4]).toBe(`  assetId eip155:56/erc20:${NVDAON}`)
+    expect(lines[5]).toContain('Ask which provider the person means')
+    expect(res.structuredContent).toMatchObject({
+      ticker: 'NVDA',
+      companyName: 'Nvidia Corp',
+      variants: [
+        {
+          provider: 'bstock',
+          symbol: 'NVDAB',
+          assetId: `eip155:56/erc20:${NVDAB}`,
+          address: NVDAB,
+          decimals: 18,
+          tokenToShareRatio: 1,
+          tokenPriceUsd: 225.06,
+          referencePriceUsd: 224.88,
+          premiumPercent: 0.08,
+          status: { state: 'regular', open: true, reason: 'TRADING', nextOpenAt: null, nextCloseAt: '2026-09-25T20:00:00.000Z' },
+          asOf: '2026-09-25T14:00:00.000Z',
+        },
+        { provider: 'ondo', premiumPercent: -1.52, tokenToShareRatio: 1.0012 },
+      ],
+    })
+  })
+
+  it('answers a company name the same way, and a provider’s own symbol with one line', async () => {
+    const { client } = await connected(undefined, { stocks: both })
+    const byName = await call(client, 'find_stock', { chain: 'eip155:56', query: 'nvidia' })
+    expect(byName.content[0]!.text).toContain('has 2 tokens on BNB Chain')
+
+    const one = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDAB' })
+    expect(one.isError).toBeFalsy()
+    expect(one.content[0]!.text).toContain('Nvidia Corp (NVDA) has one token on BNB Chain:')
+    expect(one.content[0]!.text).not.toContain('Ask which provider')
+  })
+
+  /**
+   * The market words are verify's, read at this call's clock, so a halt or a
+   * close reads here exactly as the review page will read it on the plan.
+   */
+  it('says halted, closed with the next open, and never invents a premium without both prices', async () => {
+    const stocks = registry(() => [
+      stock('NVDAB', 'bstock', NVDAB, { status: { open: false, reason: 'TRADING_HALT' } }),
+      stock('NVDAon', 'ondo', NVDAON, { referencePriceUsd: null, status: { open: false, reason: 'MARKET_CLOSED', nextOpenAt: '2026-09-28T13:30:00.000Z' } }),
+    ])
+    const { client } = await connected(undefined, { stocks })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
+    const lines = res.content[0]!.text.split('\n')
+    expect(lines[1]).toBe('NVDAB (bstock) $225.06, +0.08% over reference, halted (TRADING_HALT)')
+    expect(lines[3]).toBe('NVDAon (ondo) $225.06, no reference price, market closed, opens 2026-09-28T13:30:00.000Z')
+    const variants = res.structuredContent!.variants as { premiumPercent: number | null; status: { state: string; open: boolean } }[]
+    expect(variants[0]!.status).toMatchObject({ state: 'halted', open: false })
+    expect(variants[1]).toMatchObject({ premiumPercent: null, status: { state: 'closed', open: false, nextOpenAt: '2026-09-28T13:30:00.000Z' } })
+  })
+
+  /** "Not a stock" and "could not say" are different answers, and neither sends the agent hunting for a contract. */
+  it('answers an unknown ticker plainly, and an outage as a retry', async () => {
+    const { client } = await connected(undefined, { stocks: both })
+    const unknown = await call(client, 'find_stock', { chain: 'eip155:56', query: 'ZZZZ' })
+    expect(unknown.isError).toBe(true)
+    expect(unknown.content[0]!.text).toContain('No tokenized stock matching "ZZZZ" was found on BNB Chain')
+    expect(unknown.content[0]!.text).toContain('call find_asset')
+
+    const { client: down } = await connected(undefined, { stocks: registry(() => null) })
+    const outage = await call(down, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
+    expect(outage.isError).toBe(true)
+    expect(outage.content[0]!.text).toContain('Could not look up "NVDA"')
+    expect(outage.content[0]!.text).toContain('Try again in a minute')
+    expect(outage.content[0]!.text).not.toContain('No tokenized stock')
+  })
+
+  it('says so when the deployment has no stock data', async () => {
+    const { client } = await connected(undefined, { stocks: null })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('no tokenized-stock data is configured')
+  })
+
+  /** Public stock data says nothing about the person, so no grant is needed. */
+  it('needs no scope at all', async () => {
+    const { client } = await connected([], { stocks: both })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
     expect(res.isError).toBeFalsy()
   })
 })
