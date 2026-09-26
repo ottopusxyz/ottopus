@@ -163,7 +163,8 @@ describe('what the page says', () => {
         {
           symbol: 'NVDAB',
           title: 'Nvidia Corp · NVDA',
-          issuer: 'bStock',
+          ticker: 'NVDA',
+          issuer: 'bstock',
           side: 'buy',
           market: { label: 'Market open', tone: 'ok' },
           reference: { label: 'Reference price', value: '$224.13', readAt: 'read at 12:35 UTC' },
@@ -245,8 +246,8 @@ describe('what the page says', () => {
       const unpriced = stock({ effective: null })
       const other = stock({ symbol: 'NVDAon', role: 'from', issuer: 'ondo' })
       expect(panels(unpriced, other).map((p) => [p.symbol, p.issuer, p.side])).toEqual([
-        ['NVDAB', 'bStock', 'buy'],
-        ['NVDAon', 'Ondo', 'sell'],
+        ['NVDAB', 'bstock', 'buy'],
+        ['NVDAon', 'ondo', 'sell'],
       ])
       expect(panels(unpriced)[0]).toMatchObject({
         effective: { label: 'You pay per share', missing: 'This quote does not price the trade in dollars.' },

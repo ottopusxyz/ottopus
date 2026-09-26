@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui'
+import { Badge, IssuerMark } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import type { StockPanelModel } from './model'
 
@@ -48,8 +48,9 @@ export function StockPanel({ stock }: { stock: StockPanelModel }) {
       </summary>
 
       <div className="flex flex-col gap-3 border-t border-[var(--ot-border)] px-3.5 py-3">
-        <p className="m-0 text-[11.5px] text-[var(--ot-text-3)]">
-          {stock.title} · {stock.issuer}
+        <p className="m-0 flex items-center gap-1.5 text-[11.5px] text-[var(--ot-text-3)]">
+          <span>{stock.title}</span>
+          <IssuerMark issuer={stock.issuer} ticker={stock.ticker} />
         </p>
 
         <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-0">

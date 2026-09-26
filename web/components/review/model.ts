@@ -2,7 +2,6 @@ import type { Tone } from '@/components/ui'
 import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StockMarketState } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
-import { issuerName } from '@/lib/stocks'
 
 /**
  * What the page shows, derived from the stored plan and nothing else. Every
@@ -528,6 +527,9 @@ export interface StockPanelModel {
   symbol: string
   /** "Nvidia Corp · NVDA" */
   title: string
+  /** The underlying's ticker, for the mark's title. */
+  ticker: string
+  /** The service's word for the issuer; the panel draws its mark and name. */
   issuer: string
   side: 'buy' | 'sell'
   market: { label: string; tone: Tone }
@@ -578,7 +580,8 @@ function stockPanel(stock: PlanStock, now: number): StockPanelModel {
   return {
     symbol: stock.symbol,
     title: `${stock.companyName} · ${stock.ticker}`,
-    issuer: issuerName(stock.issuer),
+    ticker: stock.ticker,
+    issuer: stock.issuer,
     side,
     market: MARKET_CHIP[state],
     reference,
