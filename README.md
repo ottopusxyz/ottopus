@@ -51,6 +51,7 @@ The agent gets these tools:
 | `list_wallets` | The linked wallets: name, chain, software, whether it can sign |
 | `get_portfolio` | Balances and DeFi positions across every linked wallet |
 | `find_asset` | Turn a symbol or contract address into an asset id |
+| `find_stock` | Every provider’s token for a stock, with prices, premium and market state |
 | `prepare_transfer` | A plan to send a token or native currency |
 | `prepare_trade` | A plan to swap, or to bridge across chains |
 | `prepare_custom` | Calls the agent wrote itself, held to a declaration of what they do |
