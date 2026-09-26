@@ -1749,7 +1749,7 @@ describe('find_stock', () => {
     expect(res.isError).toBeFalsy()
     const lines = res.content[0]!.text.split('\n')
     expect(lines[1]).toBe(
-      `NVDAB (bstock) stale — was $225.06, market open. The market status of NVDAB was last read at ${hourAgo}, ` +
+      `NVDAB (bstock) stale — was $225.06, market open (regular hours). The market status of NVDAB was last read at ${hourAgo}, ` +
         'about 60 minutes ago, and has not been refreshed since. Try again shortly. prepare_trade blocks on it until then.',
     )
     expect(lines[1]).not.toContain('over reference')
@@ -1767,6 +1767,27 @@ describe('find_stock', () => {
         },
         { provider: 'ondo', stale: false, staleReason: null, premiumPercent: -1.4 },
       ],
+    })
+  })
+
+  /**
+   * When the vendor says open and no more, the calendar names the hour. A
+   * stale row is read against the calendar at its read time, so Friday
+   * afternoon's "open" stays open whatever day it is looked at, with the
+   * session it was read in.
+   */
+  it('labels a stale reading by the calendar at its read time, not at this clock', async () => {
+    const fridayAfternoon = '2026-09-25T19:00:00.000Z'
+    const stocks = registry(() => [stock('NVDAB', 'bstock', NVDAB, { asOf: fridayAfternoon, status: { marketStatus: null } })])
+    const { client } = await connected(undefined, { stocks })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDAB' })
+    expect(res.isError).toBeFalsy()
+    const line = res.content[0]!.text.split('\n')[1]!
+    expect(line).toMatch(
+      /^NVDAB \(bstock\) stale — was \$225\.06, market open \(regular hours\)\. The market status of NVDAB was last read at 2026-09-25T19:00:00\.000Z, about \d+ minutes ago/,
+    )
+    expect(res.structuredContent).toMatchObject({
+      variants: [{ stale: true, status: { state: 'regular', open: true }, asOf: fridayAfternoon }],
     })
   })
 

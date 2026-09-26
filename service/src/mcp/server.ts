@@ -638,12 +638,18 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
  * goes with it, as it does in verify: a reference from before an outage
  * measures nothing. The last-read figures stay, marked, because "it was
  * $225 an hour ago" is still worth more to the agent than nothing.
+ *
+ * A stale row is labelled by the calendar at its read time, not at this
+ * clock. `stockMarket` lets the calendar name the hour when the vendor says
+ * open and no more, and Friday's reading looked at on Saturday would
+ * otherwise be called closed, which is not what was read.
  */
 function stockVariant(info: StockInfo, now: Date) {
   const { stock } = info
   const stale = stockFactsStale(info, now)
   const premium = stale ? null : stockPremium(info)
-  const market = stockMarket(info, now)
+  const readAt = new Date(Date.parse(stock.asOf))
+  const market = stockMarket(info, stale && Number.isFinite(readAt.getTime()) ? readAt : now)
   const price = info.priceUsd === null ? 'price unavailable' : usd(info.priceUsd)
   const gap =
     premium === null
@@ -658,10 +664,13 @@ function stockVariant(info: StockInfo, now: Date) {
         ? `market closed${market.nextOpenAt ? `, opens ${market.nextOpenAt}` : ''}`
         : `market open (${stockMarketWords(market.state)})`
   const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
-  // A stale line keeps only what the vendor said then: the session word is
-  // the calendar's at this clock when the vendor gave none, and an hour-old
-  // "open" gets no hour attached to it.
-  const then = market.state === 'halted' ? 'halted' : market.state === 'closed' ? 'market closed' : 'market open'
+  // A stale line says what was read, without a next bell that may have rung.
+  const then =
+    market.state === 'halted'
+      ? `halted${market.reason ? ` (${market.reason})` : ''}`
+      : market.state === 'closed'
+        ? 'market closed'
+        : `market open (${stockMarketWords(market.state)})`
   const staleReason = stale ? stockStaleReason(info, now) : null
   const line = stale
     ? `${info.symbol} (${stock.platformId}) stale — was ${price}, ${then}${ratio}. ${staleReason} prepare_trade blocks on it until then.`
