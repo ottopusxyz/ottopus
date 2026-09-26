@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
 import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
 import type { StockInfo } from '../connectors/tokens/index.js'
-import { stockMarket, stockMarketWords, stockPremium } from '../verify/index.js'
+import { stockFactsStale, stockMarket, stockMarketWords, stockPremium, stockStaleReason } from '../verify/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
@@ -396,8 +396,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'token’s price, the underlying share’s reference price, the gap between them as a signed ' +
         'percentage, and whether the market is open, with the next open and close. A bare ticker with ' +
         'several providers means ask the person which one they want; a suffixed symbol (…B for bStock, ' +
-        '…on for Ondo) names one. Read-only, and it reveals nothing about the person. Show the address ' +
-        'before spending anything.',
+        '…on for Ondo) names one. A reading older than five minutes is marked stale, with when it was ' +
+        'read; prepare_trade blocks on stale facts until they refresh. Read-only, and it reveals nothing ' +
+        'about the person. Show the address before spending anything.',
       inputSchema: {
         chain: z.string().describe('CAIP-2 chain id, e.g. eip155:56 for BNB Chain.'),
         query: z.string().describe('A ticker like NVDA, a company name like Nvidia, a provider’s token symbol like NVDAB, or a 0x contract address.'),
@@ -629,10 +630,19 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
  * The premium is signed and to two places because a tenth of a percent is the
  * order the gaps come in; the market words are verify's, so the agent and
  * the review page never disagree about whether it is open.
+ *
+ * The clock is verify's too. The registry serves its last answer through a
+ * vendor outage, and a plan on facts older than `STOCK_FACTS_MAX_AGE_MS`
+ * blocks; so a reading that old is said to be stale here, with when it was
+ * read, rather than passed off as the price and the market now. The premium
+ * goes with it, as it does in verify: a reference from before an outage
+ * measures nothing. The last-read figures stay, marked, because "it was
+ * $225 an hour ago" is still worth more to the agent than nothing.
  */
 function stockVariant(info: StockInfo, now: Date) {
   const { stock } = info
-  const premium = stockPremium(info)
+  const stale = stockFactsStale(info, now)
+  const premium = stale ? null : stockPremium(info)
   const market = stockMarket(info, now)
   const price = info.priceUsd === null ? 'price unavailable' : usd(info.priceUsd)
   const gap =
@@ -648,8 +658,16 @@ function stockVariant(info: StockInfo, now: Date) {
         ? `market closed${market.nextOpenAt ? `, opens ${market.nextOpenAt}` : ''}`
         : `market open (${stockMarketWords(market.state)})`
   const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
+  // A stale line keeps only what the vendor said then: the session word is
+  // the calendar's at this clock when the vendor gave none, and an hour-old
+  // "open" gets no hour attached to it.
+  const then = market.state === 'halted' ? 'halted' : market.state === 'closed' ? 'market closed' : 'market open'
+  const staleReason = stale ? stockStaleReason(info, now) : null
+  const line = stale
+    ? `${info.symbol} (${stock.platformId}) stale — was ${price}, ${then}${ratio}. ${staleReason} prepare_trade blocks on it until then.`
+    : `${info.symbol} (${stock.platformId}) ${price}, ${gap}, ${state}${ratio}`
   return {
-    line: `${info.symbol} (${stock.platformId}) ${price}, ${gap}, ${state}${ratio}`,
+    line,
     provider: stock.platformId,
     symbol: info.symbol,
     name: info.name,
@@ -669,6 +687,8 @@ function stockVariant(info: StockInfo, now: Date) {
       nextCloseAt: market.nextCloseAt,
     },
     asOf: stock.asOf,
+    stale,
+    staleReason,
   }
 }
 

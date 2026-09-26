@@ -11,8 +11,10 @@ export {
   blockWarnings,
   stockClosedNote,
   stockExtendedHoursNote,
+  stockFactsStale,
   stockHalted,
   stockPremium,
+  stockStaleReason,
   stockStatusReason,
   verifyPlan,
 } from './policy.js'

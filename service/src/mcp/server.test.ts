@@ -1615,7 +1615,13 @@ describe('find_stock', () => {
     symbol: string,
     platformId: string,
     address: string,
-    over: { priceUsd?: number | null; referencePriceUsd?: number | null; ratio?: number; status?: Partial<StockInfo['stock']['status']> } = {},
+    over: {
+      priceUsd?: number | null
+      referencePriceUsd?: number | null
+      ratio?: number
+      status?: Partial<StockInfo['stock']['status']>
+      asOf?: string
+    } = {},
   ): StockInfo => ({
     assetId: `eip155:56/erc20:${address}`,
     symbol,
@@ -1631,7 +1637,9 @@ describe('find_stock', () => {
       tokenToShareRatio: over.ratio ?? 1,
       referencePriceUsd: over.referencePriceUsd === undefined ? 224.88 : over.referencePriceUsd,
       status: { open: true, marketStatus: 'regular', reason: 'TRADING', nextOpenAt: null, nextCloseAt: '2026-09-25T20:00:00.000Z', ...over.status },
-      asOf: '2026-09-25T14:00:00.000Z',
+      // Read just now unless a test says otherwise: the tool ages facts on
+      // verify's clock, and a fixed date would go stale on its own.
+      asOf: over.asOf ?? new Date().toISOString(),
     },
   })
   const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
@@ -1685,9 +1693,11 @@ describe('find_stock', () => {
           referencePriceUsd: 224.88,
           premiumPercent: 0.08,
           status: { state: 'regular', open: true, reason: 'TRADING', nextOpenAt: null, nextCloseAt: '2026-09-25T20:00:00.000Z' },
-          asOf: '2026-09-25T14:00:00.000Z',
+          asOf: expect.any(String),
+          stale: false,
+          staleReason: null,
         },
-        { provider: 'ondo', premiumPercent: -1.52, tokenToShareRatio: 1.0012 },
+        { provider: 'ondo', premiumPercent: -1.52, tokenToShareRatio: 1.0012, stale: false },
       ],
     })
   })
@@ -1720,6 +1730,44 @@ describe('find_stock', () => {
     const variants = res.structuredContent!.variants as { premiumPercent: number | null; status: { state: string; open: boolean } }[]
     expect(variants[0]!.status).toMatchObject({ state: 'halted', open: false })
     expect(variants[1]).toMatchObject({ premiumPercent: null, status: { state: 'closed', open: false, nextOpenAt: '2026-09-28T13:30:00.000Z' } })
+  })
+
+  /**
+   * The registry serves its last answer through a vendor outage, and verify
+   * blocks a plan on facts older than five minutes. The listing keeps the
+   * same clock: an hour-old "open" is marked stale with its read time, the
+   * premium goes, and a fresh sibling on the same list is untouched.
+   */
+  it('marks a reading older than verify’s limit stale instead of passing it off as current', async () => {
+    const hourAgo = new Date(Date.now() - 60 * 60_000).toISOString()
+    const stocks = registry(() => [
+      stock('NVDAB', 'bstock', NVDAB, { asOf: hourAgo }),
+      stock('NVDAon', 'ondo', NVDAON, { priceUsd: 221.73 }),
+    ])
+    const { client } = await connected(undefined, { stocks })
+    const res = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDA' })
+    expect(res.isError).toBeFalsy()
+    const lines = res.content[0]!.text.split('\n')
+    expect(lines[1]).toBe(
+      `NVDAB (bstock) stale — was $225.06, market open. The market status of NVDAB was last read at ${hourAgo}, ` +
+        'about 60 minutes ago, and has not been refreshed since. Try again shortly. prepare_trade blocks on it until then.',
+    )
+    expect(lines[1]).not.toContain('over reference')
+    expect(lines[3]).toBe('NVDAon (ondo) $221.73, −1.40% under reference, market open (regular hours)')
+    expect(res.structuredContent).toMatchObject({
+      variants: [
+        {
+          provider: 'bstock',
+          stale: true,
+          staleReason: expect.stringContaining('about 60 minutes ago'),
+          premiumPercent: null,
+          tokenPriceUsd: 225.06,
+          referencePriceUsd: 224.88,
+          asOf: hourAgo,
+        },
+        { provider: 'ondo', stale: false, staleReason: null, premiumPercent: -1.4 },
+      ],
+    })
   })
 
   /** "Not a stock" and "could not say" are different answers, and neither sends the agent hunting for a contract. */
