@@ -283,3 +283,56 @@ describe('POST /:id/link', () => {
     expect((await post(bob, `/${plan.id}/link`, {})).status).toBe(404)
   })
 })
+
+describe('GET /:id/simulate/binance', () => {
+  const withSimulator = (userId: string, simulate: Parameters<typeof planRoutes>[2]['simulateWithBinance']) =>
+    planRoutes(db, signedInAs(userId), { webUrl: 'https://ottopus.test/', readPortfolio, simulateWithBinance: simulate })
+
+  it('answers with the vendor’s reading of my own plan, and stores nothing', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const asked: string[] = []
+    const res = await withSimulator(alice, async (p) => {
+      asked.push(p.id)
+      return {
+        provider: 'binance',
+        status: 'SUCCESS',
+        failReason: null,
+        failedCall: null,
+        balanceChanges: [{ assetId: 'eip155:8453/slip44:60', symbol: 'ETH', decimals: 18, diff: '-1000' }],
+        allowanceChanges: [],
+        ranAt: '2026-09-26T10:00:00.000Z',
+      }
+    }).request(`/${plan.id}/simulate/binance`)
+    expect(res.status).toBe(200)
+    expect(asked).toEqual([plan.id])
+    const body = (await res.json()) as { status: string; balanceChanges: { diff: string }[] }
+    expect(body.status).toBe('SUCCESS')
+    expect(body.balanceChanges[0]!.diff).toBe('-1000')
+    // Advice, not evidence: the plan is exactly as it was.
+    const after = await app(alice).request(`/${(await link(plan.id)).token}`)
+    expect(((await after.json()) as { plan: { status: string; simulation: unknown } }).plan).toMatchObject({ status: 'awaiting_review', simulation: null })
+    expect(await pg.query('select count(*)::int as n from simulations')).toMatchObject({ rows: [{ n: 0 }] })
+  })
+
+  it('is a 404 for someone else’s plan, so a plan id leaks nothing', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    let asked = 0
+    const simulate = async () => {
+      asked += 1
+      return { provider: 'binance' as const, status: 'SUCCESS' as const, failReason: null, failedCall: null, balanceChanges: [], allowanceChanges: [], ranAt: '' }
+    }
+    expect((await withSimulator(bob, simulate).request(`/${plan.id}/simulate/binance`)).status).toBe(404)
+    expect((await withSimulator(alice, simulate).request('/not-a-uuid/simulate/binance')).status).toBe(404)
+    expect(asked).toBe(0)
+  })
+
+  it('is unavailable, not an error, when nothing is wired up', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const res = await app(alice).request(`/${plan.id}/simulate/binance`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ provider: 'binance', status: 'unavailable', failReason: 'no Binance credential is configured' })
+  })
+})

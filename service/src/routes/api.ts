@@ -4,9 +4,11 @@ import { createPrivyAuth, keyProblem, requireSession } from '../auth/index.js'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
+import { binanceSimulator } from '../connectors/simulation/index.js'
 import { activityRoutes } from './activity.js'
 import { agentRoutes } from './agents.js'
 import { consentRoutes } from './consent.js'
+import { binanceClient } from './binance-client.js'
 import { apiErrorHandler } from './errors.js'
 import { planRoutes } from './plans.js'
 import { portfolioRoutes } from './portfolio.js'
@@ -139,6 +141,8 @@ if (ready) {
       readPortfolio: provider ? (arms) => readPortfolio(provider, arms) : null,
       chainIcon: provider?.chainIcon ? (chainId) => provider.chainIcon!(chainId) : null,
       tokens: tokenRegistry,
+      /** The review page's second opinion. A null client answers "unavailable" in its own words. */
+      simulateWithBinance: binanceSimulator({ client: binanceClient, tokens: tokenRegistry }),
     }),
   )
 

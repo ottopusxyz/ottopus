@@ -110,3 +110,13 @@ export function gasUsd(gasUsed: string, { gasPriceWei, nativePriceUsd, nativeDec
 
 /** What the simulator was asked, kept beside the answer so a run can be reproduced. */
 export type { SimulationRequest as SimulationInput }
+export {
+  BINANCE_SIMULATION_PROVIDER,
+  binanceSimulator,
+  unavailableSimulation,
+  type BinanceAllowanceChange,
+  type BinanceBalanceChange,
+  type BinanceSimulate,
+  type BinanceSimulation,
+  type BinanceSimulatorOptions,
+} from './binance.js'
