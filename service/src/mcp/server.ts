@@ -2,9 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SessionUser } from '../auth/session.js'
 import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
+import type { StockInfo } from '../connectors/tokens/index.js'
+import { stockMarket, stockMarketWords, stockPremium } from '../verify/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
-import { portfolioText, resolveWallet, summarisePortfolio, walletsText } from './readable.js'
+import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
@@ -310,7 +312,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'about the person. A symbol can be ambiguous, so the address it resolved to comes back too: ' +
         'show it before spending anything. A tokenized stock is resolved from stock data, so a bare ' +
         'ticker like NVDA with several providers on the chain is refused with the choice listed; a ' +
-        'provider’s own symbol (NVDAB, NVDAon) or the address names one.',
+        'provider’s own symbol (NVDAB, NVDAon) or the address names one. To see every provider’s token ' +
+        'for a stock with its prices and market state, call find_stock.',
       inputSchema: {
         chain: z.string().describe('CAIP-2 chain id, e.g. eip155:8453 for Base.'),
         query: z
@@ -364,6 +367,80 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           : 'Not marked verified by the token registry. Show the address to the person before spending anything.',
       ]
       return text(lines.join('\n'), { ...found, address })
+    },
+  )
+
+  /**
+   * The question find_asset cannot answer: which tokens *are* this stock,
+   * and what state is each in. A ticker on a chain is several contracts from
+   * several providers, at different prices and share ratios, and the person
+   * picks one before anything is prepared. So the answer is every variant,
+   * with the figures a person would compare — the token's price beside the
+   * share's, the gap between them, whether the market is open — and the
+   * address beneath each, since that is what a prepare_* tool takes.
+   *
+   * The premium and the market state are the same readings verify makes on
+   * a plan, at this call's clock, so what the agent shows before preparing
+   * is what the review page will say after.
+   *
+   * No scope: this reads public stock data and nothing about the person.
+   */
+  server.registerTool(
+    'find_stock',
+    {
+      title: 'Find a stock’s tokens',
+      description:
+        'List every tokenized version of a stock on a chain, from every provider, with the CAIP-19 asset ' +
+        'id prepare_trade needs for each. Query by ticker (NVDA), company name (Nvidia), or a provider’s ' +
+        'own token symbol (NVDAB, NVDAon). Per token: the provider, decimals, shares per token, the ' +
+        'token’s price, the underlying share’s reference price, the gap between them as a signed ' +
+        'percentage, and whether the market is open, with the next open and close. A bare ticker with ' +
+        'several providers means ask the person which one they want; a suffixed symbol (…B for bStock, ' +
+        '…on for Ondo) names one. Read-only, and it reveals nothing about the person. Show the address ' +
+        'before spending anything.',
+      inputSchema: {
+        chain: z.string().describe('CAIP-2 chain id, e.g. eip155:56 for BNB Chain.'),
+        query: z.string().describe('A ticker like NVDA, a company name like Nvidia, a provider’s token symbol like NVDAB, or a 0x contract address.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ chain, query }) => {
+      if (!deps.stocks) {
+        return failure('Stock lookup is not available on this deployment — no tokenized-stock data is configured.')
+      }
+      const variants = await deps.stocks.variants(chain, query)
+      // Null is the registry saying it could not answer, which is not the
+      // same as "not a stock": the agent should try again, not go looking
+      // for the contract somewhere else.
+      if (variants === null) {
+        return failure(
+          `Could not look up "${query}" on ${chainName(chain)} right now: the tokenized-stock data did not answer. ` +
+            'Try again in a minute.',
+        )
+      }
+      if (variants.length === 0) {
+        return failure(
+          `No tokenized stock matching "${query}" was found on ${chainName(chain)}. Check the ticker and the chain; ` +
+            'for a token that is not a stock, call find_asset.',
+        )
+      }
+      const now = new Date()
+      const rows = variants.map((info) => stockVariant(info, now))
+      const first = variants[0]!.stock
+      const heading =
+        variants.length === 1
+          ? `${first.companyName} (${first.ticker}) has one token on ${chainName(chain)}:`
+          : `${first.companyName} (${first.ticker}) has ${variants.length} tokens on ${chainName(chain)}, from different providers:`
+      const lines = [heading, ...rows.flatMap((row) => [row.line, `  assetId ${row.assetId}`])]
+      if (variants.length > 1) {
+        lines.push('Ask which provider the person means before preparing anything; each is a different contract.')
+      }
+      return text(lines.join('\n'), {
+        ticker: first.ticker,
+        companyName: first.companyName,
+        chain,
+        variants: rows.map(({ line: _line, ...row }) => row),
+      })
     },
   )
 
@@ -543,4 +620,61 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
   )
 
   return server
+}
+
+/**
+ * One stock token as a line and as a record.
+ *
+ * "NVDAB (bstock) $224.30, 0.08% over reference, market open (regular hours)".
+ * The premium is signed and to two places because a tenth of a percent is the
+ * order the gaps come in; the market words are verify's, so the agent and
+ * the review page never disagree about whether it is open.
+ */
+function stockVariant(info: StockInfo, now: Date) {
+  const { stock } = info
+  const premium = stockPremium(info)
+  const market = stockMarket(info, now)
+  const price = info.priceUsd === null ? 'price unavailable' : usd(info.priceUsd)
+  const gap =
+    premium === null
+      ? stock.referencePriceUsd === null
+        ? 'no reference price'
+        : `reference ${usd(stock.referencePriceUsd)}`
+      : `${premiumWords(premium)} reference`
+  const state =
+    market.state === 'halted'
+      ? `halted${market.reason ? ` (${market.reason})` : ''}`
+      : market.state === 'closed'
+        ? `market closed${market.nextOpenAt ? `, opens ${market.nextOpenAt}` : ''}`
+        : `market open (${stockMarketWords(market.state)})`
+  const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
+  return {
+    line: `${info.symbol} (${stock.platformId}) ${price}, ${gap}, ${state}${ratio}`,
+    provider: stock.platformId,
+    symbol: info.symbol,
+    name: info.name,
+    assetId: info.assetId,
+    address: info.assetId.split(':').pop() ?? '',
+    decimals: info.decimals,
+    tokenToShareRatio: stock.tokenToShareRatio,
+    tokenPriceUsd: info.priceUsd,
+    referencePriceUsd: stock.referencePriceUsd,
+    premiumPercent: premium === null ? null : Number((premium * 100).toFixed(2)),
+    status: {
+      state: market.state,
+      open: market.state !== 'closed' && market.state !== 'halted',
+      reason: market.reason,
+      reasonMessage: market.note,
+      nextOpenAt: market.nextOpenAt,
+      nextCloseAt: market.nextCloseAt,
+    },
+    asOf: stock.asOf,
+  }
+}
+
+/** "+0.08% over" / "−1.40% under" / "at" — signed, two places, never bare. */
+function premiumWords(premium: number): string {
+  const pct = Math.abs(premium * 100)
+  if (pct < 0.005) return 'at'
+  return `${premium > 0 ? '+' : '−'}${pct.toFixed(2)}% ${premium > 0 ? 'over' : 'under'}`
 }
