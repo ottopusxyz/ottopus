@@ -153,10 +153,19 @@ export function binanceSimulator(options: BinanceSimulatorOptions): BinanceSimul
         binanceChainId,
         evmTx: { from: signer.address, to: parseAccountId(call.to).address, value: call.value, data: call.data },
       })
-      if (answer?.status !== 'SUCCESS') {
+      const status = answer?.status
+      if (status !== 'SUCCESS' && status !== 'FAILED') {
+        // Only the vendor's own FAILED is a verdict. A body with no status,
+        // or one this code has never seen, is no answer at all.
+        return unavailableSimulation(
+          status ? `Binance answered with a status Ottopus does not know: ${status}` : 'Binance answered without a status',
+          now,
+        )
+      }
+      if (status === 'FAILED') {
         // The first refusal is the answer. Later calls would run against a
         // state this one never reached, and nothing they say would be shown.
-        const reason = answer?.failReason?.trim() || 'the vendor gave no reason'
+        const reason = answer.failReason?.trim() || 'the vendor gave no reason'
         return {
           provider: BINANCE_SIMULATION_PROVIDER,
           status: 'FAILED',
@@ -171,9 +180,17 @@ export function binanceSimulator(options: BinanceSimulatorOptions): BinanceSimul
         // The vendor reports the sender's side only, but a row it ever
         // attributes to someone else is not a change to this wallet.
         if (change.owner && change.owner.toLowerCase() !== signer.address.toLowerCase()) continue
-        const assetId = assetIdOf(chainId, change)
+        const address = change.contractAddress?.toLowerCase()
         const diff = bigintOf(change.change)
-        if (!assetId || diff === null) continue
+        if (!address || diff === null || diff === 0n) continue
+        const assetId = isNativeRow(change, address) ? nativeAssetIdOf(chainId) : `${chainId}/erc20:${address}`
+        if (!assetId) {
+          // The registry has no CAIP-19 for this chain's currency, so the
+          // row cannot be drawn. Dropping it would show a SUCCESS with half
+          // the movement missing; no answer is more honest than that one.
+          const symbol = findChain(chainId)?.nativeCurrency.symbol ?? 'its native currency'
+          return unavailableSimulation(`Binance reported a change in ${symbol} that Ottopus cannot yet name on ${chainName(chainId)}`, now)
+        }
         sums.set(assetId, (sums.get(assetId) ?? 0n) + diff)
       }
       for (const change of answer.allowanceChanges ?? []) {
@@ -224,12 +241,9 @@ export function binanceSimulator(options: BinanceSimulatorOptions): BinanceSimul
   }
 }
 
-/** CAIP-19 for a vendor row, or null for a native currency Ottopus cannot name. */
-function assetIdOf(chainId: string, change: VendorBalanceChange): string | null {
-  const address = change.contractAddress?.toLowerCase()
-  if (!address) return null
-  if (change.tokenType?.toLowerCase() === 'native' || address === NATIVE_SENTINEL) return nativeAssetIdOf(chainId)
-  return `${chainId}/erc20:${address}`
+/** The vendor marks the chain's own currency by type, by its sentinel address, or both. */
+function isNativeRow(change: VendorBalanceChange, address: string): boolean {
+  return change.tokenType?.toLowerCase() === 'native' || address === NATIVE_SENTINEL
 }
 
 function bigintOf(value: string | undefined): bigint | null {

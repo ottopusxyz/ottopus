@@ -11,8 +11,8 @@ const NVDAB = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
 const ROUTER = '0xb44446b0c8e56988c34f7ff73ae904982b5fdda5'
 const NOW = new Date('2026-09-26T10:00:00Z')
 
-/** A swap plan on BNB Chain: an exact approval, then the router. */
-function plan(calls: Plan['outcome'] extends { calls: infer C } ? C : never): Plan {
+/** A swap plan, on BNB Chain unless told otherwise: an exact approval, then the router. */
+function plan(calls: Plan['outcome'] extends { calls: infer C } ? C : never, chain = BSC): Plan {
   const expiresAt = new Date(NOW.getTime() + 15 * 60_000).toISOString()
   return assemblePlan(
     planDraftSchema.parse({
@@ -20,9 +20,9 @@ function plan(calls: Plan['outcome'] extends { calls: infer C } ? C : never): Pl
       version: 1,
       userId: '7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d',
       createdVia: 'agent',
-      intent: { kind: 'swap', from: `${BSC}/erc20:${USDT}`, to: `${BSC}/erc20:${NVDAB}`, amountIn: '50000000000000000000' },
+      intent: { kind: 'swap', from: `${chain}/erc20:${USDT}`, to: `${chain}/erc20:${NVDAB}`, amountIn: '50000000000000000000' },
       provenance: 'route_provider',
-      resolution: { account: { caip10: `${BSC}:${ME}`, label: 'Main' }, candidatesConsidered: [], reason: 'only funded account' },
+      resolution: { account: { caip10: `${chain}:${ME}`, label: 'Main' }, candidatesConsidered: [], reason: 'only funded account' },
       outcome: { type: 'calls', calls },
       quote: { provider: 'binance', expiresAt },
       humanPlan: { summary: 'Swap 50 USDT for NVDAB', steps: ['Approve', 'Swap'], feesUsd: '0.02', warnings: [] },
@@ -144,6 +144,29 @@ describe('the Binance simulation', () => {
     const answer = await binanceSimulator({ client, now: () => NOW })(plan([swap]))
     expect(answer.failReason).toBe('execution reverted: BEP20: transfer amount exceeds balance')
     expect(answer.failedCall).toBe(1)
+  })
+
+  it('is unavailable, never FAILED, when the vendor answers without a verdict', async () => {
+    for (const data of [null, {}, { status: 'PENDING', failReason: '' }]) {
+      const { client } = server([envelope(data)])
+      const answer = await binanceSimulator({ client, now: () => NOW })(plan([swap]))
+      expect(answer.status, JSON.stringify(data)).toBe('unavailable')
+      expect(answer.failedCall).toBeNull()
+    }
+    const { client } = server([envelope({ status: 'PENDING' })])
+    expect((await binanceSimulator({ client, now: () => NOW })(plan([swap]))).failReason).toBe('Binance answered with a status Ottopus does not know: PENDING')
+  })
+
+  it('is unavailable, never a SUCCESS missing a row, when a native change has no CAIP-19', async () => {
+    // Mantle is served by the vendor and in the chain registry, but MNT has no coin type yet.
+    const MANTLE = 'eip155:5000'
+    const { client } = server([
+      envelope(success({ balanceChanges: [{ contractAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', tokenType: 'NATIVE', change: '-1', owner: ME }] })),
+    ])
+    const answer = await binanceSimulator({ client, now: () => NOW })(plan([{ ...swap, to: `${MANTLE}:${ROUTER}`, chainId: MANTLE }], MANTLE))
+    expect(answer.status).toBe('unavailable')
+    expect(answer.failReason).toBe('Binance reported a change in MNT that Ottopus cannot yet name on Mantle')
+    expect(answer.balanceChanges).toEqual([])
   })
 
   it('is unavailable without a credential, and says so', async () => {
