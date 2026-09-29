@@ -51,10 +51,10 @@ describe('landing structure', () => {
     expect(FLAT).not.toContain('Transaction review for AI agents')
   })
 
-  /** The one place the event is named, kept quiet and kept in the footer. */
-  it('names where it was built once, in the footer', () => {
-    const footer = FLAT.slice(FLAT.indexOf('<footer'), FLAT.indexOf('</footer>'))
-    expect(footer).toContain('{BUILT_DURING}')
+  /** The one place the event is named: a quiet line above the headline. */
+  it('names where it was built once, above the headline', () => {
+    const hero = FLAT.slice(0, FLAT.indexOf('<h1'))
+    expect(hero).toContain('{BUILT_AT}')
     expect(FLAT.match(/BNB Hack/g)).toHaveLength(1)
   })
 

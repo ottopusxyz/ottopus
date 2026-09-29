@@ -24,8 +24,8 @@ import { GitHub, REPO_URL } from '@/components/shell'
  * repo, and either a greeting that opens the app or a Sign in button.
  */
 
-/** Where this was built. One line in the footer; remove it here and it is gone. */
-const BUILT_DURING = 'Built during BNB Hack: Tokenized Stocks Edition'
+/** Where this was built. One line above the headline; remove it here and it is gone. */
+const BUILT_AT = 'Built at BNB Hack: Tokenized Stocks Edition'
 
 /** Six, the design system's ceiling: past that it reads as an aquarium. */
 const HERO_LIFE: readonly SeaCreature[] = [
@@ -120,11 +120,8 @@ export default function Landing() {
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
                 <p className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/stocks/bstock.svg" alt="" width={22} height={22} className="rounded-[6px]" />
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/stocks/ondo.svg" alt="" width={22} height={22} className="rounded-[6px] bg-[var(--ot-cream)]" />
-                  Tokenized stocks on BNB Chain
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-[#F3BA2F]" />
+                  {BUILT_AT}
                 </p>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
@@ -180,10 +177,6 @@ export default function Landing() {
           </div>
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-4 border-t border-[var(--ot-border)] pt-6">
             <Lockup layout="horizontal" size={26} />
-            <p className="m-0 flex items-center gap-2 text-[12px] text-[var(--ot-text-4)]">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#F3BA2F]" />
-              {BUILT_DURING}
-            </p>
           </div>
         </footer>
       </div>
