@@ -276,24 +276,51 @@ function DeckCard({ step, n }: { step: string; n: number }) {
   )
 }
 
+/** The review's three checks, each with its own mark, in the ok tone. An open market is a live dot. */
+const REVIEW_CHECKS: readonly { label: string; icon: string | null }[] = [
+  { label: 'Decoded', icon: 'M5 4 2 8l3 4M11 4l3 4-3 4' },
+  { label: 'Simulated', icon: 'M2 12l4-4 3 3 5-6' },
+  { label: 'Market open', icon: null },
+]
+
 function ReviewCard() {
   return (
     <div className="ot-bob ot-bob--c flex flex-col gap-3 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_96%,transparent)] p-4 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
-      <span className="font-display text-[18px] font-bold">
-        {EXAMPLE.pay} → {EXAMPLE.get}
+      <span className="flex items-center gap-2 font-display text-[18px] font-bold">
+        <Mark src="/chains/bnb.svg" size={22} round />
+        {EXAMPLE.pay}
+        <span className="font-ui text-[15px] font-medium text-[var(--ot-text-3)]">→</span>
+        <TeslaMark size={22} />
+        {EXAMPLE.get}
+        <Mark src="/stocks/bstock.svg" size={16} />
       </span>
       <span className="flex gap-3.5 text-[13px] text-[var(--ot-text-2)]">
-        {['Decoded', 'Simulated', 'Market open'].map((label) => (
-          <span key={label} className="flex items-center gap-1.5">
-            <Tick />
-            {label}
+        {REVIEW_CHECKS.map((check) => (
+          <span key={check.label} className="flex items-center gap-1.5">
+            <span className="flex h-[20px] w-[20px] flex-none items-center justify-center rounded-[6px] bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]">
+              {check.icon ? (
+                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={check.icon} />
+                </svg>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-[var(--ot-ok)]" />
+              )}
+            </span>
+            {check.label}
           </span>
         ))}
       </span>
       <span className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-[13px] text-[var(--ot-text-3)]">
-          <Mark src="/wallets/binance_wallet.svg" size={18} round />
-          Binance Wallet
+        <span className="flex items-center gap-2.5 text-[13px] text-[var(--ot-text-3)]">
+          <span className="flex items-center gap-1.5">
+            <Mark src="/wallets/binance_wallet.svg" size={18} round />
+            Binance Wallet
+          </span>
+          <span className="h-3.5 w-px bg-[var(--ot-border-strong)]" />
+          <span className="flex items-center gap-1.5">
+            <Mark src="/dapps/pancakeswap.png" size={18} />
+            {EXAMPLE.route}
+          </span>
         </span>
         <span className="rounded-full bg-[var(--ot-coral)] px-5 py-2 text-[14px] font-semibold text-[var(--ot-on-state)]">Sign</span>
       </span>
