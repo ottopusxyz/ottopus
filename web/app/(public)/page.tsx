@@ -1,14 +1,13 @@
 import type { CSSProperties } from 'react'
-import Link from 'next/link'
 import { LandingAccount, SignInCta } from '@/components/auth'
 import { Lockup, Otto } from '@/components/brand'
+import { AddToAgent } from '@/components/landing/add-to-agent'
 import { HeroCards } from '@/components/landing/hero-cards'
 import { LandingMotion } from '@/components/landing/landing-motion'
 import { Reveal } from '@/components/landing/reveal'
 import { Story } from '@/components/landing/story'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
 import { GitHub, REPO_URL } from '@/components/shell'
-import { buttonClasses } from '@/components/ui'
 
 /**
  * The landing page. The message is the product's first one — stop juggling
@@ -139,9 +138,7 @@ export default function Landing() {
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">
                   <SignInCta>Link your first wallet</SignInCta>
-                  <Link href="/review/demo" className={buttonClasses({ variant: 'ghost', size: 'lg' })}>
-                    See a review →
-                  </Link>
+                  <AddToAgent />
                 </div>
               </div>
 

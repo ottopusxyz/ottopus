@@ -17,7 +17,6 @@ const SETTLED = [
   'Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>',
   'Say &ldquo;buy NVIDIA&rdquo; to your agent. Otto finds the token, the wallet and the route — and checks it all before you sign.',
   'Link your first wallet',
-  'See a review →',
   'Otto never holds a key.',
   'One intent. Every wallet. You still sign.',
 ]
@@ -59,8 +58,10 @@ describe('landing structure', () => {
     expect(FLAT.match(/BNB Hack/g)).toHaveLength(1)
   })
 
-  it('sends the second call to action to a review, not to sign-in', () => {
-    expect(FLAT).toMatch(/href="\/review\//)
+  /** The second action is adding Ottopus to an agent, the way Settings does. */
+  it('offers adding Ottopus to an agent beside the first wallet', () => {
+    expect(FLAT).toContain('<SignInCta>Link your first wallet</SignInCta> <AddToAgent />')
+    expect(FLAT).not.toMatch(/href="\/review\//)
   })
 
   /**
