@@ -42,7 +42,7 @@ type Phase = number
 const DONE = STEPS.length
 
 /** Where the deck and the review sit in the 540×520 drawing. */
-const DECK = { x: 318, y: 118, w: 222, h: 178 }
+const DECK = { x: 338, y: 118, w: 202, h: 178 }
 const REVIEW = { x: 30, y: 372, w: 410 }
 
 /** The middle of the slot each card lands in on the review, in the drawing's coordinates. */
@@ -112,7 +112,8 @@ export function HeroCards({ className }: { className?: string }) {
     <div ref={ref} aria-hidden className={cn('relative', className)} style={{ aspectRatio: `${W} / ${H}` }}>
       {/* Absolute, so the design width never becomes the column's minimum. */}
       <div className="absolute top-0 left-0" style={{ width: W, height: H, transform: `scale(${scale})`, transformOrigin: '0 0' }}>
-        <div className="ot-drift absolute" style={{ left: 130, top: 140 }}>
+        {/* While the deck runs, his raised arm gestures at each card (landing.css). */}
+        <div className={cn('ot-drift absolute', shown >= 0 && shown < DONE && !reduce && 'ot-gesture')} style={{ left: 130, top: 140 }}>
           <Otto pose={pose} size={250} animated className="h-[250px] w-[250px]" />
         </div>
 

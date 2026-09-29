@@ -60,6 +60,25 @@
   50% { transform: translateY(-6px); }
 }
 
+/* ── Otto's raised arm, gesturing at the hero's deck ──────────────── */
+
+/* The pose's own raised arm (the sixth) flicks toward the deck once per card:
+   up, back a little, settle. It moves the arm's strokes rather than its group,
+   so it layers on top of his idle sway instead of replacing it, and it turns
+   about the arm's root, where it meets his body. One beat per card, so the
+   flick lands as each card is done. */
+.ot-gesture [data-arm="6"] > path {
+  transform-origin: 152px 108px;
+  animation: ot-gesture 1.35s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-gesture {
+  0%, 100% { rotate: 0deg; }
+  30% { rotate: -16deg; }
+  55% { rotate: 7deg; }
+  75% { rotate: -3deg; }
+}
+
 /* ── The built-at line: a quiet sparkle ───────────────────────────── */
 
 /* The BNB coin keeps turning about its upright axis, slowly and evenly, like
@@ -167,6 +186,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ot-coin, .ot-glint { animation: none; }
+  .ot-gesture [data-arm="6"] > path { animation: none; }
   .ot-spark-star { display: none; }
   .ot-land-rise { display: none; }
   .ot-bob { animation: none; }
