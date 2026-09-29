@@ -14,14 +14,11 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Buy the stock, <span className="block text-[var(--ot-coral-text)]">not the token.</span>',
-  'Ottopus finds the right stock token, the wallet that can pay and the route — no juggling wallets, no hunting for dapps — then shows you exactly what will happen before anything moves.',
+  'Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>',
+  'Say &ldquo;buy NVIDIA&rdquo; to your agent. Otto finds the token, the wallet and the route — and checks it all before you sign.',
   'Link your first wallet',
-  'See what a review looks like',
-  'Ottopus never holds a key, never signs and never broadcasts.',
-  'One conversation instead of six tabs',
-  'You sign, or your agent wallet sends',
-  'What Otto checks before you ever see it',
+  'See a review →',
+  'Otto never holds a key.',
   'One intent. Every wallet. You still sign.',
 ]
 
@@ -46,8 +43,9 @@ describe('landing structure', () => {
     expect(ctas.length + explicitPrimaries.length).toBe(1)
   })
 
-  it('keeps the brand bar to the lockup, the repo and the account', () => {
+  it('keeps the brand bar to the lockup, how it works, the repo and the account', () => {
     const bar = FLAT.slice(FLAT.indexOf('<header'), FLAT.indexOf('</header>'))
+    expect(bar).toContain('href="#how"')
     expect(bar).toContain('REPO_URL')
     expect(bar).toContain('<LandingAccount')
     expect(bar).not.toContain('ThemeToggle')
@@ -70,8 +68,8 @@ describe('landing structure', () => {
    * Ambient markup below the fold would put motion behind copy.
    */
   it('keeps the ambient layer in the hero', () => {
-    const hero = FLAT.slice(0, FLAT.indexOf('One conversation instead of six tabs'))
-    const rest = FLAT.slice(FLAT.indexOf('One conversation instead of six tabs'))
+    const hero = FLAT.slice(0, FLAT.indexOf('<Story />'))
+    const rest = FLAT.slice(FLAT.indexOf('<Story />'))
     expect(hero).toContain('BubbleField')
     expect(hero).toContain('ot-caustic')
     expect(hero).toContain('SeaLife')
