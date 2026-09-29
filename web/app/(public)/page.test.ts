@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 /**
- * The landing copy is settled — issue #6 says so and gives it verbatim. It is
- * the one thing on this page that is not a judgement call, and it is exactly
- * the thing a later "small tidy" would rewrite. Reading the source rather than
- * rendering keeps this honest about what it checks: the words, not the layout.
+ * The landing copy is settled: stocks lead, the wallet and dapp clutter is
+ * what goes away, and you still sign. It is the one thing on this page that
+ * is not a judgement call, and it is exactly the thing a later "small tidy"
+ * would rewrite. Reading the source rather than rendering keeps this honest
+ * about what it checks: the words, not the layout.
  */
 const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 
@@ -13,18 +14,15 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Stop juggling wallets to get one thing done',
-  'Tell your agent what you want, not where to find it. Ottopus works out which wallet, which chain and which app — then shows you exactly what will happen before anything moves.',
+  'Buy the stock, <span className="block text-[var(--ot-coral-text)]">not the token.</span>',
+  'Ottopus finds the right stock token, the wallet that can pay and the route — no juggling wallets, no hunting for dapps — then shows you exactly what will happen before anything moves.',
   'Link your first wallet',
   'See what a review looks like',
-  'Ottopus never holds a key and never asks for a seed phrase.',
+  'Ottopus never holds a key, never signs and never broadcasts.',
   'One conversation instead of six tabs',
+  'You sign, or your agent wallet sends',
+  'What Otto checks before you ever see it',
   'One intent. Every wallet. You still sign.',
-  'Link your wallets',
-  'Hardware, hot, or a Safe. Up to eight — Otto only has eight arms.',
-  'Point your agent at Ottopus',
-  'Works with Claude, Codex, or whatever you already talk to. Nothing to install.',
-  'Say what you want',
 ]
 
 describe('landing copy', () => {
@@ -54,6 +52,13 @@ describe('landing structure', () => {
     expect(bar).toContain('<LandingAccount')
     expect(bar).not.toContain('ThemeToggle')
     expect(FLAT).not.toContain('Transaction review for AI agents')
+  })
+
+  /** The one place the event is named, kept quiet and kept in the footer. */
+  it('names where it was built once, in the footer', () => {
+    const footer = FLAT.slice(FLAT.indexOf('<footer'), FLAT.indexOf('</footer>'))
+    expect(footer).toContain('{BUILT_DURING}')
+    expect(FLAT.match(/BNB Hack/g)).toHaveLength(1)
   })
 
   it('sends the second call to action to a review, not to sign-in', () => {

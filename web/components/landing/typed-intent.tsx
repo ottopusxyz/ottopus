@@ -11,12 +11,10 @@ import { useMediaQuery } from '@/lib/use-media-query'
  */
 export const TYPED_INTENTS: readonly string[] = [
   'Buy NVIDIA with 50 USDT on BNB Chain',
+  'Put 200 USDT into Tesla from my agent wallet',
+  'Sell half my Apple stock',
+  'Buy $100 of Microsoft, whichever token is cheapest',
   'Swap 500 USDC for ETH',
-  'Buy $100 of Tesla stock on BNB Chain',
-  'Get me the cheapest $1,000 loan on Base',
-  'Send 0.1 ETH to koshik.eth',
-  'Move my idle USDC to the best yield',
-  'Revoke every unlimited approval I have',
   'Bridge 50 USDC to Arbitrum',
 ]
 
