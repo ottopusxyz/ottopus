@@ -10,7 +10,7 @@ import type { PoseName } from '@/components/brand'
  */
 
 export interface Beat {
-  id: 'clutter' | 'grouped' | 'sentence' | 'link' | 'checks' | 'endings'
+  id: 'clutter' | 'grouped' | 'sentence' | 'picks' | 'link' | 'checks' | 'endings' | 'landed'
   /** Where this beat's copy takes over. */
   from: number
   /** A progress at which the stage shows this beat finished — for stills. */
@@ -26,16 +26,16 @@ export const BEATS: readonly Beat[] = [
   {
     id: 'clutter',
     from: 0,
-    still: 0.04,
+    still: 0.03,
     n: '01 · Today',
-    title: 'Five tabs. Three wallets. Ten clicks.',
-    body: 'That is what one stock costs you today.',
+    title: 'Buying one stock onchain shouldn’t take six tabs.',
+    body: 'Too many wallets. Too many dApps. Which one?',
     pose: 'heads-up',
   },
   {
     id: 'grouped',
-    from: 0.14,
-    still: 0.23,
+    from: 0.11,
+    still: 0.19,
     n: '01 · With Otto',
     title: 'Otto holds them all.',
     body: 'Every wallet in one place. Every tab gone.',
@@ -43,16 +43,25 @@ export const BEATS: readonly Beat[] = [
   },
   {
     id: 'sentence',
-    from: 0.26,
-    still: 0.41,
+    from: 0.21,
+    still: 0.33,
     n: '02',
-    title: 'Say it once.',
-    body: 'To Claude, Codex or any MCP agent. Nothing to install.',
+    title: 'Just tell your agent.',
+    body: 'One sentence in, one signature out. Claude, Codex or any MCP agent.',
     pose: 'simulating',
   },
   {
+    id: 'picks',
+    from: 0.35,
+    still: 0.45,
+    n: '02 · The wallet',
+    title: 'Otto picks the wallet, and says why.',
+    body: 'Six wallets checked. The one with the BNB and the gas wins.',
+    pose: 'planning',
+  },
+  {
     id: 'link',
-    from: 0.44,
+    from: 0.48,
     still: 0.63,
     n: '03',
     title: 'One link back.',
@@ -62,7 +71,7 @@ export const BEATS: readonly Beat[] = [
   {
     id: 'checks',
     from: 0.64,
-    still: 0.82,
+    still: 0.775,
     n: '04 · Safety',
     title: 'Checked before you sign.',
     body: 'Decoded, simulated and warned — in plain words.',
@@ -70,11 +79,20 @@ export const BEATS: readonly Beat[] = [
   },
   {
     id: 'endings',
-    from: 0.84,
-    still: 1,
+    from: 0.78,
+    still: 0.87,
     n: '05',
     title: 'You sign. Or your agent does.',
     body: 'Agent wallets act only inside a rule you set.',
+    pose: 'plan-ready',
+  },
+  {
+    id: 'landed',
+    from: 0.88,
+    still: 1,
+    n: '05 · Done',
+    title: 'Signed. Confirmed. Yours.',
+    body: 'Follow it on BscScan, then see it in your portfolio.',
     pose: 'confirmed',
   },
 ]
@@ -88,35 +106,54 @@ export function beatAt(progress: number): number {
 
 /**
  * Animation windows on the stage, as [start, end] of scroll progress.
- * Scene one is the clutter flying into Otto; three is the link growing into
- * the review; four splits the review into its checks; five is the endings.
+ * Mutable tuples on purpose: Motion's input ranges will not take readonly ones.
  */
 const span = (start: number, end: number): [number, number] => [start, end]
 const four = (a: number, b: number, c: number, d: number): [number, number, number, number] => [a, b, c, d]
 
 export const T = {
-  gather: span(0.06, 0.2),
-  ottoIn: span(0.08, 0.16),
-  stack: span(0.12, 0.22),
-  sceneOneOut: span(0.24, 0.28),
-  chatIn: span(0.27, 0.32),
-  tools: four(0.31, 0.34, 0.37, 0.4),
-  reply: span(0.43, 0.47),
-  glow: span(0.47, 0.51),
-  morph: span(0.52, 0.62),
-  split: span(0.65, 0.72),
-  lights: four(0.7, 0.73, 0.76, 0.79),
-  endingsIn: span(0.84, 0.92),
+  /** 01 — the tabs, wallets and dApps fly into Otto. */
+  gather: span(0.04, 0.14),
+  stack: span(0.1, 0.18),
+  sceneOneOut: span(0.2, 0.23),
+  /** 02 — the chat rises and the tool calls tick in. */
+  chatIn: span(0.22, 0.26),
+  tools: four(0.26, 0.28, 0.3, 0.32),
+  /** 02 · the wallet — six tiles, five dim, one wins with its reason. */
+  pickIn: span(0.35, 0.38),
+  pick: span(0.39, 0.42),
+  reason: span(0.42, 0.44),
+  pickOut: span(0.46, 0.48),
+  /** 03 — the reply, the link, and the link growing into the review. */
+  reply: span(0.49, 0.52),
+  glow: span(0.52, 0.55),
+  morph: span(0.56, 0.62),
+  /** 04 — the review splits into its checks, which light up in turn. */
+  split: span(0.65, 0.69),
+  lights: four(0.69, 0.715, 0.74, 0.765),
+  /** 05 — the two endings, then the one that landed. */
+  endingsIn: span(0.79, 0.84),
+  landed: span(0.89, 0.94),
 }
 
-/** The one example the whole page follows, so every figure agrees. */
+/**
+ * The one example the whole page follows, so every figure agrees: ten
+ * dollars of Tesla, bought with BNB from a Binance Wallet, routed through
+ * PancakeSwap by the Binance Trading API. The shape is the intro film's; the
+ * figures are illustrative, not a quote, and the page never calls them real.
+ */
 export const EXAMPLE = {
-  pay: '50 USDT',
-  get: '0.2757 NVDAB',
-  minGet: '0.2743',
-  reference: '$181.20',
-  perShare: '$181.35',
-  premium: '+0.08%',
-  holds: '412 USDT',
-  agentPay: '20 USDT',
+  prompt: 'Buy me 10 USD worth of Tesla.',
+  pay: '0.0131 BNB',
+  payUsd: '$10.00',
+  get: '0.0270 TSLAB',
+  minGet: '0.0269',
+  reference: '$369.66',
+  perShare: '$370.37',
+  premium: '+0.19%',
+  route: 'PancakeSwap',
+  via: 'via Binance Trading API',
+  fee: '$0.03',
+  holds: 'holds 0.015 BNB on BNB Chain, has gas',
+  walletsChecked: 6,
 } as const
