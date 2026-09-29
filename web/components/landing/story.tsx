@@ -43,7 +43,7 @@ function Pinned() {
   useMotionValueEvent(scrollYProgress, 'change', (v) => setBeat(beatAt(v)))
 
   return (
-    <div ref={track} className="relative" style={{ height: '820vh' }}>
+    <div ref={track} className="relative" style={{ height: '740vh' }}>
       {/* Every beat's words, once, for anyone not watching the stage. */}
       <ol className="sr-only">
         {BEATS.map((b) => (
@@ -80,7 +80,7 @@ function Pinned() {
   )
 }
 
-/** Five scenes, eight beats: some scenes have a before and an after. */
+/** Five scenes, seven beats: some scenes have a before and an after. */
 function Rail({ beat }: { beat: number }) {
   const current = Number(BEATS[beat]!.n.slice(0, 2))
   return (

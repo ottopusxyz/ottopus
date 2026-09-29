@@ -10,7 +10,7 @@ import type { PoseName } from '@/components/brand'
  */
 
 export interface Beat {
-  id: 'clutter' | 'grouped' | 'sentence' | 'picks' | 'link' | 'checks' | 'endings' | 'landed'
+  id: 'clutter' | 'grouped' | 'sentence' | 'picks' | 'link' | 'checks' | 'endings'
   /** Where this beat's copy takes over. */
   from: number
   /** A progress at which the stage shows this beat finished — for stills. */
@@ -80,20 +80,11 @@ export const BEATS: readonly Beat[] = [
   {
     id: 'endings',
     from: 0.78,
-    still: 0.87,
+    still: 1,
     n: '05',
     title: 'You sign. Or your agent does.',
     body: 'Agent wallets act only inside a rule you set.',
     pose: 'plan-ready',
-  },
-  {
-    id: 'landed',
-    from: 0.88,
-    still: 1,
-    n: '05 · Done',
-    title: 'Signed. Confirmed. Yours.',
-    body: 'Follow it on BscScan, then see it in your portfolio.',
-    pose: 'confirmed',
   },
 ]
 
@@ -131,9 +122,8 @@ export const T = {
   /** 04 — the review splits into its checks, which light up in turn. */
   split: span(0.65, 0.69),
   lights: four(0.69, 0.715, 0.74, 0.765),
-  /** 05 — the two endings, then the one that landed. */
-  endingsIn: span(0.79, 0.84),
-  landed: span(0.89, 0.94),
+  /** 05 — the two endings. */
+  endingsIn: span(0.79, 0.86),
 }
 
 /**

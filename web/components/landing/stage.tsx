@@ -617,7 +617,7 @@ function SceneChecks({ p }: { p: P }) {
   )
 }
 
-/* ── 05 · the two endings, then the one that landed ──────────────── */
+/* ── 05 · the two endings ───────────────────────────────────────── */
 
 /**
  * The wallet's own confirmation, drawn after the Binance Wallet's dark pop-up
@@ -659,44 +659,21 @@ function WalletPopup() {
   )
 }
 
-function Milestone({ label, sub }: { label: string; sub: ReactNode }) {
-  return (
-    <span className="relative flex flex-col items-center gap-1.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F0B90B] text-[#181A20]">
-        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3.5 8.5l3 3 6-7" />
-        </svg>
-      </span>
-      <span className="text-[11px] font-semibold tracking-[0.08em] uppercase">{label}</span>
-      <span className="text-[12px] text-[var(--ot-text-3)]">{sub}</span>
-    </span>
-  )
-}
-
 function SceneEndings({ p }: { p: P }) {
   const opacity = useTransform(p, T.endingsIn, [0, 1])
   const leftX = useTransform(p, T.endingsIn, [-360, 0])
   const rightX = useTransform(p, T.endingsIn, [360, 0])
-  // Once it is signed, the pop-up lifts away and the phone steps back: what is
-  // left is the transaction landing, and the stock where you keep your stocks.
-  const popupOut = useTransform(p, [T.landed[0], T.landed[0] + 0.025], [1, 0])
-  const popupY = useTransform(p, [T.landed[0], T.landed[0] + 0.025], [0, -40])
-  const phoneOut = useTransform(p, [T.landed[0], T.landed[0] + 0.025], [1, 0])
-  // It lands only once the pop-up has gone, so the two never share the frame.
-  const landed = useTransform(p, [T.landed[0] + 0.025, T.landed[1]], [0, 1])
-  const landedY = useTransform(p, [T.landed[0] + 0.025, T.landed[1]], [30, 0])
-  const rail = useTransform(p, [T.landed[0] + 0.01, T.landed[1]], [0, 1])
 
   return (
     <motion.div className="absolute inset-0" style={{ opacity }}>
-      <motion.div className="absolute" style={{ left: 40, top: 70, x: leftX, opacity: popupOut, y: popupY, rotate: -2 }}>
+      <motion.div className="absolute" style={{ left: 40, top: 70, x: leftX, rotate: -2 }}>
         <WalletPopup />
         <span className="mt-3 block text-center text-[13px] text-[var(--ot-text-2)]">In your own wallet, like always.</span>
       </motion.div>
 
       <motion.div
         className="absolute box-border h-[520px] w-[250px] rounded-[40px] bg-[var(--ot-navy)] p-[9px] shadow-[0_34px_70px_-24px_rgba(22,33,62,.5)]"
-        style={{ left: 450, top: 60, x: rightX, rotate: 4, opacity: phoneOut }}
+        style={{ left: 450, top: 60, x: rightX, rotate: 4 }}
       >
         <div className="flex h-full flex-col gap-3 rounded-[32px] bg-[var(--ot-surface)] px-4 pt-[22px] pb-4">
           <span className={CAPTION}>Agent wallet · your rule</span>
@@ -715,31 +692,6 @@ function SceneEndings({ p }: { p: P }) {
         </div>
       </motion.div>
 
-      <motion.div className="absolute flex w-[420px] flex-col gap-6" style={{ left: 40, top: 90, opacity: landed, y: landedY }}>
-        <div className="relative flex items-start justify-between px-2">
-          <span className="absolute top-3.5 right-12 left-12 h-0.5 bg-[var(--ot-border)]" />
-          <motion.span className="absolute top-3.5 right-12 left-12 h-0.5 origin-left bg-[#F0B90B]" style={{ scaleX: rail }} />
-          <Milestone label="Signed" sub="Binance Wallet" />
-          <Milestone label="Confirmed" sub={<span className="text-[var(--ot-plan-text)]">BscScan ↗</span>} />
-        </div>
-        <div className={cn(CARD, 'relative flex flex-col gap-3 rounded-[20px] p-4')}>
-          <div className="flex items-center justify-between">
-            <span className={CAPTION}>Your portfolio · BNB Chain</span>
-            <span className="rounded-full bg-[var(--ot-ok-bg)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--ot-ok-text)]">✓ confirmed</span>
-          </div>
-          <div className="flex items-center gap-3 text-[14px]">
-            <Mark src="/chains/bnb.svg" size={28} round />
-            <span className="flex flex-col"><span className="font-semibold">BNB</span><span className="text-[12px] text-[var(--ot-text-3)]">BNB Chain</span></span>
-            <span className="ml-auto font-mono font-semibold">$204.30</span>
-          </div>
-          <div className="flex items-center gap-3 rounded-[12px] bg-[var(--ot-ok-bg)] p-2 text-[14px] ring-1 ring-[var(--ot-ok-border)]">
-            <TeslaMark size={28} />
-            <span className="flex flex-col"><span className="font-semibold">TSLAB</span><span className="text-[12px] text-[var(--ot-text-3)]">Tesla · bStock</span></span>
-            <span className="ml-auto font-mono text-[13px] text-[var(--ot-ok-text)]">+0.0270</span>
-            <span className="font-mono font-semibold">{EXAMPLE.payUsd}</span>
-          </div>
-        </div>
-      </motion.div>
     </motion.div>
   )
 }
@@ -749,15 +701,15 @@ function SceneEndings({ p }: { p: P }) {
 function StageOtto({ p, beat }: { p: P; beat: number }) {
   // Centre-top while he gathers the clutter and holds the wallets, bottom-right
   // while the agent works and he picks the wallet, out of the way while the
-  // review page fills the stage, bottom-centre under the checks, away for the
-  // endings, and back beside the portfolio once it has landed.
-  const x = useTransform(p, [0.22, 0.27, 0.64, 0.66, 0.88, 0.9], [270, 560, 560, 295, 295, 490])
-  const y = useTransform(p, [0.22, 0.27, 0.64, 0.66, 0.88, 0.9], [40, 440, 440, 450, 450, 230])
-  const scale = useTransform(p, [0.22, 0.27, 0.88, 0.9], [1, 0.75, 0.75, 1])
+  // review page fills the stage, bottom-centre under the checks, and away for
+  // the endings, whose phone carries its own Otto.
+  const x = useTransform(p, [0.22, 0.27, 0.64, 0.66], [270, 560, 560, 295])
+  const y = useTransform(p, [0.22, 0.27, 0.64, 0.66], [40, 440, 440, 450])
+  const scale = useTransform(p, [0.22, 0.27], [1, 0.75])
   const opacity = useTransform(
     p,
-    [0.05, 0.09, 0.53, 0.55, T.split[0], T.split[1], T.endingsIn[0], T.endingsIn[0] + 0.02, T.landed[0] + 0.025, T.landed[1]],
-    [0, 1, 1, 0, 0, 1, 1, 0, 0, 1],
+    [0.05, 0.09, 0.53, 0.55, T.split[0], T.split[1], T.endingsIn[0], T.endingsIn[0] + 0.02],
+    [0, 1, 1, 0, 0, 1, 1, 0],
   )
   return (
     <motion.div className="absolute top-0 left-0" style={{ x, y, scale, opacity, transformOrigin: '0 0' }}>
