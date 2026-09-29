@@ -10,9 +10,10 @@ import { useFit } from './use-fit'
 /**
  * The hero's right half: Otto in the water, doing a stock buy in front of
  * you. The prompt types itself; then a deck of flash cards beside him shows
- * each thing he works out — the stock, the wallet, the route, the simulation
- * — the top card swiping away as the next is done; then the review he hands
- * back settles in front of him. It holds, and runs again.
+ * each thing he works out — the stock, the wallet, the route, the simulation.
+ * As each is done it shrinks and flies down into its slot on the review
+ * below, which fills in from Otto's work and, with the last card, turns solid
+ * and offers Sign. It holds, and runs again.
  *
  * The prompt is the intro film's, and the rest of the page follows the same
  * ten dollars of Tesla, so every figure on it agrees. With reduced motion the
@@ -39,6 +40,34 @@ const HOLD_S = 5.5
 /** -1 before the deck, 0..3 a card on top, STEPS.length once the review is in. */
 type Phase = number
 const DONE = STEPS.length
+
+/** Where the deck and the review sit in the 540×520 drawing. */
+const DECK = { x: 318, y: 118, w: 222, h: 178 }
+const REVIEW = { x: 30, y: 372, w: 410 }
+
+/** The middle of the slot each card lands in on the review, in the drawing's coordinates. */
+const SLOTS: Record<string, { x: number; y: number }> = {
+  stock: { x: 300, y: 426 },
+  simulate: { x: 190, y: 460 },
+  wallet: { x: 110, y: 496 },
+  route: { x: 240, y: 496 },
+}
+
+/** A finished card's exit: shrink and fly into its slot, arriving as the slot fills. */
+function flightTo(step: string) {
+  const to = SLOTS[step]!
+  return {
+    x: to.x - (DECK.x + DECK.w / 2),
+    y: to.y - (DECK.y + DECK.h / 2),
+    scale: 0.12,
+    rotate: -10,
+    opacity: 0,
+    transition: { duration: 0.55, ease: [0.45, 0, 0.2, 1] as const },
+  }
+}
+
+/** How long after a card leaves the deck its slot lights up: the flight's length, near enough. */
+const LAND_S = 0.45
 
 export function HeroCards({ className }: { className?: string }) {
   const reduce = useReducedMotion()
@@ -101,39 +130,48 @@ export function HeroCards({ className }: { className?: string }) {
           </div>
         </motion.div>
 
-        {/* The deck. Two blank cards stand behind it so it reads as a stack;
-            the top card swipes off to the right and the next one rises. */}
+        {/* The deck. Two blank cards stand behind it so it reads as a stack.
+            A finished card does not leave: it shrinks and flies down into its
+            slot on the review below, which is built out of Otto's work. */}
         {shown >= 0 ? (
-          <div className="absolute" style={{ left: 318, top: 118, width: 222, height: 178 }}>
-            <span className="absolute inset-0 translate-x-[10px] translate-y-[12px] rotate-[5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-surface-2)] opacity-70" />
-            <span className="absolute inset-0 translate-x-[5px] translate-y-[6px] rotate-[2.5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-card)] opacity-90" />
+          <div className="absolute" style={{ left: DECK.x, top: DECK.y, width: DECK.w, height: DECK.h }}>
+            <motion.span
+              className="absolute inset-0 translate-x-[10px] translate-y-[12px] rotate-[5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-surface-2)]"
+              animate={{ opacity: shown === DONE ? 0 : 0.7 }}
+            />
+            <motion.span
+              className="absolute inset-0 translate-x-[5px] translate-y-[6px] rotate-[2.5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-card)]"
+              animate={{ opacity: shown === DONE ? 0 : 0.9 }}
+            />
             <AnimatePresence initial={false}>
-              <motion.div
-                key={STEPS[top]!.key}
-                className="absolute inset-0"
-                initial={{ y: 12, scale: 0.94, rotate: 2.5, opacity: 0.6 }}
-                animate={{ y: 0, scale: 1, rotate: 0, opacity: 1 }}
-                exit={{ x: 170, y: -24, rotate: 16, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 170, damping: 20 }}
-              >
-                <DeckCard step={STEPS[top]!.key} n={top + 1} />
-              </motion.div>
+              {shown < DONE ? (
+                <motion.div
+                  key={STEPS[top]!.key}
+                  className="absolute inset-0"
+                  initial={{ y: 12, scale: 0.94, rotate: 2.5, opacity: 0.6 }}
+                  animate={{ y: 0, scale: 1, rotate: 0, opacity: 1 }}
+                  exit={flightTo(STEPS[top]!.key)}
+                  transition={{ type: 'spring', stiffness: 170, damping: 20 }}
+                >
+                  <DeckCard step={STEPS[top]!.key} n={top + 1} />
+                </motion.div>
+              ) : null}
             </AnimatePresence>
           </div>
         ) : null}
 
         <AnimatePresence>
-          {shown === DONE ? (
+          {shown >= 0 ? (
             <motion.div
               key="review"
               className="absolute"
-              style={{ left: 30, top: 382, width: 410 }}
+              style={{ left: REVIEW.x, top: REVIEW.y, width: REVIEW.w }}
               initial={reduce ? false : { opacity: 0, y: 24, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 16, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 140, damping: 18 }}
             >
-              <ReviewCard />
+              <ReviewCard landed={(step) => shown === DONE || STEPS.findIndex((s) => s.key === step) < shown} ready={shown === DONE} instant={!!reduce} />
             </motion.div>
           ) : null}
         </AnimatePresence>
@@ -283,46 +321,106 @@ const REVIEW_CHECKS: readonly { label: string; icon: string | null }[] = [
   { label: 'Market open', icon: null },
 ]
 
-function ReviewCard() {
+/**
+ * A slot on the review: an empty bar until its card lands, then the value,
+ * with a small pop and a flash of green as it arrives.
+ */
+function Slot({ landed, instant, width, children }: { landed: boolean; instant: boolean; width: number; children: ReactNode }) {
   return (
-    <div className="ot-bob ot-bob--c flex flex-col gap-3 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_96%,transparent)] p-4 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
-      <span className="flex items-center gap-2 font-display text-[18px] font-bold">
+    <AnimatePresence mode="wait" initial={false}>
+      {landed ? (
+        <motion.span
+          key="value"
+          className="flex items-center gap-1.5 rounded-[8px]"
+          initial={instant ? false : { scale: 0.7, opacity: 0, backgroundColor: 'rgba(31,181,122,0.28)' }}
+          animate={{ scale: 1, opacity: 1, backgroundColor: 'rgba(31,181,122,0)' }}
+          transition={{ delay: LAND_S, type: 'spring', stiffness: 260, damping: 18, backgroundColor: { delay: LAND_S + 0.1, duration: 0.8 } }}
+        >
+          {children}
+        </motion.span>
+      ) : (
+        <motion.span
+          key="empty"
+          className="block h-[18px] rounded-full bg-[var(--ot-surface-3)]"
+          style={{ width }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { delay: LAND_S - 0.1, duration: 0.1 } }}
+        />
+      )}
+    </AnimatePresence>
+  )
+}
+
+function ReviewCard({ landed, ready, instant }: { landed: (step: string) => boolean; ready: boolean; instant: boolean }) {
+  return (
+    <div
+      className={cn(
+        'ot-bob ot-bob--c flex flex-col gap-3 rounded-[20px] border p-4 backdrop-blur-sm transition-[background-color,border-color,box-shadow] duration-500',
+        ready
+          ? 'border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_96%,transparent)] shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)]'
+          : 'border-dashed border-[var(--ot-border-strong)] bg-[color-mix(in_srgb,var(--ot-card)_70%,transparent)] shadow-none',
+      )}
+    >
+      <span className="text-[10px] font-semibold tracking-[0.08em] text-[var(--ot-text-3)] uppercase">
+        {ready ? 'Ready to sign' : 'Building your review…'}
+      </span>
+      <span className="flex h-[24px] items-center gap-2 font-display text-[18px] font-bold">
         <Mark src="/chains/bnb.svg" size={22} round />
         {EXAMPLE.pay}
         <span className="font-ui text-[15px] font-medium text-[var(--ot-text-3)]">→</span>
-        <TeslaMark size={22} />
-        {EXAMPLE.get}
-        <Mark src="/stocks/bstock.svg" size={16} />
+        <Slot landed={landed('stock')} instant={instant} width={150}>
+          <TeslaMark size={22} />
+          {EXAMPLE.get}
+          <Mark src="/stocks/bstock.svg" size={16} />
+        </Slot>
       </span>
-      <span className="flex gap-3.5 text-[13px] text-[var(--ot-text-2)]">
-        {REVIEW_CHECKS.map((check) => (
-          <span key={check.label} className="flex items-center gap-1.5">
-            <span className="flex h-[20px] w-[20px] flex-none items-center justify-center rounded-[6px] bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]">
-              {check.icon ? (
-                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-                  <path d={check.icon} />
-                </svg>
-              ) : (
-                <span className="h-2 w-2 rounded-full bg-[var(--ot-ok)]" />
-              )}
-            </span>
-            {check.label}
+      <span className="flex h-[22px] items-center text-[13px] text-[var(--ot-text-2)]">
+        <Slot landed={landed('simulate')} instant={instant} width={300}>
+          <span className="flex gap-3.5">
+            {REVIEW_CHECKS.map((check) => (
+              <span key={check.label} className="flex items-center gap-1.5">
+                <span className="flex h-[20px] w-[20px] flex-none items-center justify-center rounded-[6px] bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]">
+                  {check.icon ? (
+                    <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+                      <path d={check.icon} />
+                    </svg>
+                  ) : (
+                    <span className="h-2 w-2 rounded-full bg-[var(--ot-ok)]" />
+                  )}
+                </span>
+                {check.label}
+              </span>
+            ))}
           </span>
-        ))}
+        </Slot>
       </span>
-      <span className="flex items-center justify-between">
+      <span className="flex h-[36px] items-center justify-between">
         <span className="flex items-center gap-2.5 text-[13px] text-[var(--ot-text-3)]">
-          <span className="flex items-center gap-1.5">
+          <Slot landed={landed('wallet')} instant={instant} width={112}>
             <Mark src="/wallets/binance_wallet.svg" size={18} round />
             Binance Wallet
-          </span>
+          </Slot>
           <span className="h-3.5 w-px bg-[var(--ot-border-strong)]" />
-          <span className="flex items-center gap-1.5">
+          <Slot landed={landed('route')} instant={instant} width={100}>
             <Mark src="/dapps/pancakeswap.png" size={18} />
             {EXAMPLE.route}
-          </span>
+          </Slot>
         </span>
-        <span className="rounded-full bg-[var(--ot-coral)] px-5 py-2 text-[14px] font-semibold text-[var(--ot-on-state)]">Sign</span>
+        <AnimatePresence initial={false}>
+          {ready ? (
+            <motion.span
+              key="sign"
+              className="rounded-full bg-[var(--ot-coral)] px-5 py-2 text-[14px] font-semibold text-[var(--ot-on-state)]"
+              initial={instant ? false : { scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: LAND_S + 0.25, type: 'spring', stiffness: 300, damping: 16 }}
+            >
+              Sign
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
       </span>
     </div>
   )
