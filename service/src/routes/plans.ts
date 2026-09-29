@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { z } from 'zod'
 import type { ArmRef, Portfolio } from '../connectors/portfolio/index.js'
+import { type BinanceSimulate, unavailableSimulation } from '../connectors/simulation/index.js'
 import type { TokenRegistry } from '../connectors/tokens/index.js'
 import { type DecoratedSummary, decorateSummary, visualsFor } from '../plans/visuals.js'
 import { type WalletDb, listWallets } from '../wallets/index.js'
@@ -80,6 +81,11 @@ export interface PlanRouteDeps {
    * A bridge's destination is usually one of the others.
    */
   chainIcon?: ((chainId: string) => string | null) | null
+  /**
+   * The review page's second opinion, from Binance's simulator. Absent or
+   * null means the field reads "unavailable" and nothing else changes.
+   */
+  simulateWithBinance?: BinanceSimulate | null
 }
 
 export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRouteDeps): Hono {
@@ -194,6 +200,24 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       webUrl,
     )
     return c.json(link, 201)
+  })
+
+  /**
+   * A second simulation of my own plan, from Binance, for the review page.
+   *
+   * Advice, not evidence: nothing is stored, no event is written, and the
+   * status never depends on it. Whatever goes wrong is answered as
+   * `unavailable` with a sentence, never as an error — a vendor outage must
+   * not read as a problem with the plan. Someone else's plan is a 404, like
+   * every other route here.
+   */
+  app.get('/:id/simulate/binance', async (c) => {
+    const id = c.req.param('id')
+    if (!isUuid(id)) return c.json({ error: 'not_found' }, 404)
+    const record = await findPlan(db, c.get('userId'), id)
+    if (!record) return c.json({ error: 'not_found' }, 404)
+    if (!deps.simulateWithBinance) return c.json(unavailableSimulation('no Binance credential is configured'))
+    return c.json(await deps.simulateWithBinance(record.plan))
   })
 
   return app
