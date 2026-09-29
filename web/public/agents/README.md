@@ -27,3 +27,7 @@ Every mark is designed for a light ground, which is why `AgentIcon` sets a cream
 tile in both themes rather than following the surface. the Lucide bot is a mid grey
 that would sit poorly on the dark palette, and a light tile keeps every mark
 legible without per-theme variants.
+
+`openclaw.png` came later, on 2026-09-29, from the Ottopus intro films, where
+OpenClaw sits in the row of agents beside Claude, Codex and Hermes. It is drawn
+on the landing page's agent row only; the connect dialog has no OpenClaw entry.

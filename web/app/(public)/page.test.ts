@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 /**
- * The landing copy is settled — issue #6 says so and gives it verbatim. It is
- * the one thing on this page that is not a judgement call, and it is exactly
- * the thing a later "small tidy" would rewrite. Reading the source rather than
- * rendering keeps this honest about what it checks: the words, not the layout.
+ * The landing copy is settled: stocks lead, the wallet and dapp clutter is
+ * what goes away, and you still sign. It is the one thing on this page that
+ * is not a judgement call, and it is exactly the thing a later "small tidy"
+ * would rewrite. Reading the source rather than rendering keeps this honest
+ * about what it checks: the words, not the layout.
  */
 const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 
@@ -13,18 +14,11 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Stop juggling wallets to get one thing done',
-  'Tell your agent what you want, not where to find it. Ottopus works out which wallet, which chain and which app — then shows you exactly what will happen before anything moves.',
+  'Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>',
+  'Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the route on BNB Chain, and checks it all before you sign.',
   'Link your first wallet',
-  'See what a review looks like',
-  'Ottopus never holds a key and never asks for a seed phrase.',
-  'One conversation instead of six tabs',
+  'Nothing moves until you sign.',
   'One intent. Every wallet. You still sign.',
-  'Link your wallets',
-  'Hardware, hot, or a Safe. Up to eight — Otto only has eight arms.',
-  'Point your agent at Ottopus',
-  'Works with Claude, Codex, or whatever you already talk to. Nothing to install.',
-  'Say what you want',
 ]
 
 describe('landing copy', () => {
@@ -48,16 +42,38 @@ describe('landing structure', () => {
     expect(ctas.length + explicitPrimaries.length).toBe(1)
   })
 
-  it('keeps the brand bar to the lockup, the repo and the account', () => {
+  it('keeps the brand bar to the lockup, how it works, the repo and the account', () => {
     const bar = FLAT.slice(FLAT.indexOf('<header'), FLAT.indexOf('</header>'))
+    expect(bar).toContain('href="#how"')
     expect(bar).toContain('REPO_URL')
     expect(bar).toContain('<LandingAccount')
     expect(bar).not.toContain('ThemeToggle')
     expect(FLAT).not.toContain('Transaction review for AI agents')
   })
 
-  it('sends the second call to action to a review, not to sign-in', () => {
-    expect(FLAT).toMatch(/href="\/review\//)
+  /** The one place the event is named: a quiet line above the headline. */
+  it('names where it was built once, above the headline', () => {
+    const hero = FLAT.slice(0, FLAT.indexOf('<h1'))
+    expect(hero).toContain('{BUILT_AT}')
+    expect(FLAT.match(/BNB Hack/g)).toHaveLength(1)
+  })
+
+  /** The second action is adding Ottopus to an agent, the way Settings does. */
+  it('offers adding Ottopus to an agent beside the first wallet', () => {
+    expect(FLAT).toContain('<SignInCta>Link your first wallet</SignInCta> <AddToAgent />')
+    expect(FLAT).not.toMatch(/href="\/review\//)
+  })
+
+  /**
+   * The agent panel drops down from the hero and is taller than the room
+   * under the button on a short screen. The sea clips itself; the hero must
+   * not, or a client with steps loses its note past the section's edge.
+   */
+  it('lets the agent panel drop past the hero', () => {
+    const hero = FLAT.slice(FLAT.indexOf('<section className="ot-land-sea'), FLAT.indexOf('<AddToAgent />'))
+    const [section, ambient] = hero.split('<div aria-hidden')
+    expect(section).not.toContain('overflow-hidden')
+    expect(ambient).toContain('absolute inset-0 overflow-hidden')
   })
 
   /**
@@ -65,8 +81,8 @@ describe('landing structure', () => {
    * Ambient markup below the fold would put motion behind copy.
    */
   it('keeps the ambient layer in the hero', () => {
-    const hero = FLAT.slice(0, FLAT.indexOf('One conversation instead of six tabs'))
-    const rest = FLAT.slice(FLAT.indexOf('One conversation instead of six tabs'))
+    const hero = FLAT.slice(0, FLAT.indexOf('<Story />'))
+    const rest = FLAT.slice(FLAT.indexOf('<Story />'))
     expect(hero).toContain('BubbleField')
     expect(hero).toContain('ot-caustic')
     expect(hero).toContain('SeaLife')

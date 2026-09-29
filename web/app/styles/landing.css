@@ -1,0 +1,195 @@
+/* Ottopus — the landing page. Authored here, not ported.
+
+   The hero is the one place the water is loud: a deeper sea than the review
+   page's, light shafts, a column of rising bubbles, a seabed. Everything else
+   on the page moves only when scrolled (Motion drives that, from JavaScript),
+   so the only keyframes here are ambient ones, and every one of them reads
+   --ot-ambient-play and stops for reduced motion. */
+
+/* ── The hero's sea ───────────────────────────────────────────────── */
+
+.ot-land-sea {
+  background: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 8%, var(--ot-water-1)) 30%,
+    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-2)) 70%,
+    color-mix(in srgb, var(--ot-plan) 30%, var(--ot-water-3)) 100%
+  );
+}
+
+/* Light from the surface. Brighter than the review page's shafts, which
+   use the faint caustic tint; in the dark it is moonlight, not a lamp. */
+:root { --ot-land-light: rgba(255, 255, 255, 0.5); }
+[data-theme="dark"] { --ot-land-light: rgba(158, 194, 255, 0.09); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ot-land-light: rgba(158, 194, 255, 0.09); }
+}
+.ot-land-shaft {
+  background: linear-gradient(180deg, var(--ot-land-light) 0%, transparent 72%);
+}
+
+/* Bubbles that rise the whole height of the hero from behind Otto — the
+   canvas field is four bubbles in a margin; this is the column he breathes. */
+.ot-land-rise {
+  position: absolute;
+  bottom: -20px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--ot-plan) 45%, transparent);
+  background: color-mix(in srgb, var(--ot-card) 40%, transparent);
+  animation: ot-land-rise 11s ease-in infinite;
+  animation-play-state: var(--ot-ambient-play);
+  opacity: 0;
+}
+@keyframes ot-land-rise {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  12% { opacity: 0.9; }
+  50% { transform: translate3d(10px, -45vh, 0); }
+  100% { transform: translate3d(-6px, -95vh, 0); opacity: 0; }
+}
+
+/* The hero's cards float a few pixels, each on its own clock. */
+.ot-bob {
+  animation: ot-bob 5.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ot-bob--b { animation-duration: 6.1s; animation-delay: -1.8s; }
+.ot-bob--c { animation-duration: 5.7s; animation-delay: -3.1s; }
+@keyframes ot-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ── Otto's raised arm, gesturing at the hero's deck ──────────────── */
+
+/* The pose's own raised arm (the sixth) flicks toward the deck once per card:
+   up, back a little, settle. It moves the arm's strokes rather than its group,
+   so it layers on top of his idle sway instead of replacing it, and it turns
+   about the arm's root, where it meets his body. One beat per card, so the
+   flick lands as each card is done. */
+.ot-gesture [data-arm="6"] > path {
+  transform-origin: 152px 108px;
+  animation: ot-gesture 1.35s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-gesture {
+  0%, 100% { rotate: 0deg; }
+  30% { rotate: -16deg; }
+  55% { rotate: 7deg; }
+  75% { rotate: -3deg; }
+}
+
+/* ── The built-at line: a quiet sparkle ───────────────────────────── */
+
+/* The BNB coin keeps turning about its upright axis, slowly and evenly, like
+   a coin spun on a table. Two faces, back to back, so it never shows a blank
+   side mid-turn. */
+.ot-spark {
+  perspective: 120px;
+}
+.ot-coin {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  transform-style: preserve-3d;
+  animation: ot-coin-spin 3.2s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+  filter: drop-shadow(0 0 4px rgba(243, 186, 47, 0.45));
+}
+.ot-coin-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+}
+.ot-coin-face--back {
+  transform: rotateY(180deg);
+}
+@keyframes ot-coin-spin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
+/* Two stars beside it, out of step, each mostly resting. */
+.ot-spark-star {
+  opacity: 0;
+  transform: scale(0.3) rotate(0deg);
+  animation: ot-spark-twinkle 3.4s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ot-spark-star--b { animation-delay: -1.7s; animation-duration: 4.1s; }
+@keyframes ot-spark-twinkle {
+  0%, 55%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  70% { opacity: 1; transform: scale(1) rotate(45deg); }
+  85% { opacity: 0; transform: scale(0.4) rotate(90deg); }
+}
+
+/* Every six seconds a band of gold passes over the words, then they rest.
+   The words are the gradient's ends, so outside the glint they read exactly
+   as the text colour they had. */
+.ot-glint {
+  background: linear-gradient(
+    100deg,
+    var(--ot-text-2) 0%,
+    var(--ot-text-2) 45%,
+    #D99A06 49%,
+    #F3BA2F 50%,
+    #D99A06 51%,
+    var(--ot-text-2) 55%,
+    var(--ot-text-2) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ot-glint 6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-glint {
+  0%, 60% { background-position: 100% 0; }
+  85%, 100% { background-position: 0% 0; }
+}
+
+/* ── Reveal on scroll (the close) ─────────────────────────────────── */
+
+[data-reveal] {
+  transition:
+    opacity 700ms var(--ot-ease-out),
+    transform 700ms var(--ot-ease-out);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+[data-reveal="out"] {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+/* ── Reading progress under the brand bar ─────────────────────────── */
+
+/* Empty by default: without scroll timelines the bar is simply never drawn. */
+.ot-scroll-progress {
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ot-scroll-progress {
+      animation: ot-grow linear both;
+      animation-timeline: scroll(root block);
+    }
+    @keyframes ot-grow {
+      from { transform: scaleX(0); }
+      to   { transform: scaleX(1); }
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-coin, .ot-glint { animation: none; }
+  .ot-gesture [data-arm="6"] > path { animation: none; }
+  .ot-spark-star { display: none; }
+  .ot-land-rise { display: none; }
+  .ot-bob { animation: none; }
+  [data-reveal] { transition: none !important; }
+  .ot-scroll-progress { display: none; }
+}

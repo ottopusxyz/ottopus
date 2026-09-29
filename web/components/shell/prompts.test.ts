@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetRow, ChainRow } from '@/lib/api'
-import { TYPED_INTENTS } from '@/components/landing/typed-intent'
 import { INTENT_PROMPTS, promptsFor, smallSlice } from './prompts'
 
 const chains: ChainRow[] = [{ chainId: 'eip155:8453', name: 'Base', value: 1, share: 1 }]
@@ -28,10 +27,6 @@ describe('a slice of a holding', () => {
 describe('the prompts', () => {
   it('lead with a stock on BNB Chain, bought with USDT', () => {
     expect(INTENT_PROMPTS[0]).toBe('Buy NVIDIA with 50 USDT on BNB Chain')
-  })
-
-  it('agree with the landing page on the lead', () => {
-    expect(TYPED_INTENTS[0]).toBe(INTENT_PROMPTS[0])
   })
 
   it('stand as the design wrote them without a reading', () => {

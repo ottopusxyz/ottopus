@@ -23,7 +23,7 @@ export interface AccountMenuProps {
   onSignOut?: (() => void) | undefined
 }
 
-export const REPO_URL = 'https://github.com/koshikraj/ottopus'
+export const REPO_URL = 'https://github.com/ottopusxyz/ottopus'
 /** The same address the service publishes as `resource_documentation`. */
 export const DOCS_URL = 'https://ottopus.xyz'
 
