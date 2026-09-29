@@ -120,12 +120,17 @@ export default function Landing() {
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
                 <p className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
-                  {/* A gold dot that glows, two stars that twinkle beside it, and
-                      now and then a glint across the words. landing.css. */}
-                  <span aria-hidden className="ot-spark relative flex h-2 w-2">
-                    <span className="ot-spark-dot h-2 w-2 rounded-full bg-[#F3BA2F]" />
-                    <Star className="ot-spark-star -top-3 -left-2.5" size={10} />
-                    <Star className="ot-spark-star ot-spark-star--b -right-3 -bottom-2.5" size={7} />
+                  {/* The BNB coin turning in 3D, two stars that twinkle beside
+                      it, and now and then a glint across the words. landing.css. */}
+                  <span aria-hidden className="ot-spark relative flex h-5 w-5">
+                    <span className="ot-coin">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src="/chains/bnb.svg" alt="" width={20} height={20} className="ot-coin-face" />
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src="/chains/bnb.svg" alt="" width={20} height={20} className="ot-coin-face ot-coin-face--back" />
+                    </span>
+                    <Star className="ot-spark-star -top-2.5 -left-2.5" size={10} />
+                    <Star className="ot-spark-star ot-spark-star--b -right-2.5 -bottom-2" size={7} />
                   </span>
                   <span className="ot-glint">{BUILT_AT}</span>
                 </p>

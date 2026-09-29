@@ -62,14 +62,32 @@
 
 /* ── The built-at line: a quiet sparkle ───────────────────────────── */
 
-/* The gold dot breathes a soft halo. */
-.ot-spark-dot {
-  animation: ot-spark-glow 2.8s ease-in-out infinite;
-  animation-play-state: var(--ot-ambient-play);
+/* The BNB coin keeps turning about its upright axis, slowly and evenly, like
+   a coin spun on a table. Two faces, back to back, so it never shows a blank
+   side mid-turn. */
+.ot-spark {
+  perspective: 120px;
 }
-@keyframes ot-spark-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 186, 47, 0); }
-  50% { box-shadow: 0 0 0 4px rgba(243, 186, 47, 0.22), 0 0 10px 2px rgba(243, 186, 47, 0.35); }
+.ot-coin {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  transform-style: preserve-3d;
+  animation: ot-coin-spin 3.2s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+  filter: drop-shadow(0 0 4px rgba(243, 186, 47, 0.45));
+}
+.ot-coin-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+}
+.ot-coin-face--back {
+  transform: rotateY(180deg);
+}
+@keyframes ot-coin-spin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
 }
 
 /* Two stars beside it, out of step, each mostly resting. */
@@ -148,7 +166,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ot-spark-dot, .ot-glint { animation: none; }
+  .ot-coin, .ot-glint { animation: none; }
   .ot-spark-star { display: none; }
   .ot-land-rise { display: none; }
   .ot-bob { animation: none; }
