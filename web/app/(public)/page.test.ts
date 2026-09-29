@@ -65,6 +65,18 @@ describe('landing structure', () => {
   })
 
   /**
+   * The agent panel drops down from the hero and is taller than the room
+   * under the button on a short screen. The sea clips itself; the hero must
+   * not, or a client with steps loses its note past the section's edge.
+   */
+  it('lets the agent panel drop past the hero', () => {
+    const hero = FLAT.slice(FLAT.indexOf('<section className="ot-land-sea'), FLAT.indexOf('<AddToAgent />'))
+    const [section, ambient] = hero.split('<div aria-hidden')
+    expect(section).not.toContain('overflow-hidden')
+    expect(ambient).toContain('absolute inset-0 overflow-hidden')
+  })
+
+  /**
    * Water lives in the page canvas, and on this page that is the hero alone.
    * Ambient markup below the fold would put motion behind copy.
    */

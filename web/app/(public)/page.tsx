@@ -97,8 +97,9 @@ export default function Landing() {
         <main className="flex flex-1 flex-col">
           {/* Hero, under water. The sea stays out from under the words: the
               shafts, the rising column and the creatures keep to the right
-              half and the seabed. */}
-          <section className="ot-land-sea relative overflow-hidden px-5 pt-12 pb-36 sm:px-10 lg:pt-20 lg:pb-44">
+              half and the seabed. Only the ambient layer clips, so the "Add to
+              your agent" panel can drop past the hero's edge on a short screen. */}
+          <section className="ot-land-sea relative px-5 pt-12 pb-36 sm:px-10 lg:pt-20 lg:pb-44">
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
               <div className="ot-caustic" />
               <div className="ot-caustic ot-caustic--b" />
