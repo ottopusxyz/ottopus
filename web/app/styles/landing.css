@@ -1,0 +1,206 @@
+/* Ottopus — the landing page's own motion. Authored here, not ported.
+
+   Scroll-linked effects are CSS scroll-driven animations, not script: the
+   browser runs them off the main thread, and a browser without them simply
+   shows every element in its finished state. Everything that moves is gated on
+   prefers-reduced-motion as well, and the static fallback is always the end
+   state, so nothing is ever left half-drawn. */
+
+/* A hairline under the brand bar that fills as the page is read. */
+.ot-scroll-progress {
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--ot-coral), #F3BA2F 55%, var(--ot-plan));
+}
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ot-scroll-progress {
+      animation: ot-grow-x linear both;
+      animation-timeline: scroll(root block);
+    }
+  }
+}
+@supports not (animation-timeline: scroll()) {
+  .ot-scroll-progress { display: none; }
+}
+@keyframes ot-grow-x {
+  to { transform: scaleX(1); }
+}
+
+/* The build credit: a quiet pill, a BNB-yellow dot. */
+.ot-hack-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 5px 12px 5px 8px;
+  border: 1px solid var(--ot-border);
+  border-radius: var(--ot-radius-pill);
+  background: color-mix(in srgb, var(--ot-card) 75%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ot-text-2);
+}
+.ot-hack-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #F3BA2F;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #F3BA2F 25%, transparent);
+}
+
+/* The headline's second line: a slow sweep through the coral. Kept to the
+   darker corals so it clears 3:1 as large text on the light water. */
+.ot-headline-glow {
+  background: linear-gradient(100deg, var(--ot-coral-text) 0%, var(--ot-coral-hover) 45%, var(--ot-coral-text) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ot-headline-glow {
+    animation: ot-glow-sweep 9s ease-in-out infinite alternate;
+    animation-play-state: var(--ot-ambient-play);
+  }
+}
+@keyframes ot-glow-sweep {
+  to { background-position: 100% 0; }
+}
+
+/* Each line of the demo run arrives rather than appears. */
+@media (prefers-reduced-motion: no-preference) {
+  .ot-demo-step {
+    animation: ot-step-in 420ms var(--ot-ease-bounce) both;
+  }
+}
+@keyframes ot-step-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* A soft ring of light behind the demo card, so it lifts off the water. */
+.ot-demo-halo {
+  position: absolute;
+  inset: 8% -6% -4% -6%;
+  z-index: -1;
+  border-radius: 40px;
+  background:
+    radial-gradient(60% 50% at 30% 30%, color-mix(in srgb, var(--ot-coral) 22%, transparent), transparent 70%),
+    radial-gradient(60% 60% at 80% 80%, color-mix(in srgb, var(--ot-plan) 20%, transparent), transparent 70%);
+  filter: blur(24px);
+}
+
+/* The stocks strip: an endless belt of tickers. The list is drawn twice and
+   moved by exactly one copy, so the seam never shows. */
+.ot-marquee {
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.ot-marquee__track {
+  display: flex;
+  width: max-content;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ot-marquee__track {
+    animation: ot-marquee 48s linear infinite;
+  }
+  .ot-marquee:hover .ot-marquee__track {
+    animation-play-state: paused;
+  }
+}
+@keyframes ot-marquee {
+  to { transform: translateX(-50%); }
+}
+
+/* Reveal on scroll: rises into place as it enters the viewport. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ot-reveal {
+      animation: ot-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+  }
+}
+@keyframes ot-reveal {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Six tabs gather into one sentence, scrubbed by the scroll. Each tab carries
+   its scattered position as --x, --y and --r; the timeline pulls them to the
+   centre and fades them, and the sentence lands as they go. Without
+   scroll-driven animations it draws the finished state: the sentence in front,
+   the tabs behind it, faint. */
+.ot-clutter {
+  view-timeline: --ot-clutter block;
+}
+.ot-clutter__tab {
+  transform: translate(var(--x), var(--y)) rotate(var(--r));
+  opacity: 0.35;
+}
+.ot-clutter__one {
+  opacity: 1;
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ot-clutter__tab {
+      animation: ot-gather linear both;
+      animation-timeline: --ot-clutter;
+      animation-range: entry 100% cover 50%;
+    }
+    .ot-clutter__one {
+      animation: ot-land linear both;
+      animation-timeline: --ot-clutter;
+      animation-range: cover 38% cover 52%;
+    }
+  }
+}
+@keyframes ot-gather {
+  0%   { transform: translate(var(--x), var(--y)) rotate(var(--r)); opacity: 1; }
+  70%  { opacity: 0.9; }
+  100% { transform: translate(0, 0) rotate(0deg) scale(0.6); opacity: 0; }
+}
+@keyframes ot-land {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The line over the three steps draws itself as they scroll past. */
+.ot-steps-line {
+  transform-origin: 0 50%;
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ot-steps-line {
+      animation: ot-grow-x linear both;
+      animation-timeline: view();
+      animation-range: entry 40% cover 55%;
+    }
+  }
+}
+
+/* A light that follows the pointer across a card. Behind the content, and
+   only on a device that hovers. */
+.ot-spot {
+  position: relative;
+  isolation: isolate;
+}
+.ot-spot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  background: radial-gradient(360px circle at var(--ot-mx, 50%) var(--ot-my, 0%), color-mix(in srgb, var(--ot-coral) 14%, transparent), transparent 65%);
+  transition: opacity var(--ot-dur-base) var(--ot-ease-out);
+}
+@media (hover: hover) {
+  .ot-spot:hover::before { opacity: 1; }
+}
