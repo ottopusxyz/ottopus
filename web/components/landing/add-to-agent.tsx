@@ -1,10 +1,14 @@
 'use client'
 
+import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { AgentIcon, CONNECT_CLIENTS, useMcpUrl } from '@/components/agents'
+import type { AgentIconKey } from '@/components/agents/agent-brand'
 import { Payload } from '@/components/agents/connect-payload'
 import { buttonClasses } from '@/components/ui'
+import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/cn'
+import { TRIGGER_MARK_MS, TRIGGER_MARKS } from './agent-marks'
 
 /**
  * "Add to your agent", from the landing page: the same clients, commands and
@@ -14,6 +18,11 @@ import { cn } from '@/lib/cn'
  * which polls the signed-in agent list — a visitor here usually has no
  * session, and adding Ottopus to an agent does not need one until the agent
  * asks you to approve its grant.
+ *
+ * The button wears an agent's mark that turns through the clients while it
+ * waits, so "your agent" reads as a list of names rather than a category.
+ * Open, it holds the client you picked; under reduced motion it holds the
+ * first one, which is also what the server drew, so nothing flashes on load.
  */
 export function AddToAgent({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
@@ -23,6 +32,16 @@ export function AddToAgent({ className }: { className?: string }) {
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
+  const still = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const [turn, setTurn] = useState(0)
+
+  useEffect(() => {
+    if (open || still) return
+    const id = window.setInterval(() => setTurn((n) => n + 1), TRIGGER_MARK_MS)
+    return () => window.clearInterval(id)
+  }, [open, still])
+
+  const mark = open ? { icon: client.icon, label: client.label } : TRIGGER_MARKS[turn % TRIGGER_MARKS.length]!
 
   // Closes on a click anywhere else and on Escape, handing focus back to the
   // button so a keyboard user is not dropped at the top of the page.
@@ -54,6 +73,7 @@ export function AddToAgent({ className }: { className?: string }) {
         onClick={() => setOpen((v) => !v)}
         className={buttonClasses({ variant: 'secondary', size: 'lg' })}
       >
+        <TriggerMark icon={mark.icon} label={mark.label} />
         Add to your agent
         <svg
           aria-hidden
@@ -118,5 +138,29 @@ export function AddToAgent({ className }: { className?: string }) {
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * One mark at a time on a fixed 20px square. The old one turns out as the
+ * new one turns in, keyed on the mark so a repeat of the same client is not
+ * an animation at all.
+ */
+function TriggerMark({ icon, label }: { icon: AgentIconKey; label: string }) {
+  return (
+    <span aria-hidden className="relative h-5 w-5 flex-none">
+      <AnimatePresence initial={false}>
+        <motion.span
+          key={icon}
+          className="absolute inset-0"
+          initial={{ opacity: 0, scale: 0.6, rotate: -30 }}
+          animate={{ opacity: 1, scale: 1, rotate: 0 }}
+          exit={{ opacity: 0, scale: 0.6, rotate: 30 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+        >
+          <AgentIcon name={label} iconKey={icon} size={20} className="rounded-[5px]" />
+        </motion.span>
+      </AnimatePresence>
+    </span>
   )
 }
