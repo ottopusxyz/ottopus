@@ -1,37 +1,49 @@
 'use client'
 
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Otto, type PoseName } from '@/components/brand'
 import { cn } from '@/lib/cn'
 import { EXAMPLE } from './story-script'
 import { useFit } from './use-fit'
 
 /**
- * The hero's right half: Otto in the water with the three things he does
- * for a stock buy, arriving in order. The prompt types itself, the stock he
- * picked surfaces, the review he hands back settles in front of him, and he
- * changes pose with each. After that everything only bobs.
+ * The hero's right half: Otto in the water, doing a stock buy in front of
+ * you. The prompt types itself; then a deck of flash cards beside him shows
+ * each thing he works out — the stock, the wallet, the route, the simulation
+ * — the top card swiping away as the next is done; then the review he hands
+ * back settles in front of him. It holds, and runs again.
  *
  * The prompt is the intro film's, and the rest of the page follows the same
- * ten dollars of Tesla, so every figure on it agrees.
+ * ten dollars of Tesla, so every figure on it agrees. With reduced motion the
+ * finished state simply stands: the last card and the review.
  */
 export const HERO_PROMPT = EXAMPLE.prompt
 
 const W = 540
 const H = 520
 
-/** When each card lands, in seconds after mount. Otto's pose follows. */
-const CUES: readonly { at: number; pose: PoseName }[] = [
-  { at: 0.3, pose: 'planning' },
-  { at: 2.1, pose: 'simulating' },
-  { at: 3.1, pose: 'plan-ready' },
+/** The deck, in the order Otto works. Otto's pose follows the card on top. */
+const STEPS: readonly { key: string; pose: PoseName }[] = [
+  { key: 'stock', pose: 'planning' },
+  { key: 'wallet', pose: 'planning' },
+  { key: 'route', pose: 'planning' },
+  { key: 'simulate', pose: 'simulating' },
 ]
+
+/** Seconds: when the deck starts, how long each card stays, how long the result holds. */
+const DECK_AT = 2.1
+const CARD_S = 1.35
+const HOLD_S = 5.5
+
+/** -1 before the deck, 0..3 a card on top, STEPS.length once the review is in. */
+type Phase = number
+const DONE = STEPS.length
 
 export function HeroCards({ className }: { className?: string }) {
   const reduce = useReducedMotion()
   const { ref, scale } = useFit<HTMLDivElement>(W)
-  const [pose, setPose] = useState<PoseName>('base')
+  const [phase, setPhase] = useState<Phase>(-1)
 
   const typed = useMotionValue(reduce ? HERO_PROMPT.length : 0)
   const text = useTransform(typed, (n) => HERO_PROMPT.slice(0, Math.round(n)))
@@ -39,14 +51,26 @@ export function HeroCards({ className }: { className?: string }) {
   useEffect(() => {
     if (reduce) return
     const typing = animate(typed, HERO_PROMPT.length, { duration: 1.4, delay: 0.5, ease: 'linear' })
-    const timers = CUES.map((cue) => setTimeout(() => setPose(cue.pose), cue.at * 1000))
+    let timer: ReturnType<typeof setTimeout>
+    // One clock for the whole loop: each card, then the review, then a hold,
+    // then back to the first card. The prompt stays typed after the first run.
+    const run = (p: Phase) => {
+      setPhase(p)
+      const wait = p === DONE ? HOLD_S : CARD_S
+      timer = setTimeout(() => run(p === DONE ? 0 : p + 1), wait * 1000)
+    }
+    timer = setTimeout(() => run(0), DECK_AT * 1000)
     return () => {
       typing.stop()
-      timers.forEach(clearTimeout)
+      clearTimeout(timer)
     }
   }, [reduce, typed])
 
-  const card = (delay: number) =>
+  const shown: Phase = reduce ? DONE : phase
+  const top = Math.min(Math.max(shown, 0), STEPS.length - 1)
+  const pose: PoseName = shown < 0 ? 'base' : shown === DONE ? 'plan-ready' : STEPS[top]!.pose
+
+  const enter = (delay: number) =>
     reduce
       ? {}
       : {
@@ -59,11 +83,11 @@ export function HeroCards({ className }: { className?: string }) {
     <div ref={ref} aria-hidden className={cn('relative', className)} style={{ aspectRatio: `${W} / ${H}` }}>
       {/* Absolute, so the design width never becomes the column's minimum. */}
       <div className="absolute top-0 left-0" style={{ width: W, height: H, transform: `scale(${scale})`, transformOrigin: '0 0' }}>
-        <div className="ot-drift absolute" style={{ left: 150, top: 130 }}>
-          <Otto pose={reduce ? 'plan-ready' : pose} size={260} animated className="h-[260px] w-[260px]" />
+        <div className="ot-drift absolute" style={{ left: 130, top: 140 }}>
+          <Otto pose={pose} size={250} animated className="h-[250px] w-[250px]" />
         </div>
 
-        <motion.div {...card(0.2)} className="absolute" style={{ left: 0, top: 10, width: 350 }}>
+        <motion.div {...enter(0.2)} className="absolute" style={{ left: 0, top: 10, width: 350 }}>
           <div className="ot-bob flex flex-col gap-2.5 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_94%,transparent)] px-4 py-3.5 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
             <span className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.06em] text-[var(--ot-text-3)] uppercase">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -77,61 +101,202 @@ export function HeroCards({ className }: { className?: string }) {
           </div>
         </motion.div>
 
-        <motion.div {...card(2.0)} className="absolute" style={{ left: 330, top: 134, width: 210 }}>
-          <div className="ot-bob ot-bob--b flex flex-col gap-2.5 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_94%,transparent)] p-3.5 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
-            <span className="flex items-center gap-2.5">
-              <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#E31937]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/brands/tesla.svg" alt="" width={18} height={18} />
-              </span>
-              <span className="flex flex-col">
-                <span className="font-mono text-[14px] font-semibold">TSLAB</span>
-                <span className="flex items-center gap-1 text-[11px] text-[var(--ot-text-3)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/stocks/bstock.svg" alt="" width={12} height={12} className="rounded-[3px]" />
-                  bStock · Tesla
-                </span>
-              </span>
-            </span>
-            <svg viewBox="0 0 180 40" className="h-10 w-full">
-              <line x1="0" y1="20" x2="180" y2="20" stroke="var(--ot-border-strong)" strokeDasharray="3 4" />
-              <path d="M0 30 L20 26 L40 28 L60 18 L80 22 L100 14 L120 16 L140 8 L160 12 L180 6" fill="none" stroke="var(--ot-ok)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="flex justify-between text-[12px]">
-              <span className="text-[var(--ot-text-3)]">vs share price</span>
-              <span className="font-mono font-semibold text-[var(--ot-ok-text)]">{EXAMPLE.premium}</span>
-            </span>
+        {/* The deck. Two blank cards stand behind it so it reads as a stack;
+            the top card swipes off to the right and the next one rises. */}
+        {shown >= 0 ? (
+          <div className="absolute" style={{ left: 318, top: 118, width: 222, height: 178 }}>
+            <span className="absolute inset-0 translate-x-[10px] translate-y-[12px] rotate-[5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-surface-2)] opacity-70" />
+            <span className="absolute inset-0 translate-x-[5px] translate-y-[6px] rotate-[2.5deg] rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-card)] opacity-90" />
+            <AnimatePresence initial={false}>
+              <motion.div
+                key={STEPS[top]!.key}
+                className="absolute inset-0"
+                initial={{ y: 12, scale: 0.94, rotate: 2.5, opacity: 0.6 }}
+                animate={{ y: 0, scale: 1, rotate: 0, opacity: 1 }}
+                exit={{ x: 170, y: -24, rotate: 16, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 170, damping: 20 }}
+              >
+                <DeckCard step={STEPS[top]!.key} n={top + 1} />
+              </motion.div>
+            </AnimatePresence>
           </div>
-        </motion.div>
+        ) : null}
 
-        <motion.div {...card(3.0)} className="absolute" style={{ left: 30, top: 380, width: 410 }}>
-          <div className="ot-bob ot-bob--c flex flex-col gap-3 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_96%,transparent)] p-4 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
-            <span className="font-display text-[18px] font-bold">
-              {EXAMPLE.pay} → {EXAMPLE.get}
-            </span>
-            <span className="flex gap-3.5 text-[13px] text-[var(--ot-text-2)]">
-              {['Decoded', 'Simulated', 'Market open'].map((label) => (
-                <span key={label} className="flex items-center gap-1.5">
-                  <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]">
-                    <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3.5 8.5l3 3 6-7" />
-                    </svg>
-                  </span>
-                  {label}
-                </span>
-              ))}
-            </span>
-            <span className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[13px] text-[var(--ot-text-3)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/wallets/binance_wallet.svg" alt="" width={18} height={18} className="rounded-full" />
-                Binance Wallet
+        <AnimatePresence>
+          {shown === DONE ? (
+            <motion.div
+              key="review"
+              className="absolute"
+              style={{ left: 30, top: 382, width: 410 }}
+              initial={reduce ? false : { opacity: 0, y: 24, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 140, damping: 18 }}
+            >
+              <ReviewCard />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+/* ── the cards ───────────────────────────────────────────────────── */
+
+const CAPTION = 'text-[10px] font-semibold tracking-[0.08em] text-[var(--ot-text-3)] uppercase'
+
+function Mark({ src, size = 18, round = false, tile = false }: { src: string; size?: number; round?: boolean; tile?: boolean }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt="" width={size} height={size} className={cn('flex-none', round ? 'rounded-full' : 'rounded-[5px]', tile && 'bg-[var(--ot-cream)]')} />
+  )
+}
+
+function TeslaMark({ size = 20 }: { size?: number }) {
+  return (
+    <span className="flex flex-none items-center justify-center rounded-full bg-[#E31937]" style={{ width: size, height: size }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brands/tesla.svg" alt="" width={size * 0.6} height={size * 0.6} />
+    </span>
+  )
+}
+
+function Tick() {
+  return (
+    <span className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full bg-[var(--ot-ok-bg)] text-[var(--ot-ok-text)]">
+      <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3.5 8.5l3 3 6-7" />
+      </svg>
+    </span>
+  )
+}
+
+/** One row of a card: the picked one is lit, the rest recede. */
+function Option({ picked = false, children }: { picked?: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-[10px] px-2 py-1.5 text-[12.5px]',
+        picked ? 'bg-[var(--ot-ok-bg)] font-semibold ring-1 ring-[var(--ot-ok-border)]' : 'text-[var(--ot-text-3)] opacity-70',
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+function DeckCard({ step, n }: { step: string; n: number }) {
+  const titles: Record<string, string> = {
+    stock: 'Finding the stock',
+    wallet: 'Picking the wallet',
+    route: 'Picking the route',
+    simulate: 'Simulating it',
+  }
+  return (
+    <div className="flex h-full flex-col gap-2.5 rounded-[20px] border border-[var(--ot-border)] bg-[var(--ot-card)] p-3.5 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)]">
+      <div className="flex items-center justify-between">
+        <span className={CAPTION}>{titles[step]}</span>
+        <span className="font-mono text-[10px] text-[var(--ot-text-4)]">{n}/4</span>
+      </div>
+      {step === 'stock' ? (
+        <div className="flex flex-col gap-1">
+          <Option picked>
+            <TeslaMark size={18} />
+            <span className="font-mono">TSLAB</span>
+            <Mark src="/stocks/bstock.svg" size={13} />
+            <span className="ml-auto font-mono text-[11px] text-[var(--ot-ok-text)]">{EXAMPLE.premium}</span>
+          </Option>
+          <Option>
+            <TeslaMark size={18} />
+            <span className="font-mono">TSLAon</span>
+            <Mark src="/stocks/ondo.svg" size={13} tile />
+            <span className="ml-auto font-mono text-[11px]">+0.31%</span>
+          </Option>
+          <Option>
+            <TeslaMark size={18} />
+            <span className="font-mono">TSLAx</span>
+            <span className="ml-auto text-[11px]">no market data</span>
+          </Option>
+        </div>
+      ) : step === 'wallet' ? (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-1.5">
+            {['/wallets/metamask.svg', '/wallets/ledger.svg', '/wallets/safe.svg', '/wallets/rabby_wallet.svg'].map((src) => (
+              <span key={src} className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ot-surface-2)] opacity-40 grayscale">
+                <Mark src={src} size={22} />
               </span>
-              <span className="rounded-full bg-[var(--ot-coral)] px-5 py-2 text-[14px] font-semibold text-[var(--ot-on-state)]">Sign</span>
+            ))}
+            <span className="flex h-9 w-9 items-center justify-center rounded-full ring-[3px] ring-[#F0B90B]">
+              <Mark src="/wallets/binance_wallet.svg" size={30} round />
             </span>
           </div>
-        </motion.div>
-      </div>
+          <div className="flex items-start gap-2 text-[12.5px] leading-[1.4]">
+            <Tick />
+            <span>
+              <b>Binance Wallet</b>
+              <span className="block text-[var(--ot-text-3)]">{EXAMPLE.holds}</span>
+            </span>
+          </div>
+        </div>
+      ) : step === 'route' ? (
+        <div className="flex flex-col gap-1">
+          <Option picked>
+            <Mark src="/dapps/pancakeswap.png" size={18} />
+            <span>{EXAMPLE.route}</span>
+            <span className="ml-auto font-mono text-[11px] text-[var(--ot-ok-text)]">best</span>
+          </Option>
+          <span className="flex items-center gap-1.5 px-2 text-[11px] text-[var(--ot-text-3)]">
+            <Mark src="/wallets/binance_wallet.svg" size={12} round />
+            {EXAMPLE.via} · fee {EXAMPLE.fee}
+          </span>
+          <Option>
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-[5px] bg-[var(--ot-surface-3)] text-[9px] font-bold">Li</span>
+            <span>LI.FI</span>
+            <span className="ml-auto text-[11px]">fallback</span>
+          </Option>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-[12.5px]">
+            <span className="flex items-center gap-1.5"><Mark src="/chains/bnb.svg" size={18} round />BNB</span>
+            <span className="font-mono font-semibold text-[var(--ot-block-text)]">−0.0131</span>
+          </div>
+          <div className="flex items-center justify-between text-[12.5px]">
+            <span className="flex items-center gap-1.5"><TeslaMark size={18} />TSLAB</span>
+            <span className="font-mono font-semibold text-[var(--ot-ok-text)]">+0.0270</span>
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[11.5px] text-[var(--ot-ok-text)]">
+            <Tick />
+            Simulated by someone other than the router
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReviewCard() {
+  return (
+    <div className="ot-bob ot-bob--c flex flex-col gap-3 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_96%,transparent)] p-4 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
+      <span className="font-display text-[18px] font-bold">
+        {EXAMPLE.pay} → {EXAMPLE.get}
+      </span>
+      <span className="flex gap-3.5 text-[13px] text-[var(--ot-text-2)]">
+        {['Decoded', 'Simulated', 'Market open'].map((label) => (
+          <span key={label} className="flex items-center gap-1.5">
+            <Tick />
+            {label}
+          </span>
+        ))}
+      </span>
+      <span className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-[13px] text-[var(--ot-text-3)]">
+          <Mark src="/wallets/binance_wallet.svg" size={18} round />
+          Binance Wallet
+        </span>
+        <span className="rounded-full bg-[var(--ot-coral)] px-5 py-2 text-[14px] font-semibold text-[var(--ot-on-state)]">Sign</span>
+      </span>
     </div>
   )
 }
