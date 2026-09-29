@@ -1,0 +1,156 @@
+/* Ottopus — the landing page's motion. Authored here, not ported.
+
+   Two kinds. Entrances (a beat on the hero card, a section revealing, a line
+   struck through) are transitions keyed on a data attribute that a small
+   IntersectionObserver or the hero's own clock sets, so they work in every
+   browser. Progress effects (the bar under the brand bar, the hero easing out
+   as you leave it) use scroll-driven animations inside @supports and simply
+   do not exist where the browser has none.
+
+   Everything here stops for prefers-reduced-motion: entrances land at their
+   end state, progress effects are not declared. */
+
+/* ── Hero card beats ──────────────────────────────────────────────── */
+
+.ot-beat {
+  transition:
+    opacity var(--ot-dur-slow) var(--ot-ease-out),
+    transform var(--ot-dur-slow) var(--ot-ease-out),
+    filter var(--ot-dur-slow) var(--ot-ease-out);
+}
+/* A beat not reached yet is a blurred ghost of itself rather than a hole:
+   the card reads as work in progress, never as an empty box. */
+.ot-beat[data-on="false"] {
+  opacity: 0.22;
+  transform: translateY(6px);
+  filter: blur(5px) grayscale(1);
+}
+
+/* A slow sheen across the card's top edge, as if the water moved over it. */
+.ot-land-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ot-plan-border), var(--ot-coral), transparent);
+  background-size: 200% 100%;
+  animation: ot-sheen 6s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+  opacity: 0.8;
+}
+@keyframes ot-sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+
+/* ── Reveal on scroll ─────────────────────────────────────────────── */
+
+[data-reveal] {
+  transition:
+    opacity 700ms var(--ot-ease-out),
+    transform 700ms var(--ot-ease-out);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+[data-reveal="out"] {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+/* ── The clutter list: each line struck as it arrives ─────────────── */
+
+.ot-strike {
+  position: relative;
+  width: fit-content;
+  transition: color 500ms var(--ot-ease-out);
+  transition-delay: calc(var(--i, 0) * 220ms + 300ms);
+}
+.ot-strike::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 55%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ot-coral);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 520ms var(--ot-ease-out);
+  transition-delay: calc(var(--i, 0) * 220ms + 300ms);
+}
+[data-reveal="in"] .ot-strike {
+  color: var(--ot-text-4);
+}
+[data-reveal="in"] .ot-strike::after {
+  transform: scaleX(1);
+}
+
+/* ── The sticky story: the panel for the step in view ─────────────── */
+
+.ot-story-panel {
+  transition:
+    opacity var(--ot-dur-slow) var(--ot-ease-out),
+    transform var(--ot-dur-slow) var(--ot-ease-out);
+}
+.ot-story-panel[data-active="false"] {
+  opacity: 0;
+  transform: translateY(14px) scale(0.98);
+  pointer-events: none;
+}
+.ot-story-step {
+  transition: opacity var(--ot-dur-base) var(--ot-ease-out);
+}
+@media (min-width: 64rem) {
+  .ot-story-step[data-active="false"] {
+    opacity: 0.38;
+  }
+}
+
+/* ── Scroll-driven progress, where the browser has it ─────────────── */
+
+/* Empty by default: without scroll timelines the bar is simply never drawn. */
+.ot-scroll-progress {
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* A hairline under the brand bar that fills as the page is read. */
+    .ot-scroll-progress {
+      animation: ot-grow linear both;
+      animation-timeline: scroll(root block);
+    }
+    @keyframes ot-grow {
+      from { transform: scaleX(0); }
+      to   { transform: scaleX(1); }
+    }
+
+    /* The hero's demo eases back as you scroll past it. */
+    .ot-hero-exit {
+      animation: ot-hero-exit linear both;
+      animation-timeline: view();
+      animation-range: exit 0% exit 80%;
+    }
+    @keyframes ot-hero-exit {
+      to { opacity: 0.35; transform: translateY(-24px) scale(0.97); }
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ot-beat,
+  [data-reveal],
+  .ot-strike,
+  .ot-strike::after,
+  .ot-story-panel,
+  .ot-story-step {
+    transition: none !important;
+  }
+  .ot-land-card::before {
+    animation: none;
+  }
+  .ot-scroll-progress {
+    display: none;
+  }
+}
