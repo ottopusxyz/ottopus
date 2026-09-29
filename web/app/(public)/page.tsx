@@ -130,7 +130,7 @@ export default function Landing() {
 
                 <p className="m-0 max-w-[46ch] text-[18px] leading-[1.5] text-pretty text-[var(--ot-text-2)] sm:text-[20px]">
                   Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the
-                  route on BNB Chain — and checks it all before you sign.
+                  route on BNB Chain, and checks it all before you sign.
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">

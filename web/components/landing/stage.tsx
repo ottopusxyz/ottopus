@@ -112,7 +112,8 @@ const TILES: readonly [string, number, number, number][] = [
   ['/wallets/ledger.svg', 40, 470, -4],
   ['/dapps/aave.svg', 660, 430, 5],
   ['/dapps/across.svg', 220, 560, 6],
-  ['/dapps/revoke.png', 470, 560, -7],
+  ['/dapps/pancakeswap.png', 470, 560, -7],
+  ['/wallets/binance_wallet.svg', 340, 24, 4],
 ]
 
 function FlyTab({ p, i }: { p: P; i: number }) {
@@ -323,7 +324,7 @@ function SceneChat({ p }: { p: P }) {
           <Mark src="/agents/claude-ai.svg" size={22} />
           <span className="text-[14px] font-semibold">Claude</span>
           <span className="ml-auto flex items-center gap-1.5 text-[12px] text-[var(--ot-ok-text)]">
-            <span className="h-[7px] w-[7px] rounded-full bg-[var(--ot-ok)]" />
+            <OttoBadge size={20} tier="icon" />
             Ottopus connected
           </span>
         </div>

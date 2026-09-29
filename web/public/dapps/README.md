@@ -9,4 +9,4 @@ cuts them), where they were gathered from each app's own site. The exact source
 URLs were not recorded there, so check each against the app's current brand
 kit before anything beyond the landing page uses it.
 
-- `pancakeswap.png`, `uniswap.svg`, `aave.svg`, `across.svg`, `revoke.png`
+- `pancakeswap.png`, `uniswap.svg`, `aave.svg`, `across.svg`
