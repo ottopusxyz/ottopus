@@ -15,9 +15,9 @@ const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
   'Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>',
-  'Say &ldquo;buy NVIDIA&rdquo; to your agent. Otto finds the token, the wallet and the route — and checks it all before you sign.',
+  'Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the route on BNB Chain — and checks it all before you sign.',
   'Link your first wallet',
-  'Otto never holds a key.',
+  'Nothing moves until you sign.',
   'One intent. Every wallet. You still sign.',
 ]
 

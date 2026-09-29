@@ -3,7 +3,6 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Otto, type PoseName } from '@/components/brand'
-import { INTENT_PROMPTS } from '@/components/shell/prompts'
 import { cn } from '@/lib/cn'
 import { EXAMPLE } from './story-script'
 import { useFit } from './use-fit'
@@ -14,10 +13,10 @@ import { useFit } from './use-fit'
  * picked surfaces, the review he hands back settles in front of him, and he
  * changes pose with each. After that everything only bobs.
  *
- * The prompt is the app's own lead intent, so the landing page and the
- * nudge inside the product say the same first thing.
+ * The prompt is the intro film's, and the rest of the page follows the same
+ * ten dollars of Tesla, so every figure on it agrees.
  */
-export const HERO_PROMPT = INTENT_PROMPTS[0]!
+export const HERO_PROMPT = EXAMPLE.prompt
 
 const W = 540
 const H = 520
@@ -81,11 +80,17 @@ export function HeroCards({ className }: { className?: string }) {
         <motion.div {...card(2.0)} className="absolute" style={{ left: 330, top: 134, width: 210 }}>
           <div className="ot-bob ot-bob--b flex flex-col gap-2.5 rounded-[20px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_94%,transparent)] p-3.5 shadow-[0_18px_44px_-16px_rgba(22,33,62,.3)] backdrop-blur-sm">
             <span className="flex items-center gap-2.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/stocks/bstock.svg" alt="" width={30} height={30} className="rounded-[8px]" />
+              <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#E31937]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/brands/tesla.svg" alt="" width={18} height={18} />
+              </span>
               <span className="flex flex-col">
-                <span className="font-mono text-[14px] font-semibold">NVDAB</span>
-                <span className="text-[11px] text-[var(--ot-text-3)]">bStock · NVIDIA</span>
+                <span className="font-mono text-[14px] font-semibold">TSLAB</span>
+                <span className="flex items-center gap-1 text-[11px] text-[var(--ot-text-3)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/stocks/bstock.svg" alt="" width={12} height={12} className="rounded-[3px]" />
+                  bStock · Tesla
+                </span>
               </span>
             </span>
             <svg viewBox="0 0 180 40" className="h-10 w-full">

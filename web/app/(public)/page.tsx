@@ -54,7 +54,7 @@ const SHAFTS: readonly [string, number, string][] = [
 ]
 
 const PROMISES = [
-  { title: 'Never signs', body: 'You do, or your agent’s wallet does.' },
+  { title: 'Never holds a key', body: 'You do, or your agent’s wallet does.' },
   { title: 'Never sends', body: 'It prepares a plan. That is all.' },
   { title: 'Open source', body: 'Read every line on GitHub.' },
 ]
@@ -129,8 +129,8 @@ export default function Landing() {
                 </h1>
 
                 <p className="m-0 max-w-[46ch] text-[18px] leading-[1.5] text-pretty text-[var(--ot-text-2)] sm:text-[20px]">
-                  Say &ldquo;buy NVIDIA&rdquo; to your agent. Otto finds the token, the wallet and the
-                  route — and checks it all before you sign.
+                  Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the
+                  route on BNB Chain — and checks it all before you sign.
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -153,7 +153,7 @@ export default function Landing() {
               </Reveal>
               <div className="flex flex-col gap-10">
                 <Reveal as="h2" className="font-display m-0 text-[40px] leading-[1.04] font-bold tracking-[-0.03em] sm:text-[58px]">
-                  Otto never holds a key.
+                  Nothing moves until you sign.
                 </Reveal>
                 <div className="grid gap-8 sm:grid-cols-3">
                   {PROMISES.map((p, i) => (
