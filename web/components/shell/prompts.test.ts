@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetRow, ChainRow } from '@/lib/api'
-import { TYPED_INTENTS } from '@/components/landing/typed-intent'
+import { HERO_PROMPT } from '@/components/landing/hero-cards'
 import { INTENT_PROMPTS, promptsFor, smallSlice } from './prompts'
 
 const chains: ChainRow[] = [{ chainId: 'eip155:8453', name: 'Base', value: 1, share: 1 }]
@@ -31,7 +31,7 @@ describe('the prompts', () => {
   })
 
   it('agree with the landing page on the lead', () => {
-    expect(TYPED_INTENTS[0]).toBe(INTENT_PROMPTS[0])
+    expect(HERO_PROMPT).toBe(INTENT_PROMPTS[0])
   })
 
   it('stand as the design wrote them without a reading', () => {
