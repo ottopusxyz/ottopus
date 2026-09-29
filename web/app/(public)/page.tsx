@@ -120,8 +120,14 @@ export default function Landing() {
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
                 <p className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
-                  <span aria-hidden className="h-2 w-2 rounded-full bg-[#F3BA2F]" />
-                  {BUILT_AT}
+                  {/* A gold dot that glows, two stars that twinkle beside it, and
+                      now and then a glint across the words. landing.css. */}
+                  <span aria-hidden className="ot-spark relative flex h-2 w-2">
+                    <span className="ot-spark-dot h-2 w-2 rounded-full bg-[#F3BA2F]" />
+                    <Star className="ot-spark-star -top-3 -left-2.5" size={10} />
+                    <Star className="ot-spark-star ot-spark-star--b -right-3 -bottom-2.5" size={7} />
+                  </span>
+                  <span className="ot-glint">{BUILT_AT}</span>
                 </p>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
@@ -181,6 +187,15 @@ export default function Landing() {
         </footer>
       </div>
     </LandingMotion>
+  )
+}
+
+/** A four-point sparkle, in the dot's gold. */
+function Star({ className, size }: { className: string; size: number }) {
+  return (
+    <svg viewBox="0 0 10 10" width={size} height={size} className={`absolute ${className}`}>
+      <path d="M5 0 C5.4 3.6 6.4 4.6 10 5 C6.4 5.4 5.4 6.4 5 10 C4.6 6.4 3.6 5.4 0 5 C3.6 4.6 4.6 3.6 5 0 Z" fill="#F3BA2F" />
+    </svg>
   )
 }
 

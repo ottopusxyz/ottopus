@@ -60,6 +60,59 @@
   50% { transform: translateY(-6px); }
 }
 
+/* ── The built-at line: a quiet sparkle ───────────────────────────── */
+
+/* The gold dot breathes a soft halo. */
+.ot-spark-dot {
+  animation: ot-spark-glow 2.8s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-spark-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 186, 47, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(243, 186, 47, 0.22), 0 0 10px 2px rgba(243, 186, 47, 0.35); }
+}
+
+/* Two stars beside it, out of step, each mostly resting. */
+.ot-spark-star {
+  opacity: 0;
+  transform: scale(0.3) rotate(0deg);
+  animation: ot-spark-twinkle 3.4s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ot-spark-star--b { animation-delay: -1.7s; animation-duration: 4.1s; }
+@keyframes ot-spark-twinkle {
+  0%, 55%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  70% { opacity: 1; transform: scale(1) rotate(45deg); }
+  85% { opacity: 0; transform: scale(0.4) rotate(90deg); }
+}
+
+/* Every six seconds a band of gold passes over the words, then they rest.
+   The words are the gradient's ends, so outside the glint they read exactly
+   as the text colour they had. */
+.ot-glint {
+  background: linear-gradient(
+    100deg,
+    var(--ot-text-2) 0%,
+    var(--ot-text-2) 45%,
+    #D99A06 49%,
+    #F3BA2F 50%,
+    #D99A06 51%,
+    var(--ot-text-2) 55%,
+    var(--ot-text-2) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ot-glint 6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ot-glint {
+  0%, 60% { background-position: 100% 0; }
+  85%, 100% { background-position: 0% 0; }
+}
+
 /* ── Reveal on scroll (the close) ─────────────────────────────────── */
 
 [data-reveal] {
@@ -95,6 +148,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ot-spark-dot, .ot-glint { animation: none; }
+  .ot-spark-star { display: none; }
   .ot-land-rise { display: none; }
   .ot-bob { animation: none; }
   [data-reveal] { transition: none !important; }
