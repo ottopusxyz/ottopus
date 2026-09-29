@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 /**
- * The landing copy is settled — issue #6 says so and gives it verbatim. It is
- * the one thing on this page that is not a judgement call, and it is exactly
- * the thing a later "small tidy" would rewrite. Reading the source rather than
+ * The landing copy is settled — issue #6 set it, and the tokenized-stocks
+ * redesign rewrote the hero around a stock. It is the one thing on this
+ * page that is not a judgement call, and it is exactly the thing a later
+ * "small tidy" would rewrite. Reading the source rather than
  * rendering keeps this honest about what it checks: the words, not the layout.
  */
 const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
@@ -13,8 +14,9 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Stop juggling wallets to get one thing done',
-  'Tell your agent what you want, not where to find it. Ottopus works out which wallet, which chain and which app — then shows you exactly what will happen before anything moves.',
+  'Just ask for the stock.',
+  'Otto handles the wallets.',
+  'Tell your agent what you want, not where to find it. Ottopus finds the tokenized stock across every issuer, picks the wallet that can pay, and shows you exactly what will happen before anything moves.',
   'Link your first wallet',
   'See what a review looks like',
   'Ottopus never holds a key and never asks for a seed phrase.',
@@ -25,6 +27,7 @@ const SETTLED = [
   'Point your agent at Ottopus',
   'Works with Claude, Codex, or whatever you already talk to. Nothing to install.',
   'Say what you want',
+  'Your wallets, or your agent’s',
 ]
 
 describe('landing copy', () => {
