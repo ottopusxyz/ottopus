@@ -20,7 +20,7 @@ export function walletRefsOf(wallets: readonly Arm[]): Map<string, WalletRef> {
     {
       id: arm.id,
       name: armName(arm),
-      icon: walletMark(arm.walletType),
+      icon: walletMark(arm.walletType, arm.agentProvider),
       label: arm.label,
       watchOnly: arm.isWatchOnly,
     },

@@ -11,6 +11,7 @@ import {
   type Arm,
   type Credentials,
 } from '@/lib/api'
+import { AGENTIC } from './naming'
 
 /**
  * The arms, and the two ways one arrives.
@@ -167,7 +168,9 @@ export function useWallets(): UseWallets {
       // Failing between the two is safe in this order: Privy no longer attests
       // the wallet, so the next sync unlinks our row on its own. The reverse
       // order has no such recovery.
-      if (!arm.isWatchOnly) await unlinkAtPrivy({ address: arm.address })
+      // An agentic arm was proved through the agent, not Privy, so like a
+      // watch-only one it has no Privy side to unlink.
+      if (!arm.isWatchOnly && arm.walletType !== AGENTIC) await unlinkAtPrivy({ address: arm.address })
       await unlinkOnServer(creds, arm.id)
       setNonce((n) => n + 1)
     },
@@ -178,7 +181,8 @@ export function useWallets(): UseWallets {
     async (arm: Arm, edit: { label: string | null; walletType: string }) => {
       const creds = await credentials()
       if (!creds) throw new Error('Not signed in')
-      await updateOnServer(creds, arm.id, edit)
+      // An agent wallet keeps its kind; the service refuses any attempt to set one.
+      await updateOnServer(creds, arm.id, arm.walletType === AGENTIC ? { label: edit.label } : edit)
       setNonce((n) => n + 1)
     },
     [credentials],

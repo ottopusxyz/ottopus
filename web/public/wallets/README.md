@@ -29,6 +29,10 @@ Binance Wallet was added on 2026-09-24 from the same rainbowkit folder
 names an EIP-6963 extension by its announced name, lowercased with spaces as
 underscores, so the extension arrives as `binance_wallet`.
 
+An `agentic` arm has no file of its own: it is drawn with its vendor's mark,
+looked up by the arm's `agentProvider` in `AGENT_PROVIDERS` (Binance's agent
+wallet takes `binance_wallet.svg`).
+
 A type without a file falls back to a lettered brand tile (`WALLET_AVATARS`),
 and a watch-only address shows an eye — watched, not held — regardless of
 label. Add a mark by dropping `<walletType>.svg` here and, if it has brand
