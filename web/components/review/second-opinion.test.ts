@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BinanceSimulation, Plan, Simulation } from '@/lib/api'
-import { secondOpinion } from './second-opinion'
+import { callVerdicts, secondOpinion } from './second-opinion'
 
 const BSC = 'eip155:56'
 const USDT = '0x55d398326f99059ff775485246999027b3197955'
@@ -168,5 +168,26 @@ describe('a second simulation beside the page’s own', () => {
     expect(
       secondOpinion(plan, own(), binance({ status: 'unavailable', failReason: 'no Binance credential is configured', balanceChanges: [] })),
     ).toEqual({ kind: 'unavailable', line: 'No Binance simulation: no Binance credential is configured.' })
+  })
+})
+
+describe('callVerdicts', () => {
+  it('passes every call of a run that passed', () => {
+    expect(callVerdicts(binance(), 2)).toEqual(['passed', 'passed'])
+  })
+
+  it('marks a refused first call as a failure and leaves the ones after it as not run', () => {
+    const failed = binance({ status: 'FAILED', failReason: 'call 1 of 3: reverted', failedCall: 1 })
+    expect(callVerdicts(failed, 3)).toEqual(['failed', 'skipped', 'skipped'])
+  })
+
+  it('marks a refused later call as dependent, since Binance ran it without the ones before', () => {
+    const failed = binance({ status: 'FAILED', failReason: 'call 2 of 3: reverted', failedCall: 2 })
+    expect(callVerdicts(failed, 3)).toEqual(['passed', 'dependent', 'skipped'])
+  })
+
+  it('gives none when there was no answer, or the refusal names no call', () => {
+    expect(callVerdicts(binance({ status: 'unavailable', failReason: 'timeout' }), 2)).toBeNull()
+    expect(callVerdicts(binance({ status: 'FAILED', failReason: 'reverted' }), 2)).toBeNull()
   })
 })

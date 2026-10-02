@@ -35,6 +35,28 @@ export type SecondOpinion =
     }
 
 /**
+ * What Binance made of one call. `dependent` is a refusal of a call that
+ * follows another: Binance runs each alone, so that is its method and not a
+ * finding. `skipped` is a call after the one it refused, which it never ran.
+ */
+export type CallVerdict = 'passed' | 'failed' | 'dependent' | 'skipped'
+
+/**
+ * Binance's verdict on each of the plan's calls, in order, for the decoded
+ * list to wear. Null when there is none to give: no answer, or a refusal the
+ * vendor did not pin to a call.
+ */
+export function callVerdicts(binance: BinanceSimulation, count: number): CallVerdict[] | null {
+  if (binance.status === 'unavailable') return null
+  if (binance.status === 'SUCCESS') return Array.from({ length: count }, () => 'passed' as const)
+  const failed = binance.failedCall
+  if (failed === null || failed < 1 || failed > count) return null
+  return Array.from({ length: count }, (_, i) =>
+    i + 1 < failed ? 'passed' : i + 1 > failed ? 'skipped' : failed > 1 ? 'dependent' : 'failed',
+  )
+}
+
+/**
  * How far two figures for the same asset may sit apart and still agree, in
  * basis points. The two runs are against different blocks, and a swap's
  * output moves with the pool between them; a per-cent of drift is the market,
