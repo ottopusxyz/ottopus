@@ -4,5 +4,19 @@
   "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
   "homepage": "https://ottopus.xyz",
   "repository": "https://github.com/ottopusxyz/ottopus",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "server": {
+      "type": "string",
+      "title": "Ottopus server name",
+      "description": "The name you gave the Ottopus MCP server, as /mcp lists it. Leave empty to accept any server whose plans link to the review origin.",
+      "default": ""
+    },
+    "reviewOrigin": {
+      "type": "string",
+      "title": "Review origin",
+      "description": "Where review links must lead. Plans linking anywhere else are ignored. Change only for a self-hosted Ottopus.",
+      "default": "https://ottopus.xyz"
+    }
+  }
 }
