@@ -1,0 +1,8 @@
+{
+  "name": "ottopus",
+  "description": "Shows an Ottopus plan as a card in Claude Code and follows it until it is signed, confirmed or expired.",
+  "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
+  "homepage": "https://ottopus.xyz",
+  "repository": "https://github.com/ottopusxyz/ottopus",
+  "types": "./types/index.d.ts"
+}
