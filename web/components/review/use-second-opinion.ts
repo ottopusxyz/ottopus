@@ -14,7 +14,7 @@ import { type BinanceSimulation, type Plan, simulateWithBinance } from '@/lib/ap
  * that did not answer — because this is advice and its absence is not news.
  */
 export function useSecondOpinion(plan: Plan | null, ready: boolean): BinanceSimulation | null {
-  const { getAccessToken } = usePrivy()
+  const { authenticated, getAccessToken } = usePrivy()
   const { identityToken } = useIdentityToken()
   const [found, setFound] = useState<{ planHash: string; result: BinanceSimulation } | null>(null)
   const started = useRef<string | null>(null)
@@ -28,7 +28,7 @@ export function useSecondOpinion(plan: Plan | null, ready: boolean): BinanceSimu
   }, [])
 
   useEffect(() => {
-    if (!plan || !ready) return
+    if (!plan || !ready || !authenticated) return
     if (started.current === plan.planHash) return
     started.current = plan.planHash
     const { id, planHash } = plan
@@ -37,14 +37,18 @@ export function useSecondOpinion(plan: Plan | null, ready: boolean): BinanceSimu
     void (async () => {
       try {
         const accessToken = await getAccessToken()
-        if (!accessToken) return
+        if (!accessToken) {
+          // Not asked yet, then: the next token to arrive tries again.
+          if (started.current === planHash) started.current = null
+          return
+        }
         const result = await simulateWithBinance({ accessToken, identityToken }, id)
         if (live.current) setFound({ planHash, result })
       } catch {
         // Nothing to show, and nothing to say about it.
       }
     })()
-  }, [plan, ready, getAccessToken, identityToken])
+  }, [plan, ready, authenticated, getAccessToken, identityToken])
 
   // A result for an older version of the plan is not about this one.
   return found && plan && found.planHash === plan.planHash ? found.result : null

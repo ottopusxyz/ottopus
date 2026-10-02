@@ -120,6 +120,15 @@ describe('a second simulation beside the page’s own', () => {
     expect(secondOpinion(plan, own({ assetChanges: [] }), binance())).toMatchObject({ verdict: 'alone' })
   })
 
+  it('does not call it agreement when only the native currency moved', () => {
+    const sent = own({ assetChanges: [{ assetId: BNB, symbol: 'BNB', decimals: 18, diff: '-1000120000000000000', pre: '0', post: '0' }] })
+    for (const theirs of [[], [{ assetId: BNB, symbol: 'BNB', decimals: 18, diff: '-1000000000000000000' }]]) {
+      const field = secondOpinion(plan, sent, binance({ balanceChanges: theirs }))
+      expect(field).toMatchObject({ kind: 'ok', verdict: 'alone' })
+      expect(field.kind === 'ok' && field.note).toMatch(/^Not compared/)
+    }
+  })
+
   it('lists allowance changes with the spender and the amounts before and after', () => {
     const field = secondOpinion(
       plan,

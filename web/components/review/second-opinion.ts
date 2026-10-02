@@ -29,7 +29,7 @@ export type SecondOpinion =
       provenance: string
       rows: AssetChange[]
       allowances: AllowanceRow[]
-      /** `alone` when the page's own run has no traced balances to hold it against. */
+      /** `alone` when there is nothing to hold it against: no traced balances, or none the two can be compared on. */
       verdict: 'agree' | 'differ' | 'alone'
       note: string | null
     }
@@ -97,7 +97,19 @@ export function secondOpinion(plan: Plan, own: Simulation | null, binance: Binan
   const traced = own?.assetChanges ?? []
   if (traced.length === 0) return { kind: 'ok', provenance, rows, allowances, verdict: 'alone', note: null }
 
-  const apart = differing(traced, binance.balanceChanges, nativeIdOf(traced, binance.balanceChanges))
+  const { apart, compared } = differing(traced, binance.balanceChanges, nativeIdOf(traced, binance.balanceChanges))
+  // Only the chain's own currency moved, and that row is never compared.
+  // Calling that agreement would be a verdict with nothing behind it.
+  if (compared === 0) {
+    return {
+      kind: 'ok',
+      provenance,
+      rows,
+      allowances,
+      verdict: 'alone',
+      note: 'Not compared with the page’s own run: only the chain’s own currency moves, and Binance does not count gas.',
+    }
+  }
   return apart.length === 0
     ? { kind: 'ok', provenance, rows, allowances, verdict: 'agree', note: 'Agrees with the page’s own run.' }
     : {
@@ -126,18 +138,28 @@ function nativeIdOf(...sides: readonly Delta[][]): string | null {
   return null
 }
 
-/** The symbols the two runs do not agree on: missing from one, the other way, or further apart than drift. */
-function differing(own: readonly Delta[], theirs: readonly Delta[], nativeId: string | null): string[] {
+/**
+ * The symbols the two runs do not agree on: missing from one, the other way,
+ * or further apart than drift. `compared` is how many assets were held
+ * against each other at all.
+ */
+function differing(
+  own: readonly Delta[],
+  theirs: readonly Delta[],
+  nativeId: string | null,
+): { apart: string[]; compared: number } {
   const mine = new Map(own.map((delta) => [delta.assetId.toLowerCase(), delta]))
   const other = new Map(theirs.map((delta) => [delta.assetId.toLowerCase(), delta]))
   const apart: string[] = []
+  let compared = 0
   for (const id of new Set([...mine.keys(), ...other.keys()])) {
     if (id === nativeId) continue
+    compared += 1
     const a = mine.get(id)
     const b = other.get(id)
     if (!a || !b || !within(BigInt(a.diff), BigInt(b.diff))) apart.push((a ?? b)!.symbol ?? 'an unnamed token')
   }
-  return apart
+  return { apart, compared }
 }
 
 function within(a: bigint, b: bigint): boolean {
