@@ -113,6 +113,14 @@ export function capturePlan(
 }
 
 /**
+ * What a get_plan the plugin made itself came back with: the structured
+ * result when the server sent one, else its first text block.
+ */
+export function planView(answer: { content: readonly { type: string; text?: string }[]; structuredContent?: unknown }): unknown {
+  return answer.structuredContent ?? answer.content.find((block) => block.type === 'text')?.text ?? null
+}
+
+/**
  * The plan on the card after a get_plan or cancel_plan result about it, or
  * null when the result is about another plan, from another server, or says
  * nothing new.

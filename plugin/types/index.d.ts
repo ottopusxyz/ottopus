@@ -22,6 +22,8 @@ export type CapturedPlan = {
   /** Why verification refused it. Empty unless blocked. */
   reasons: string[]
   expiresAt: string | null
+  /** When the plugin first saw the plan, on its own clock: the start the quote's share left is measured from. */
+  capturedAt?: number
   /** Null on a blocked plan: a refusal never gets a link. */
   reviewUrl: string | null
 }
@@ -30,8 +32,6 @@ declare module 'claude-code' {
   interface PluginState {
     ottopus: {
       plan: CapturedPlan | null
-      /** The plan the person closed the card on. A newer plan shows again. */
-      dismissed: string | null
     }
   }
 }
