@@ -17,6 +17,7 @@ import { ReviewCard } from './review-card'
 import { AdvancedSkeleton, ReviewSkeleton } from './review-skeleton'
 import { Settled, SignPanel } from './sign-panel'
 import { useReview } from './use-review'
+import { useSecondOpinion } from './use-second-opinion'
 import { useSimulation } from './use-simulation'
 
 /**
@@ -59,6 +60,10 @@ function Review({ token }: { token: string }) {
   // happened, which is not a finding, just a stale question.
   const signable = plan ? canSign(effectiveStatus(plan, now)) : false
   const simulation = useSimulation(signable ? plan : null, chainId, native)
+  // Binance's reading of the same plan, asked for only once the page's own
+  // run has landed or given up, so it never competes with the first paint.
+  const ownSettled = simulation.state.kind === 'done' || simulation.state.kind === 'unavailable'
+  const binance = useSecondOpinion(signable ? plan : null, ownSettled)
 
   if (state.status === 'loading') {
     // `wide` so the loader stands exactly where the card will: a skeleton that
@@ -108,7 +113,7 @@ function Review({ token }: { token: string }) {
 
   const clock = canSign(status) ? (countdown(plan.expiresAt, now) || 'now') : <StatusChip status={status} />
   const live = { kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }
-  const panelProps = { plan, live, decoderUrl: decoderUrl(plan) }
+  const panelProps = { plan, live, binance, decoderUrl: decoderUrl(plan) }
 
   return (
     <Ground wide>

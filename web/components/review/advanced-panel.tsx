@@ -1,7 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui'
-import type { Plan } from '@/lib/api'
+import type { BinanceSimulation, Plan } from '@/lib/api'
 import { explorerAddressUrl, explorerName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import {
@@ -13,6 +13,7 @@ import {
   simulationNote,
   verificationSummary,
 } from './model'
+import { type CallVerdict, callVerdicts, type SecondOpinion, secondOpinion } from './second-opinion'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -35,6 +36,8 @@ import type { LiveSimulation } from './use-simulation'
 export interface AdvancedPanelProps {
   plan: Plan
   live?: LiveSimulation | undefined
+  /** Binance's simulation of the same plan, once it has answered. Advice only. */
+  binance?: BinanceSimulation | null | undefined
   /** A neutral third-party decode of the calldata. Keyless. */
   decoderUrl?: string | null
   /**
@@ -46,7 +49,7 @@ export interface AdvancedPanelProps {
   className?: string
 }
 
-export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className }: AdvancedPanelProps) {
+export function AdvancedPanel({ plan, live, binance, decoderUrl, bare = false, className }: AdvancedPanelProps) {
   const chain = chainOfPlan(plan)
   const decoded = decodedRows(plan)
   const verification = verificationSummary(plan)
@@ -56,11 +59,13 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
   const running = live?.kind === 'running'
   // The card carries a mark; the sentence behind it belongs here.
   const refusal = liveRefusal(run ?? plan.simulation)
+  const second = binance ? secondOpinion(plan, run ?? plan.simulation, binance) : null
+  const verdicts = binance ? callVerdicts(binance, decoded.length) : null
 
   return (
     <section
       className={cn(
-        'flex flex-col gap-3.5',
+        'flex min-w-0 flex-col gap-3.5',
         bare ? 'pb-4' : 'rounded-[16px] border border-[var(--ot-border)] bg-[var(--ot-card)] px-[18px] py-4',
         className,
       )}
@@ -87,7 +92,7 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
         }
       >
         {refusal ? (
-          <p className="m-0 rounded-[10px] bg-[var(--ot-block-bg)] px-2.5 py-2 text-[11.5px] leading-[1.45] font-medium text-[var(--ot-block-text)]">
+          <p className="m-0 rounded-[10px] bg-[var(--ot-block-bg)] px-2.5 py-2 text-[11.5px] leading-[1.45] font-medium [overflow-wrap:anywhere] text-[var(--ot-block-text)]">
             {refusal} Nothing has been signed.
           </p>
         ) : null}
@@ -117,12 +122,16 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
           {decoded.map((row, i) => (
             <div key={i} className="flex items-center justify-between gap-2.5 bg-[var(--ot-water-1)] px-3 py-2.5">
               <code className="min-w-0 truncate font-mono text-[12px] font-semibold">{row.signature}</code>
-              <Badge tone={row.verified ? 'ok' : row.isContract ? 'warn' : 'neutral'}>
-                {row.verified ? 'verified' : row.isContract ? 'unverified' : 'wallet'}
-              </Badge>
+              <div className="flex flex-none items-center gap-2">
+                {verdicts?.[i] ? <BinanceVerdict verdict={verdicts[i]} /> : null}
+                <Badge tone={row.verified ? 'ok' : row.isContract ? 'warn' : 'neutral'}>
+                  {row.verified ? 'verified' : row.isContract ? 'unverified' : 'wallet'}
+                </Badge>
+              </div>
             </div>
           ))}
         </div>
+        {second ? <BinanceField opinion={second} /> : null}
         <div className="flex flex-col gap-1">
           {decoderUrl ? (
             <a
@@ -172,6 +181,83 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
 }
 
 /**
+ * What each decoded call says about Binance's run of it: Binance's mark and
+ * a small glyph, never a filled badge, because the sign button does not
+ * listen to this. A later call Binance refused wears a caution and not a
+ * failure: it ran that call without the ones before it.
+ */
+const VERDICTS: Record<CallVerdict, { words: string; ink: string }> = {
+  passed: { words: 'Binance simulation passes', ink: 'text-[var(--ot-ok-text)]' },
+  failed: { words: 'Binance simulation fails', ink: 'text-[var(--ot-block-text)]' },
+  dependent: {
+    words: 'Binance simulation fails on its own: this call relies on the one before it',
+    ink: 'text-[var(--ot-warn-text)]',
+  },
+  skipped: { words: 'Binance simulation not run', ink: 'text-[var(--ot-text-3)]' },
+}
+
+function BinanceVerdict({ verdict }: { verdict: CallVerdict }) {
+  const { words, ink } = VERDICTS[verdict]
+  return (
+    <span role="img" aria-label={words} title={words} className={cn('flex flex-none items-center gap-1', ink)}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/wallets/binance_wallet.svg" alt="" width={14} height={14} className="rounded-[3px]" />
+      <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {verdict === 'passed' ? (
+          <path d="M2.5 6.4l2.3 2.3 4.7-5.2" />
+        ) : verdict === 'failed' ? (
+          <path d="M3 3l6 6M9 3l-6 6" />
+        ) : verdict === 'dependent' ? (
+          <path d="M6 1.6l4.8 8.6H1.2zM6 5v2.3M6 8.7v.1" strokeWidth="1.3" />
+        ) : (
+          <path d="M3 6h6" />
+        )}
+      </svg>
+    </span>
+  )
+}
+
+/**
+ * The rest of a second simulator's reading, under the calls it was run on
+ * and labelled as what it is: where it differs from the page's own run, why
+ * it failed, and the allowances it saw. It informs and never decides.
+ */
+function BinanceField({ opinion }: { opinion: SecondOpinion }) {
+  if (opinion.kind === 'unavailable') {
+    return <p className="m-0 text-[11.5px] leading-[1.45] text-[var(--ot-text-3)]">{opinion.line}</p>
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      {opinion.kind === 'failed' ? (
+        <p className="m-0 text-[12px] leading-[1.45] [overflow-wrap:anywhere] text-[var(--ot-text-2)]">
+          Fails at Binance: {opinion.reason}
+        </p>
+      ) : opinion.allowances.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-[var(--ot-text-3)]">Allowances, as Binance sees them</span>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12px]">
+            {opinion.allowances.map((row, i) => (
+              <li key={i} className="flex flex-col">
+                <span className="font-medium">
+                  {row.token} to <code className="font-mono text-[11.5px]">{row.spender}</code>
+                </span>
+                <span className="text-[var(--ot-text-2)]">
+                  {row.before} → {row.after}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {opinion.note ? (
+        <p className="m-0 text-[11.5px] leading-[1.45] font-medium text-[var(--ot-text-2)]">{opinion.note}</p>
+      ) : null}
+      <p className="m-0 text-[11px] leading-[1.45] text-[var(--ot-text-3)]">{opinion.provenance}</p>
+    </div>
+  )
+}
+
+/**
  * A section that stays shut until asked for.
  *
  * The panel is a reference, not a report: somebody opens it with a question,
@@ -208,12 +294,15 @@ function Group({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="m-0 text-[13px] font-semibold">{title}</h2>
         {action}
       </div>
-      {note ? <p className="m-0 text-[11.5px] leading-[1.45] text-[var(--ot-text-3)]">{note}</p> : null}
+      {/* A revert reason is one unbroken run of hex: let it break anywhere. */}
+      {note ? (
+        <p className="m-0 text-[11.5px] leading-[1.45] [overflow-wrap:anywhere] text-[var(--ot-text-3)]">{note}</p>
+      ) : null}
       {children}
     </div>
   )
