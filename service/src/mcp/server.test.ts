@@ -1791,6 +1791,71 @@ describe('find_stock', () => {
     })
   })
 
+  /**
+   * A bStocks row on a weekend: the vendor's flag still says open and its
+   * reason still says TRADING, and it gives no session word and no bells.
+   * The calendar knows it is Saturday. Both tools must say so, in the same
+   * figures, or an agent that asked only find_asset believes the market is live.
+   */
+  describe('on a Saturday', () => {
+    const SATURDAY = new Date('2026-09-26T11:03:54.000Z')
+    const weekend = () =>
+      stock('NVDAB', 'bstock', NVDAB, {
+        asOf: SATURDAY.toISOString(),
+        status: { open: true, marketStatus: null, reason: 'TRADING', nextOpenAt: null, nextCloseAt: null },
+      })
+    const tokens = {
+      name: 'fake',
+      async byAssetId() {
+        return null
+      },
+      async find() {
+        return weekend()
+      },
+    }
+    type Status = { open: boolean; state: string; source: string; reason: string | null; nextOpenAt: string | null; nextCloseAt: string | null }
+
+    it('find_stock and find_asset both say closed, with the same next open and close', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: SATURDAY })
+      try {
+        const { client } = await connected(undefined, { tokens, stocks: registry(() => [weekend()]) })
+        const listed = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDAB' })
+        const found = await call(client, 'find_asset', { chain: 'eip155:56', query: 'NVDAB' })
+
+        const fromStock = (listed.structuredContent!.variants as { status: Status }[])[0]!.status
+        const fromAsset = (found.structuredContent!.stock as { status: Status }).status
+        expect(fromAsset).toEqual(fromStock)
+        expect(fromAsset).toMatchObject({
+          open: false,
+          state: 'closed',
+          source: 'calendar',
+          nextOpenAt: '2026-09-28T13:30:00.000Z',
+          nextCloseAt: '2026-09-28T20:00:00.000Z',
+        })
+        // The vendor's TRADING would contradict the closed state beside it.
+        expect(fromAsset.reason).toBeNull()
+
+        expect(found.content[0]!.text).toContain('A tokenized stock: market closed, opens 2026-09-28T13:30:00.000Z.')
+        expect(listed.content[0]!.text).toContain('market closed, opens 2026-09-28T13:30:00.000Z')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('find_asset keeps the vendor’s reason when the vendor is the one that closed it', async () => {
+      const halted = stock('NVDAB', 'bstock', NVDAB, { status: { open: false, reason: 'TRADING_HALT' } })
+      const { client } = await connected(undefined, { tokens: { ...tokens, find: async () => halted } })
+      const found = await call(client, 'find_asset', { chain: 'eip155:56', query: 'NVDAB' })
+      expect((found.structuredContent!.stock as { status: Status }).status).toMatchObject({
+        open: false,
+        state: 'halted',
+        source: 'vendor',
+        reason: 'TRADING_HALT',
+      })
+      expect(found.content[0]!.text).toContain('A tokenized stock: halted (TRADING_HALT).')
+    })
+  })
+
   /** "Not a stock" and "could not say" are different answers, and neither sends the agent hunting for a contract. */
   it('answers an unknown ticker plainly, and an outage as a retry', async () => {
     const { client } = await connected(undefined, { stocks: both })

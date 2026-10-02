@@ -357,16 +357,25 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         )
       }
       const address = found.assetId.split(':').pop() ?? ''
+      // A stock's market state is find_stock's reading, not the vendor's raw
+      // flag: the flag says "open" through a weekend, and two tools that
+      // disagree about a Saturday leave the agent believing the wrong one.
+      const stock = isStock(found) ? stockStatus(found, new Date()) : null
       const lines = [
         `${found.name} (${found.symbol}) on ${chainName(chain)}`,
         `assetId ${found.assetId}`,
         `${found.decimals} decimals — an amount of 1 ${found.symbol} is "1${'0'.repeat(found.decimals)}" in base units`,
         ...(found.priceUsd === null ? [] : [`about $${found.priceUsd} each`]),
+        ...(stock ? [`A tokenized stock: ${stock.stale ? `${stock.then} when last read, which is stale` : stock.words}. find_stock has its reference price and premium.`] : []),
         found.verified
           ? 'Listed as verified by the token registry, which is a listing claim and not a safety check.'
           : 'Not marked verified by the token registry. Show the address to the person before spending anything.',
       ]
-      return text(lines.join('\n'), { ...found, address })
+      return text(lines.join('\n'), {
+        ...found,
+        address,
+        ...(isStock(found) && stock ? { stock: { ...found.stock, status: stock.status, stale: stock.stale } } : {}),
+      })
     },
   )
 
@@ -646,10 +655,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
  */
 function stockVariant(info: StockInfo, now: Date) {
   const { stock } = info
-  const stale = stockFactsStale(info, now)
+  const { stale, status, words: state, then } = stockStatus(info, now)
   const premium = stale ? null : stockPremium(info)
-  const readAt = new Date(Date.parse(stock.asOf))
-  const market = stockMarket(info, stale && Number.isFinite(readAt.getTime()) ? readAt : now)
   const price = info.priceUsd === null ? 'price unavailable' : usd(info.priceUsd)
   const gap =
     premium === null
@@ -657,20 +664,7 @@ function stockVariant(info: StockInfo, now: Date) {
         ? 'no reference price'
         : `reference ${usd(stock.referencePriceUsd)}`
       : `${premiumWords(premium)} reference`
-  const state =
-    market.state === 'halted'
-      ? `halted${market.reason ? ` (${market.reason})` : ''}`
-      : market.state === 'closed'
-        ? `market closed${market.nextOpenAt ? `, opens ${market.nextOpenAt}` : ''}`
-        : `market open (${stockMarketWords(market.state)})`
   const ratio = Math.abs(stock.tokenToShareRatio - 1) >= 0.00005 ? `, ${stock.tokenToShareRatio.toFixed(4)} shares per token` : ''
-  // A stale line says what was read, without a next bell that may have rung.
-  const then =
-    market.state === 'halted'
-      ? `halted${market.reason ? ` (${market.reason})` : ''}`
-      : market.state === 'closed'
-        ? 'market closed'
-        : `market open (${stockMarketWords(market.state)})`
   const staleReason = stale ? stockStaleReason(info, now) : null
   const line = stale
     ? `${info.symbol} (${stock.platformId}) stale — was ${price}, ${then}${ratio}. ${staleReason} prepare_trade blocks on it until then.`
@@ -687,17 +681,54 @@ function stockVariant(info: StockInfo, now: Date) {
     tokenPriceUsd: info.priceUsd,
     referencePriceUsd: stock.referencePriceUsd,
     premiumPercent: premium === null ? null : Number((premium * 100).toFixed(2)),
+    status,
+    asOf: stock.asOf,
+    stale,
+    staleReason,
+  }
+}
+
+function isStock(token: object): token is StockInfo {
+  return 'stock' in token && typeof token.stock === 'object' && token.stock !== null
+}
+
+/**
+ * A stock's market status, for every tool that reports one. One function so
+ * find_asset and find_stock cannot drift apart: both say what verify's
+ * `stockMarket` says, with the calendar's bells where the vendor left them
+ * blank, and neither passes the vendor's raw open flag through.
+ *
+ * The vendor's reason code goes with its flag. When the calendar is what
+ * closed the market the code still reads `TRADING`, which contradicts the
+ * state beside it, so it is dropped and `source` says who made the call.
+ */
+function stockStatus(info: StockInfo, now: Date) {
+  const stale = stockFactsStale(info, now)
+  const readAt = new Date(Date.parse(info.stock.asOf))
+  const market = stockMarket(info, stale && Number.isFinite(readAt.getTime()) ? readAt : now)
+  const open = market.state !== 'closed' && market.state !== 'halted'
+  const byCalendar = market.source === 'calendar' && market.state === 'closed'
+  const halted = `halted${market.reason ? ` (${market.reason})` : ''}`
+  const session = `market open (${stockMarketWords(market.state)})`
+  return {
+    stale,
     status: {
       state: market.state,
-      open: market.state !== 'closed' && market.state !== 'halted',
-      reason: market.reason,
+      open,
+      source: market.source,
+      reason: byCalendar ? null : market.reason,
       reasonMessage: market.note,
       nextOpenAt: market.nextOpenAt,
       nextCloseAt: market.nextCloseAt,
     },
-    asOf: stock.asOf,
-    stale,
-    staleReason,
+    words:
+      market.state === 'halted'
+        ? halted
+        : market.state === 'closed'
+          ? `market closed${market.nextOpenAt ? `, opens ${market.nextOpenAt}` : ''}`
+          : session,
+    // What a stale reading said, without a next bell that may have rung.
+    then: market.state === 'halted' ? halted : market.state === 'closed' ? 'market closed' : session,
   }
 }
 
