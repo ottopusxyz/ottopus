@@ -1,7 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui'
-import type { Plan } from '@/lib/api'
+import type { BinanceSimulation, Plan } from '@/lib/api'
 import { explorerAddressUrl, explorerName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import {
@@ -13,6 +13,7 @@ import {
   simulationNote,
   verificationSummary,
 } from './model'
+import { type SecondOpinion, secondOpinion } from './second-opinion'
 import type { LiveSimulation } from './use-simulation'
 
 /**
@@ -35,6 +36,8 @@ import type { LiveSimulation } from './use-simulation'
 export interface AdvancedPanelProps {
   plan: Plan
   live?: LiveSimulation | undefined
+  /** Binance's simulation of the same plan, once it has answered. Advice only. */
+  binance?: BinanceSimulation | null | undefined
   /** A neutral third-party decode of the calldata. Keyless. */
   decoderUrl?: string | null
   /**
@@ -46,7 +49,7 @@ export interface AdvancedPanelProps {
   className?: string
 }
 
-export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className }: AdvancedPanelProps) {
+export function AdvancedPanel({ plan, live, binance, decoderUrl, bare = false, className }: AdvancedPanelProps) {
   const chain = chainOfPlan(plan)
   const decoded = decodedRows(plan)
   const verification = verificationSummary(plan)
@@ -56,6 +59,7 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
   const running = live?.kind === 'running'
   // The card carries a mark; the sentence behind it belongs here.
   const refusal = liveRefusal(run ?? plan.simulation)
+  const second = binance ? secondOpinion(plan, run ?? plan.simulation, binance) : null
 
   return (
     <section
@@ -102,6 +106,8 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
           ]}
         />
       </Group>
+
+      {second ? <BinanceField opinion={second} /> : null}
 
       <Group
         title={verification.allVerified ? 'Decoded and verified' : 'Decoded, not all verified'}
@@ -168,6 +174,67 @@ export function AdvancedPanel({ plan, live, decoderUrl, bare = false, className 
         />
       </Fold>
     </section>
+  )
+}
+
+/**
+ * A second simulator's reading, under the page's own and labelled as what it
+ * is. It informs and never decides: a disagreement is one plain line in the
+ * panel's own ink, not a warning, because the sign button does not listen to
+ * it and a red box would say that it did.
+ */
+function BinanceField({ opinion }: { opinion: SecondOpinion }) {
+  if (opinion.kind === 'unavailable') {
+    return <p className="m-0 text-[11.5px] leading-[1.45] text-[var(--ot-text-3)]">{opinion.line}</p>
+  }
+  return (
+    <Group title="Binance simulation" note={opinion.provenance}>
+      {opinion.kind === 'failed' ? (
+        <p className="m-0 text-[12px] leading-[1.45] text-[var(--ot-text-2)]">Fails there: {opinion.reason}</p>
+      ) : (
+        <>
+          <dl className="m-0 flex flex-col gap-1 text-[12.5px]">
+            {opinion.rows.map((row) => (
+              <div key={`${row.direction}-${row.assetId}`} className="flex items-baseline justify-between gap-3">
+                <dt className="min-w-0 truncate text-[var(--ot-text-3)]">{row.where}</dt>
+                <dd
+                  className={cn(
+                    'm-0 flex-none font-mono font-semibold tabular-nums',
+                    row.direction === 'in' ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-text)]',
+                  )}
+                >
+                  {row.direction === 'in' ? '+' : '−'}
+                  {row.amount} {row.symbol}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {opinion.rows.length === 0 ? (
+            <p className="m-0 text-[12px] text-[var(--ot-text-2)]">Passes, with no balance of this wallet changing.</p>
+          ) : null}
+          {opinion.allowances.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium text-[var(--ot-text-3)]">Allowances</span>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12px]">
+                {opinion.allowances.map((row, i) => (
+                  <li key={i} className="flex flex-col">
+                    <span className="font-medium">
+                      {row.token} to <code className="font-mono text-[11.5px]">{row.spender}</code>
+                    </span>
+                    <span className="text-[var(--ot-text-2)]">
+                      {row.before} → {row.after}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </>
+      )}
+      {opinion.note ? (
+        <p className="m-0 text-[11.5px] leading-[1.45] font-medium text-[var(--ot-text-2)]">{opinion.note}</p>
+      ) : null}
+    </Group>
   )
 }
 
