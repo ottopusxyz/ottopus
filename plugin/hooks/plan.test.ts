@@ -1,8 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
-import { capturePlan, prepareCall } from './plan'
+import { capturePlan as capture, followPlan, prepareCall, statusCall, trustedReviewUrl } from './plan'
+import type { Trust } from './plan'
 
 const CALL = { server: 'claude_ai_Ottopus', tool: 'prepare_trade' } as const
+
+const TRUST: Trust = { reviewOrigin: 'https://ottopus.xyz', server: null }
+
+const capturePlan = (call: Parameters<typeof capture>[0], result: unknown) => capture(call, result, TRUST)
 
 const READY = {
   planId: '7f0c1a52-1111-4222-8333-444455556666',
@@ -82,4 +87,40 @@ test('anything that is not a plan is null', () => {
 test('holds nothing a wallet could send, even when the result carries it', () => {
   const plan = capturePlan(CALL, { ...READY, calls: [{ to: '0xabc', data: '0xdeadbeef', value: '0' }] })
   expect(JSON.stringify(plan)).not.toContain('deadbeef')
+})
+
+test('a plan whose link leads anywhere but the review page is not a plan', () => {
+  expect(capturePlan(CALL, { ...READY, reviewUrl: 'https://ottopus.xyz.evil.example/review/abc' })).toBe(null)
+  expect(capturePlan(CALL, { ...READY, reviewUrl: 'https://ottopus.xyz/login?next=abc' })).toBe(null)
+  expect(capturePlan(CALL, { ...READY, reviewUrl: 'http://ottopus.xyz/review/abc' })).toBe(null)
+  expect(capturePlan(CALL, { ...READY, reviewUrl: undefined })).toBe(null)
+})
+
+test('the review origin can be moved for a self-hosted Ottopus', () => {
+  expect(trustedReviewUrl('http://localhost:3000/review/abc', 'http://localhost:3000')).toBe('http://localhost:3000/review/abc')
+  expect(trustedReviewUrl('https://ottopus.xyz/review/abc', 'http://localhost:3000')).toBe(null)
+  expect(trustedReviewUrl('https://user@ottopus.xyz/review/abc', 'https://ottopus.xyz')).toBe(null)
+})
+
+test('a named server is the only one listened to, however its name is spelled', () => {
+  const named: Trust = { ...TRUST, server: 'claude.ai Ottopus' }
+  expect(prepareCall('mcp__claude_ai_Ottopus__prepare_trade', named)).toEqual(CALL)
+  expect(prepareCall('mcp__other__prepare_trade', named)).toBe(null)
+})
+
+test('a status check moves the plan it is about, and only its status and expiry', () => {
+  const plan = capturePlan(CALL, READY)!
+  expect(statusCall('mcp__claude_ai_Ottopus__get_plan')).toBe('claude_ai_Ottopus')
+  expect(statusCall('mcp__claude_ai_Ottopus__cancel_plan')).toBe('claude_ai_Ottopus')
+  expect(statusCall('mcp__claude_ai_Ottopus__prepare_trade')).toBe(null)
+  const view = { planId: READY.planId, status: 'confirmed', summary: 'Something else', reviewUrl: 'https://evil.example/review/x', expiresAt: READY.expiresAt }
+  expect(followPlan(plan, CALL.server, JSON.stringify(view))).toEqual({ ...plan, status: 'confirmed' })
+})
+
+test('a status check about another plan, from another server, or with no news changes nothing', () => {
+  const plan = capturePlan(CALL, READY)!
+  expect(followPlan(plan, CALL.server, { planId: 'another', status: 'confirmed' })).toBe(null)
+  expect(followPlan(plan, 'other', { planId: READY.planId, status: 'confirmed' })).toBe(null)
+  expect(followPlan(plan, CALL.server, { planId: READY.planId, status: READY.status, expiresAt: READY.expiresAt })).toBe(null)
+  expect(followPlan(plan, CALL.server, 'No plan with that id.')).toBe(null)
 })

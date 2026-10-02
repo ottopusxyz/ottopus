@@ -28,6 +28,10 @@ export type CapturedPlan = {
 
 declare module 'claude-code' {
   interface PluginState {
-    ottopus: { plan: CapturedPlan | null }
+    ottopus: {
+      plan: CapturedPlan | null
+      /** The plan the person closed the card on. A newer plan shows again. */
+      dismissed: string | null
+    }
   }
 }
