@@ -30,6 +30,7 @@ export interface ExistingWallet {
   id: string
   address: string
   isWatchOnly: boolean
+  walletType: string
 }
 
 /** A wallet to insert, already shaped for the row. */
@@ -122,9 +123,12 @@ export function reconcile(existing: ExistingWallet[], attested: PrivyWallet[]): 
    * Watch-only arms are invisible to Privy — nobody proved them, which is the
    * point of them — so they can never appear in `attested` and must never be
    * unlinked for being absent. They still occupy a slot.
+   *
+   * Agentic arms are the same to Privy: proved, but by the agent's signature
+   * through MCP, so Privy never hears of them.
    */
   const unlink = existing
-    .filter((w) => !w.isWatchOnly && !stillAttested.has(w.address))
+    .filter((w) => !w.isWatchOnly && w.walletType !== 'agentic' && !stillAttested.has(w.address))
     .map((w) => w.id)
 
   const known = new Set(existing.map((w) => w.address))

@@ -15,6 +15,7 @@ const attested = (overrides: Partial<PrivyWallet> & { address: string }): PrivyW
 const existing = (overrides: Partial<ExistingWallet> & { address: string }): ExistingWallet => ({
   id: `id-${overrides.address}`,
   isWatchOnly: false,
+  walletType: 'metamask',
   ...overrides,
 })
 
@@ -162,5 +163,20 @@ describe('the cap', () => {
       ],
     )
     expect(result.link.map((w) => w.address)).toEqual([address(1), address(2)])
+  })
+})
+
+describe('agentic arms', () => {
+  /** Proved through MCP by the agent's signature, so Privy never attests one. */
+  it('is not unlinked for being absent from the attestation', () => {
+    const result = reconcile([existing({ address: address(1), walletType: 'agentic' })], [])
+    expect(result.unlink).toEqual([])
+  })
+
+  it('still occupies a slot', () => {
+    const arms = Array.from({ length: MAX_ARMS }, (_, i) => existing({ address: address(i), walletType: 'agentic' }))
+    const result = reconcile(arms, [attested({ address: address(99) })])
+    expect(result.link).toEqual([])
+    expect(result.overflow).toEqual([address(99)])
   })
 })
