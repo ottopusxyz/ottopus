@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AgentIcon, CONNECT_CLIENTS, useMcpUrl } from '@/components/agents'
 import type { AgentIconKey } from '@/components/agents/agent-brand'
 import { Payload } from '@/components/agents/connect-payload'
-import { buttonClasses } from '@/components/ui'
+import { Button, Dialog, SHEET_MEDIA, buttonClasses } from '@/components/ui'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/cn'
 import { TRIGGER_MARK_MS, TRIGGER_MARKS } from './agent-marks'
@@ -19,6 +19,11 @@ import { TRIGGER_MARK_MS, TRIGGER_MARKS } from './agent-marks'
  * session, and adding Ottopus to an agent does not need one until the agent
  * asks you to approve its grant.
  *
+ * Below 640px the same panel opens as a bottom sheet, as the portfolio
+ * filters do: a phone has no room under the button for it. The trigger is
+ * the same in both modes, which is what lets the mode come from a media
+ * query that is false on the server.
+ *
  * The button wears an agent's mark that turns through the clients while it
  * waits, so "your agent" reads as a list of names rather than a category.
  * Open, it holds the client you picked; under reduced motion it holds the
@@ -28,11 +33,11 @@ export function AddToAgent({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
   const [clientKey, setClientKey] = useState(CONNECT_CLIENTS[0]!.key)
   const client = CONNECT_CLIENTS.find((c) => c.key === clientKey) ?? CONNECT_CLIENTS[0]!
-  const mcp = useMcpUrl()
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
   const still = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const sheet = useMediaQuery(SHEET_MEDIA)
   const [turn, setTurn] = useState(0)
 
   useEffect(() => {
@@ -44,9 +49,11 @@ export function AddToAgent({ className }: { className?: string }) {
   const mark = open ? { icon: client.icon, label: client.label } : TRIGGER_MARKS[turn % TRIGGER_MARKS.length]!
 
   // Closes on a click anywhere else and on Escape, handing focus back to the
-  // button so a keyboard user is not dropped at the top of the page.
+  // button so a keyboard user is not dropped at the top of the page. The
+  // dropdown's problem only: a sheet is modal, and the backdrop, Escape and
+  // the drag are the dialog's own ways out.
   useEffect(() => {
-    if (!open) return
+    if (!open || sheet) return
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false)
     }
@@ -61,7 +68,9 @@ export function AddToAgent({ className }: { className?: string }) {
       document.removeEventListener('pointerdown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, sheet])
+
+  const panel = <AgentPanel clientKey={client.key} onPick={setClientKey} />
 
   return (
     <div ref={root} className={cn('relative', className)}>
@@ -69,7 +78,8 @@ export function AddToAgent({ className }: { className?: string }) {
         ref={trigger}
         type="button"
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-haspopup={sheet ? 'dialog' : undefined}
+        aria-controls={sheet ? undefined : panelId}
         onClick={() => setOpen((v) => !v)}
         className={buttonClasses({ variant: 'secondary', size: 'lg' })}
       >
@@ -89,7 +99,24 @@ export function AddToAgent({ className }: { className?: string }) {
         </svg>
       </button>
 
-      {open ? (
+      {sheet ? (
+        <Dialog
+          open={open}
+          onClose={() => setOpen(false)}
+          title="Add Ottopus to your agent"
+          className="[&_.ot-dialog-panel]:max-h-[85dvh]"
+          actions={
+            <Button variant="secondary" fullWidth onClick={() => setOpen(false)}>
+              Close
+            </Button>
+          }
+        >
+          {/* The padding keeps the picked client's ring inside the scroller's clip. */}
+          <div className="ot-scroll -m-1 flex min-h-0 flex-col gap-3.5 overflow-y-auto overscroll-contain p-1">
+            {panel}
+          </div>
+        </Dialog>
+      ) : open ? (
         <div
           id={panelId}
           role="region"
@@ -100,44 +127,56 @@ export function AddToAgent({ className }: { className?: string }) {
             'shadow-[0_24px_60px_-16px_rgba(22,33,62,.35)] motion-safe:animate-[ot-fade-in_0.18s_ease-out]',
           )}
         >
-          <ul className="m-0 grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3" aria-label="Agent">
-            {CONNECT_CLIENTS.map((entry) => (
-              <li key={entry.key}>
-                <button
-                  type="button"
-                  aria-pressed={entry.key === client.key}
-                  onClick={() => setClientKey(entry.key)}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-[13px] transition-colors',
-                    entry.key === client.key
-                      ? 'bg-[var(--ot-surface-2)] font-semibold text-[var(--ot-text)] ring-1 ring-[var(--ot-border-strong)]'
-                      : 'font-medium text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
-                  )}
-                >
-                  <AgentIcon name={entry.label} iconKey={entry.icon} size={20} className="rounded-[5px]" />
-                  {entry.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          <Payload state={mcp} client={client} />
-
-          {client.steps ? (
-            <ol className="m-0 flex list-none flex-col gap-2 p-0">
-              {client.steps.map((step, i) => (
-                <li key={step} className="flex gap-2.5 text-[13px] leading-[1.5]">
-                  <span className="flex-none font-mono text-[var(--ot-text-3)]">{i + 1}</span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-
-          <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">{client.note}</p>
+          {panel}
         </div>
       ) : null}
     </div>
+  )
+}
+
+/** The clients, the command and the steps: one body for the dropdown and the sheet. */
+function AgentPanel({ clientKey, onPick }: { clientKey: string; onPick: (key: string) => void }) {
+  const client = CONNECT_CLIENTS.find((c) => c.key === clientKey) ?? CONNECT_CLIENTS[0]!
+  const mcp = useMcpUrl()
+
+  return (
+    <>
+      <ul className="m-0 grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3" aria-label="Agent">
+        {CONNECT_CLIENTS.map((entry) => (
+          <li key={entry.key}>
+            <button
+              type="button"
+              aria-pressed={entry.key === clientKey}
+              onClick={() => onPick(entry.key)}
+              className={cn(
+                'flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-[13px] transition-colors',
+                entry.key === clientKey
+                  ? 'bg-[var(--ot-surface-2)] font-semibold text-[var(--ot-text)] ring-1 ring-[var(--ot-border-strong)]'
+                  : 'font-medium text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
+              )}
+            >
+              <AgentIcon name={entry.label} iconKey={entry.icon} size={20} className="rounded-[5px]" />
+              {entry.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <Payload state={mcp} client={client} />
+
+      {client.steps ? (
+        <ol className="m-0 flex list-none flex-col gap-2 p-0">
+          {client.steps.map((step, i) => (
+            <li key={step} className="flex gap-2.5 text-[13px] leading-[1.5]">
+              <span className="flex-none font-mono text-[var(--ot-text-3)]">{i + 1}</span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
+      <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">{client.note}</p>
+    </>
   )
 }
 
