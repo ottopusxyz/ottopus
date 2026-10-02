@@ -85,6 +85,13 @@
       "when": 1789026659603,
       "tag": "0011_submitted_events_index",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790921985725,
+      "tag": "0012_agentic_wallets",
+      "breakpoints": true
     }
   ]
 }

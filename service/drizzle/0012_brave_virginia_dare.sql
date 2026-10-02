@@ -1,0 +1,3 @@
+ALTER TABLE "linked_wallets" ADD COLUMN "agent_provider" text;--> statement-breakpoint
+ALTER TABLE "linked_wallets" ADD CONSTRAINT "linked_wallets_agent_provider_iff_agentic" CHECK (("linked_wallets"."wallet_type" = 'agentic') = ("linked_wallets"."agent_provider" is not null));--> statement-breakpoint
+ALTER TABLE "linked_wallets" ADD CONSTRAINT "linked_wallets_agentic_is_proved" CHECK ("linked_wallets"."wallet_type" <> 'agentic' or not "linked_wallets"."is_watch_only");
