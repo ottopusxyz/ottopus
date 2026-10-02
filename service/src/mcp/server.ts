@@ -6,6 +6,7 @@ import type { StockInfo } from '../connectors/tokens/index.js'
 import { stockFactsStale, stockMarket, stockMarketWords, stockPremium, stockStaleReason } from '../verify/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
 import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
+import { capabilitiesOf } from '../wallets/index.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
@@ -177,8 +178,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           walletType: arm.walletType,
           namespace: arm.namespace,
           address: arm.address,
+          agentProvider: arm.agentProvider,
           watchOnly: arm.isWatchOnly,
-          canSign: !arm.isWatchOnly && arm.provedAt !== null,
+          ...capabilitiesOf(arm),
         })),
       })
     },
