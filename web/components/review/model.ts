@@ -201,7 +201,7 @@ function chainOfAsset(assetId: string): string {
   return `${namespace}:${rest?.split('/')[0] ?? ''}`
 }
 
-function holderOf(plan: Plan): string {
+export function holderOf(plan: Plan): string {
   return plan.resolution.account.label ?? truncateAddress(addressOf(plan.resolution.account.caip10))
 }
 
@@ -231,7 +231,7 @@ export const SOURCE_LABEL: Readonly<Record<ChangeSource, string>> = {
   declared: 'declared by the agent, as ceilings',
 }
 
-function observedRow(delta: AssetDelta, holder: string): AssetChange {
+export function observedRow(delta: Omit<AssetDelta, 'pre' | 'post'>, holder: string): AssetChange {
   const out = delta.diff.startsWith('-')
   const magnitude = out ? delta.diff.slice(1) : delta.diff
   return {

@@ -714,6 +714,29 @@ export interface Simulation {
 }
 
 /**
+ * A second simulation of the same plan, from Binance. Advice for the reader:
+ * it is fetched after the page's own run, never stored, and nothing about
+ * signing depends on it.
+ */
+export interface BinanceSimulation {
+  provider: 'binance'
+  /** `unavailable` is the absence of an answer, never a verdict on the plan. */
+  status: 'SUCCESS' | 'FAILED' | 'unavailable'
+  failReason: string | null
+  /** Which call the vendor refused, 1-based, when one was. */
+  failedCall: number | null
+  balanceChanges: Omit<AssetDelta, 'pre' | 'post'>[]
+  allowanceChanges: { tokenAddress: string; spender: string; preAmount: string; postAmount: string }[]
+  /** The vendor pins no block, so this is the only provenance there is. */
+  ranAt: string
+}
+
+/** Ask for it by the plan's id. A vendor outage answers `unavailable`, not an error. */
+export function simulateWithBinance(credentials: Credentials, planId: string): Promise<BinanceSimulation> {
+  return call<BinanceSimulation>(`/plans/${encodeURIComponent(planId)}/simulate/binance`, credentials)
+}
+
+/**
  * What the page draws beside the plan, looked up by the ids the plan carries.
  * Never inside the plan: the hash is over the plan alone, and a missing icon
  * must never make a plan unreadable.
