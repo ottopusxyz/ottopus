@@ -30,13 +30,13 @@ agent. The first call opens a consent page where you choose what the agent may d
 
 ```sh
 # Claude Code
-claude mcp add --transport http ottopus https://mcp.ottopus.xyz
+claude mcp add --transport http ottopus https://mcp.ottopus.xyz/mcp
 
 # Codex
-codex mcp add ottopus --url https://mcp.ottopus.xyz
+codex mcp add ottopus --url https://mcp.ottopus.xyz/mcp
 
 # Hermes
-hermes mcp add ottopus --url https://mcp.ottopus.xyz
+hermes mcp add ottopus --url https://mcp.ottopus.xyz/mcp
 ```
 
 Any other MCP host works the same way: it is a remote server over Streamable HTTP
