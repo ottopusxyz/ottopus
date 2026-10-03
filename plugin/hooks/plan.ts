@@ -1,4 +1,5 @@
 import type { CapturedPlan } from '../types'
+import { txHashOf } from './explorer'
 
 const PREPARE = /^mcp__(.+)__(prepare_trade|prepare_transfer|prepare_custom)$/
 const STATUS = /^mcp__(.+)__(get_plan|cancel_plan)$/
@@ -125,8 +126,10 @@ export function planView(answer: { content: readonly { type: string; text?: stri
  * null when the result is about another plan, from another server, or says
  * nothing new.
  *
- * Only the status and the expiry move. The words and the link stay the ones
- * the prepare call gave: a status check never hands the card a new link.
+ * Only the status and the expiry move, and the chain and the transaction
+ * hash are noted once the plan has them. The words and the link stay the ones
+ * the prepare call gave: a status check never hands the card a new link, and
+ * the explorer's address is built from the hash, never read from the result.
  */
 export function followPlan(plan: CapturedPlan, server: string, result: unknown): CapturedPlan | null {
   if (server !== plan.server) return null
@@ -135,6 +138,9 @@ export function followPlan(plan: CapturedPlan, server: string, result: unknown):
   const status = str(d.status)
   if (!status) return null
   const expiresAt = str(d.expiresAt) ?? plan.expiresAt
-  if (status === plan.status && expiresAt === plan.expiresAt) return null
-  return { ...plan, status, expiresAt }
+  const chainId = str((d.chain as { id?: unknown } | null | undefined)?.id) ?? plan.chainId ?? null
+  const txHash = txHashOf(d.txHash) ?? plan.txHash ?? null
+  const isSame = status === plan.status && expiresAt === plan.expiresAt && txHash === (plan.txHash ?? null)
+  if (isSame) return null
+  return { ...plan, status, expiresAt, ...(txHash ? { chainId, txHash } : {}) }
 }

@@ -175,3 +175,18 @@ test('the confirmed sweep fills the bar from the left, holds it green, and ends'
   expect(new Set(held.colors)).toEqual(new Set([RGB.ok]))
   expect(burstCells(BURST_MS)).toBe(null)
 })
+
+test('a confirmed plan links to its transaction on the explorer, in the chain colour', () => {
+  const txHash = `0x${'ab'.repeat(32)}`
+  const confirmed = { ...READY, status: 'confirmed', chainId: 'eip155:56', txHash }
+  expect(cardOf(confirmed, BEFORE)?.link).toEqual({
+    href: `https://bscscan.com/tx/${txHash}`,
+    label: 'Open explorer',
+    paint: { fill: '#F0B90B', ink: '#16213E' },
+  })
+  // Without a hash, or on a chain with no explorer here, the review page is still the way in.
+  expect(cardOf({ ...READY, status: 'confirmed' }, BEFORE)?.link).toEqual({ href: READY.reviewUrl, label: 'Open plan' })
+  expect(cardOf({ ...confirmed, chainId: 'eip155:999999' }, BEFORE)?.link?.label).toBe('Open plan')
+  // Only a confirmed plan: one that failed keeps its plain link.
+  expect(cardOf({ ...confirmed, status: 'failed' }, BEFORE)?.link?.label).toBe('Open plan')
+})

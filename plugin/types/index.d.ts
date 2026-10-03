@@ -26,6 +26,10 @@ export type CapturedPlan = {
   capturedAt?: number
   /** Null on a blocked plan: a refusal never gets a link. */
   reviewUrl: string | null
+  /** The chain the plan sends on, as CAIP-2, once a status check has named it. */
+  chainId?: string | null
+  /** The transaction, once signed and sent. Only ever looked up, never sent anywhere. */
+  txHash?: string | null
 }
 
 declare module 'claude-code' {

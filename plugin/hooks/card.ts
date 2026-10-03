@@ -1,4 +1,5 @@
 import type { CapturedPlan } from '../types'
+import { explorerOf } from './explorer'
 
 /** What the band draws, as plain words. No element, no surface, no clock of its own. */
 export type Card = {
@@ -12,7 +13,8 @@ export type Card = {
   warnings: string[]
   /** When the quote stops holding. Null once that no longer matters. */
   expiresAt: string | null
-  link: { href: string; label: string } | null
+  /** A paint of its own when the link leaves for a chain's explorer: that chain's colour. */
+  link: { href: string; label: string; paint?: { fill: string; ink: string } } | null
 }
 
 export type Kind = 'ready' | 'submitted' | 'confirmed' | 'failed' | 'refused' | 'ended'
@@ -92,7 +94,8 @@ function details(plan: CapturedPlan): string[] {
  *
  * A blocked plan shows its reasons and never a link. A plan past its expiry
  * reads as expired even while the stored status still says ready: the card
- * must not invite a signature the review page will refuse.
+ * must not invite a signature the review page will refuse. A confirmed plan
+ * links to its transaction on the chain's explorer, when the chain is known.
  */
 export function cardOf(plan: CapturedPlan | null, now: number): Card | null {
   if (!plan) return null
@@ -114,7 +117,10 @@ export function cardOf(plan: CapturedPlan | null, now: number): Card | null {
   const ended = ENDED[plan.status] ?? (!isSubmitted && expiry <= now ? ENDED.expired! : null)
   if (ended) {
     const kind = plan.status === 'confirmed' ? 'confirmed' : plan.status === 'superseded' ? 'ended' : 'failed'
-    return { tone: 'ended', kind, title: ended, summary: plan.summary, lines: [], warnings: [], expiresAt: null, link: link('Open plan') }
+    // A confirmed plan has nothing left to review: its link is the transaction itself.
+    const explorer = kind === 'confirmed' ? explorerOf(plan.chainId, plan.txHash) : null
+    const out = explorer ? { href: explorer.href, label: 'Open explorer', paint: { fill: explorer.fill, ink: explorer.ink } } : link('Open plan')
+    return { tone: 'ended', kind, title: ended, summary: plan.summary, lines: [], warnings: [], expiresAt: null, link: out }
   }
   return {
     tone: 'ready',

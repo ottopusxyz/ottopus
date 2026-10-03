@@ -124,3 +124,17 @@ test('a status check about another plan, from another server, or with no news ch
   expect(followPlan(plan, CALL.server, { planId: READY.planId, status: READY.status, expiresAt: READY.expiresAt })).toBe(null)
   expect(followPlan(plan, CALL.server, 'No plan with that id.')).toBe(null)
 })
+
+test('a status check notes the chain and the transaction, and builds no link from the result', () => {
+  const plan = capturePlan(CALL, READY)!
+  const txHash = `0x${'ab'.repeat(32)}`
+  const view = { planId: READY.planId, status: 'confirmed', chain: { id: 'eip155:56', name: 'BNB Chain' }, txHash, explorerUrl: 'https://evil.example/tx/1' }
+  const followed = followPlan(plan, CALL.server, view)
+  expect(followed).toEqual({ ...plan, status: 'confirmed', chainId: 'eip155:56', txHash })
+  expect(JSON.stringify(followed)).not.toContain('evil.example')
+  // A hash that is not one is dropped; the status still moves.
+  expect(followPlan(plan, CALL.server, { ...view, txHash: 'https://evil.example' })).toEqual({ ...plan, status: 'confirmed' })
+  // The hash arriving is news even when the status has not moved.
+  const sent = { ...plan, status: 'submitted' }
+  expect(followPlan(sent, CALL.server, { ...view, status: 'submitted' })?.txHash).toBe(txHash)
+})
