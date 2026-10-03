@@ -1,0 +1,15 @@
+{
+  "name": "ottopus",
+  "description": "Ottopus for Claude Code: plans for onchain trades, shown as a live card until you sign.",
+  "owner": { "name": "Ottopus", "url": "https://ottopus.xyz" },
+  "plugins": [
+    {
+      "name": "ottopus",
+      "source": "./plugin",
+      "description": "Shows an Ottopus plan as a card in Claude Code and follows it until it is signed, confirmed or expired.",
+      "category": "productivity",
+      "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
+      "homepage": "https://ottopus.xyz"
+    }
+  ]
+}
