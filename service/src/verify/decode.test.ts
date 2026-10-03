@@ -2,7 +2,7 @@ import { type Abi, encodeFunctionData, maxUint160, maxUint256, parseAbi } from '
 import { describe, expect, it } from 'vitest'
 import type { Call } from '../core/index.js'
 import { KNOWN_ABI } from './abi.js'
-import { decodeCall, decodeCalls } from './decode.js'
+import { cloneImplementation, decodeCall, decodeCalls } from './decode.js'
 import type { Lookups, SourcifyMatch } from './lookups.js'
 
 /**
@@ -258,5 +258,67 @@ describe('decodeCalls', () => {
     const transfer = encodeFunctionData({ abi: KNOWN_ABI, functionName: 'transfer', args: [EOA, 1n] })
     const actions = await decodeCalls([call(EOA, '0x', '5'), call(USDC, transfer)], fake())
     expect(actions.map((a) => a.source)).toEqual(['native', 'abi'])
+  })
+})
+
+/**
+ * A factory-made account: an EIP-1167 clone with nothing verified at its own
+ * address, running an implementation that is. The real case was a strategy
+ * account on Base whose `pause()` read as a 4byte guess on an unverified target.
+ */
+describe('a minimal-proxy clone', () => {
+  const CLONE = '0x2cf2ea13b2c22589c82879654b70e2571e42e158'
+  const IMPL = '0xf420ad09e466f76a2f52dfa35c6eb411764c9229'
+  const UNPUBLISHED = '0x5555555555555555555555555555555555555555'
+  const STRATEGY_ABI = parseAbi(['function pause()', 'function deposit(uint256 amount)'])
+  const proxyOf = (impl: string) => `0x363d3d373d3d3d363d73${impl.slice(2)}5af43d82803e903d91602b57fd5bf3`
+  const pause = encodeFunctionData({ abi: STRATEGY_ABI, functionName: 'pause' })
+
+  const lookups = (impl: string) =>
+    fake({
+      async getCode(_chain, address) {
+        return address.toLowerCase() === CLONE ? proxyOf(impl) : '0x6080'
+      },
+      async sourcify(_chain, address) {
+        return address.toLowerCase() === IMPL ? { abi: STRATEGY_ABI, name: 'UserStrategyAccount', match: 'exact_match' } : null
+      },
+      async fourByte() {
+        return ['pause()']
+      },
+    })
+
+  it('reads the call from the implementation\'s source and names both', async () => {
+    const action = await decodeCall(call(CLONE, pause), lookups(IMPL))
+    expect(action).toMatchObject({
+      target: `${CHAIN}:${CLONE}`,
+      implementation: `${CHAIN}:${IMPL}`,
+      source: 'sourcify',
+      verified: true,
+      contractName: 'UserStrategyAccount',
+      function: 'pause()',
+    })
+  })
+
+  it('stays unverified when the implementation is unpublished too', async () => {
+    const action = await decodeCall(call(CLONE, pause), lookups(UNPUBLISHED))
+    expect(action).toMatchObject({ implementation: `${CHAIN}:${UNPUBLISHED}`, verified: false, source: '4byte' })
+  })
+
+  it('leaves a contract that is not a clone alone', async () => {
+    const action = await decodeCall(call(WEIRD, pause), lookups(IMPL))
+    expect(action.implementation).toBeUndefined()
+    expect(action.verified).toBe(false)
+  })
+
+  it('matches the exact 45 bytes and nothing that resembles them', () => {
+    const exact = proxyOf(IMPL)
+    expect(cloneImplementation(exact)).toBe(IMPL)
+    expect(cloneImplementation(exact.toUpperCase().replace('0X', '0x'))).toBe(IMPL)
+    // One byte more, one byte less, an altered opcode, a 19-byte vanity push.
+    expect(cloneImplementation(`${exact}00`)).toBeNull()
+    expect(cloneImplementation(exact.slice(0, -2))).toBeNull()
+    expect(cloneImplementation(exact.replace('5af4', '5af1'))).toBeNull()
+    expect(cloneImplementation(`0x363d3d373d3d3d363d72${IMPL.slice(4)}5af43d82803e903d91602b57fd5bf3`)).toBeNull()
+    expect(cloneImplementation('0x6080')).toBeNull()
   })
 })

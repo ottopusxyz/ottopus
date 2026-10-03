@@ -91,16 +91,42 @@ function hasContractCode(code: string): boolean {
   return code.length > 2 && code !== '0x0' && !DELEGATION.test(code)
 }
 
+/**
+ * An EIP-1167 minimal proxy: 45 bytes that delegatecall every call to the
+ * address inlined at bytes 10–29, and nothing else. Factory-made per-user
+ * accounts — strategy vaults, escrows — are almost always these, and none of
+ * them is verified on its own address.
+ *
+ * Matched byte for byte and anchored at both ends. The implementation cannot
+ * change after deployment, so the code that runs is exactly the code the
+ * implementation's source describes. Anything that only resembles this —
+ * a vanity variant, an upgradeable proxy — is read as the contract it is.
+ */
+const MINIMAL_PROXY = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i
+
+export function cloneImplementation(code: string): string | null {
+  const match = MINIMAL_PROXY.exec(code)
+  return match ? `0x${match[1]!.toLowerCase()}` : null
+}
+
 export async function decodeCall(call: Call, lookups: Lookups): Promise<DecodedAction> {
   const { address } = parseAccountId(call.to)
   const code = await lookups.getCode(call.chainId, address)
   const isContract = hasContractCode(code)
-  const base = { target: call.to, isContract, value: call.value }
+  // A clone runs its implementation's code and nothing of its own, so that
+  // code is what has to be published. The page names both.
+  const implementation = isContract ? cloneImplementation(code) : null
+  const base = {
+    target: call.to,
+    isContract,
+    value: call.value,
+    ...(implementation ? { implementation: `${call.chainId}:${implementation}` } : {}),
+  }
 
   // Verification status is about the target, not the calldata: value sent to
   // a contract with no data still lands in code someone may or may not have
   // published, and the page should name it either way.
-  const source = isContract ? await lookups.sourcify(call.chainId, address) : null
+  const source = isContract ? await lookups.sourcify(call.chainId, implementation ?? address) : null
   const verified = source !== null
   const named = source?.name === undefined ? {} : { contractName: source.name }
 

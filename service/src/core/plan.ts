@@ -226,6 +226,11 @@ export const decodedActionSchema = z.strictObject({
   /** Verified source on Sourcify. Never true for a wallet address. */
   verified: z.boolean(),
   contractName: z.string().optional(),
+  /**
+   * For an EIP-1167 clone, the contract whose code it runs. `verified`,
+   * `contractName` and the decoding then describe this, not the clone.
+   */
+  implementation: accountIdSchema.optional(),
   /** Signature, e.g. "transfer(address,uint256)"; "nativeTransfer()"; or "unknown". */
   function: z.string().min(1),
   args: z.array(z.strictObject({ name: z.string(), type: z.string(), value: z.string() })),
