@@ -1,0 +1,25 @@
+{
+  "name": "ottopus",
+  "version": "0.1.0",
+  "description": "Shows an Ottopus plan as a card in Claude Code and follows it until it is signed, confirmed or expired.",
+  "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
+  "homepage": "https://ottopus.xyz",
+  "repository": "https://github.com/ottopusxyz/ottopus",
+  "license": "MIT",
+  "keywords": ["mcp", "wallet", "onchain", "bnb-chain", "tokenized-stocks"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "server": {
+      "type": "string",
+      "title": "Ottopus server name",
+      "description": "The name you gave the Ottopus MCP server, as /mcp lists it. Leave empty to accept any server whose plans link to the review origin.",
+      "default": ""
+    },
+    "reviewOrigin": {
+      "type": "string",
+      "title": "Review origin",
+      "description": "Where review links must lead. Plans linking anywhere else are ignored. Change only for a self-hosted Ottopus.",
+      "default": "https://ottopus.xyz"
+    }
+  }
+}
