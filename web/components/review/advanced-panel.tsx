@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui'
 import type { BinanceSimulation, Plan } from '@/lib/api'
 import { explorerAddressUrl, explorerName } from '@/lib/chains'
 import { cn } from '@/lib/cn'
+import { truncateAddress } from '@/lib/format'
 import {
   chainOfPlan,
   liveRefusal,
@@ -121,7 +122,14 @@ export function AdvancedPanel({ plan, live, binance, decoderUrl, bare = false, c
         <div className="flex flex-col gap-px overflow-hidden rounded-[8px]">
           {decoded.map((row, i) => (
             <div key={i} className="flex items-center justify-between gap-2.5 bg-[var(--ot-water-1)] px-3 py-2.5">
-              <code className="min-w-0 truncate font-mono text-[12px] font-semibold">{row.signature}</code>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <code className="min-w-0 truncate font-mono text-[12px] font-semibold">{row.signature}</code>
+                {row.implementation ? (
+                  <span className="truncate text-[11px] text-[var(--ot-text-3)]">
+                    clone of {row.contractName ?? 'its implementation'} at {truncateAddress(row.implementation)}
+                  </span>
+                ) : null}
+              </div>
               <div className="flex flex-none items-center gap-2">
                 {verdicts?.[i] ? <BinanceVerdict verdict={verdicts[i]} /> : null}
                 <Badge tone={row.verified ? 'ok' : row.isContract ? 'warn' : 'neutral'}>

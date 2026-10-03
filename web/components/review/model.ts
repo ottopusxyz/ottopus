@@ -442,6 +442,8 @@ export interface DecodedRow {
   verified: boolean
   contractName: string | null
   isContract: boolean
+  /** A clone's implementation: the code that runs, and what `verified` describes. */
+  implementation: string | null
   raw: { to: string; value: string; data: string }
 }
 
@@ -458,6 +460,7 @@ export function decodedRows(plan: Plan): DecodedRow[] {
       verified: action?.verified ?? false,
       contractName: action?.contractName ?? null,
       isContract: action?.isContract ?? true,
+      implementation: action?.implementation ? addressOf(action.implementation) : null,
       raw: { to: addressOf(call.to), value: call.value, data: call.data },
     }
   })

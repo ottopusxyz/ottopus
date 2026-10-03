@@ -547,6 +547,8 @@ export interface DecodedAction {
   source: 'native' | 'abi' | 'sourcify' | '4byte' | 'unknown'
   verified: boolean
   contractName?: string
+  /** For an EIP-1167 clone, the contract whose code it runs. */
+  implementation?: string
   function: string
   args: { name: string; type: string; value: string }[]
   value: string
