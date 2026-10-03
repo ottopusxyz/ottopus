@@ -383,6 +383,25 @@ test('the watch asks once more as the quote runs out, then stops', async ($, on)
   expect(state.plan()?.status).toBe('awaiting_review')
 })
 
+test('a signature in the last second of the quote is followed to the chain', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.parse('2026-10-02T10:04:50.000Z') })
+  const state = sessionState(on)
+  prepares(on, READY)
+  let view: unknown = { planId: READY.planId, status: 'awaiting_review' }
+  const asked = answers(on, () => ({ structuredContent: view }))
+  await $.tool.call({ tool: 'mcp__otto__prepare_trade' })
+  await clock.advance(5_000)
+  view = { planId: READY.planId, status: 'submitted' }
+  await clock.advance(5_000)
+  expect(state.plan()?.status).toBe('submitted')
+  view = { planId: READY.planId, status: 'confirmed' }
+  await clock.advance(5_000)
+  expect(state.plan()?.status).toBe('confirmed')
+  const settled = asked.length
+  await clock.advance(120_000)
+  expect(asked).toHaveLength(settled)
+})
+
 test('failed checks back off, keep the last status and give up', async ($, on) => {
   const clock = mock.clock(on, { now: Date.parse('2026-10-02T10:00:00.000Z') })
   const state = sessionState(on)

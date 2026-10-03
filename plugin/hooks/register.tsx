@@ -206,7 +206,8 @@ async function follow($: EngineInterface, plan: CapturedPlan): Promise<void> {
         isLast = true
       } else {
         const now = await $.clock.now()
-        isLast = cardOf(current, now)?.tone !== 'ready' || now - since > WATCH_MS
+        const isOver = now - since > WATCH_MS
+        isLast = cardOf(current, now)?.tone !== 'ready' || isOver
         const answer = await $.mcp.call(current.server, 'get_plan', { planId: current.planId })
         if (answer.isError) throw new Error('get_plan failed')
         const followed = followPlan(current, current.server, planView(answer))
@@ -214,7 +215,8 @@ async function follow($: EngineInterface, plan: CapturedPlan): Promise<void> {
         if (followed && watch === mine && latest?.planId === followed.planId) {
           await $.state.set(PLAN, followed)
           await countDown($, followed)
-          isLast ||= isSettled(followed.status)
+          // The answer decides, not the card it replaced: a signature in the quote's last second is still followed.
+          isLast = isSettled(followed.status) || cardOf(followed, now)?.tone !== 'ready' || isOver
         }
         delay = POLL_MS
         misses = 0
