@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { AddressChip, Button, Chip } from '@/components/ui'
 import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { WALLET_AVATARS, armName, walletClientName, walletMark } from './naming'
+import { AGENTIC, WALLET_AVATARS, armName, walletClientName, walletMark } from './naming'
 import { ProofMark } from './proof-mark'
 
 /**
@@ -21,7 +21,7 @@ import { ProofMark } from './proof-mark'
  * orange ground.
  */
 function Avatar({ arm, size = 34 }: { arm: Arm; size?: number }) {
-  const icon = walletMark(arm.walletType)
+  const icon = walletMark(arm.walletType, arm.agentProvider)
   const brand = WALLET_AVATARS[arm.walletType]
   const [failed, setFailed] = useState(false)
   const showIcon = !!icon && !failed
@@ -85,6 +85,7 @@ export function ArmCard({ arm, value = null, share = null, onUnlink }: ArmCardPr
             <ProofMark isWatchOnly={arm.isWatchOnly} />
             {client ? <Chip className="text-[11px]">{client}</Chip> : null}
             {arm.isWatchOnly ? <Chip className="text-[11px]">Watch only</Chip> : null}
+            {arm.walletType === AGENTIC ? <Chip className="text-[11px]">Agent-operated</Chip> : null}
           </div>
           <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
         </div>

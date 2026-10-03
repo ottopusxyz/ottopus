@@ -99,8 +99,10 @@ export interface Arm {
   namespace: string
   address: string
   label: string | null
-  /** metamask, rabby, safe, watch_only — what names the arm. */
+  /** metamask, rabby, safe, watch_only, agentic — what names the arm. */
   walletType: string
+  /** Whose agent wallet an `agentic` arm is (`binance`); null or absent otherwise. */
+  agentProvider?: string | null
   /** No proof, so it can never sign. Pasted addresses and Safes. */
   isWatchOnly: boolean
   provedAt: string | null

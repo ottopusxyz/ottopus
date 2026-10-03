@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { readdirSync } from 'node:fs'
 import {
+  AGENT_PROVIDERS,
   ADDRESS_RE,
+  EDITABLE_TYPES,
   LINK_ERRORS,
   MARKS,
   MAX_ARMS,
@@ -250,5 +252,53 @@ describe('wallet marks', () => {
 
   it('names every client it has a mark for', () => {
     for (const type of MARKS) expect(WALLET_NAMES[type], type).toBeDefined()
+  })
+})
+
+describe('agentic arms', () => {
+  const agent = (label: string | null = null, agentProvider: string | null = 'binance') => ({
+    walletType: 'agentic',
+    agentProvider,
+    label,
+  })
+
+  it('is named after its provider until someone names it', () => {
+    expect(armName(agent())).toBe('Binance Agentic Wallet')
+    expect(armName(agent('Trader'))).toBe('Trader')
+  })
+
+  it('shows the provider beside a label, and not beside its own name', () => {
+    expect(walletClientName(agent('Trader'))).toBe('Binance Agentic Wallet')
+    expect(walletClientName(agent())).toBeNull()
+  })
+
+  it('is drawn with a provider mark that exists', () => {
+    expect(walletMark('agentic', 'binance')).toBe('/wallets/binance_wallet.svg')
+    for (const { mark } of Object.values(AGENT_PROVIDERS)) expect(MARKS.has(mark)).toBe(true)
+  })
+
+  it('reads as an agent wallet when the provider is one this build does not know', () => {
+    expect(armName(agent(null, 'someone_new'))).toBe('Agent wallet')
+    expect(walletMark('agentic', 'someone_new')).toBeNull()
+    expect(walletMark('agentic')).toBeNull()
+  })
+
+  /** A provider is nothing without the kind: a MetaMask arm never borrows a vendor's name. */
+  it('ignores a provider on any other kind', () => {
+    expect(armName({ walletType: 'metamask', agentProvider: 'binance', label: null })).toBe('MetaMask')
+  })
+
+  it('is not a kind the edit dialog offers', () => {
+    expect(EDITABLE_TYPES).not.toContain('agentic')
+  })
+
+  /** The service's profiles are the registry. A provider added there needs words and a mark here. */
+  it('has words for every provider the service has a profile for', () => {
+    const source = readFileSync(new URL('../../../service/src/wallets/agentic/index.ts', import.meta.url), 'utf8')
+    const registry = /AGENT_PROVIDERS[^=]*=\s*\{([^}]*)\}/.exec(source)?.[1]
+    expect(registry, 'AGENT_PROVIDERS not found in the service — did it move?').toBeDefined()
+    const ids = [...registry!.matchAll(/\[(\w+)\.id\]/g)].map((m) => m[1])
+    expect(ids.length).toBeGreaterThan(0)
+    expect(Object.keys(AGENT_PROVIDERS).sort()).toEqual(ids.sort())
   })
 })

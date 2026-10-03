@@ -32,6 +32,7 @@ const watchOnlySchema = z.object({
 const STATUS: Record<WalletError['code'], 400 | 404 | 409 | 422> = {
   invalid_address: 400,
   invalid_type: 400,
+  invalid_provider: 400,
   already_linked: 409,
   too_many_wallets: 422,
   not_found: 404,

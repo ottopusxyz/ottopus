@@ -53,8 +53,14 @@ export const linkedWallets = pgTable(
     /** Lowercased. Checksum is a display concern, never a lookup key. */
     address: text('address').notNull(),
     label: text('label'),
-    /** metamask, rabby, walletconnect, safe, watch_only — names the arm. */
+    /** metamask, rabby, walletconnect, safe, watch_only, agentic — names the arm. */
     walletType: text('wallet_type').notNull(),
+    /**
+     * Whose agent wallet it is (`binance`), for the `agentic` kind and only
+     * for it. The profile in `wallets/agentic` says how that vendor's CLI
+     * signs and executes.
+     */
+    agentProvider: text('agent_provider'),
     isWatchOnly: boolean('is_watch_only').notNull().default(false),
     /** Signed challenge proving control. Null only for watch-only. */
     ownershipProof: jsonb('ownership_proof'),
@@ -80,6 +86,12 @@ export const linkedWallets = pgTable(
       'linked_wallets_proof_required',
       sql`${t.isWatchOnly} or ${t.ownershipProof} is not null`,
     ),
+    check(
+      'linked_wallets_agent_provider_iff_agentic',
+      sql`(${t.walletType} = 'agentic') = (${t.agentProvider} is not null)`,
+    ),
+    // An agentic arm is proved by its agent or it is not linked at all.
+    check('linked_wallets_agentic_is_proved', sql`${t.walletType} <> 'agentic' or not ${t.isWatchOnly}`),
   ],
 )
 

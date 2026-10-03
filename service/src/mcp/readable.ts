@@ -1,5 +1,5 @@
 import type { Portfolio, ProtocolPositionType } from '../connectors/portfolio/index.js'
-import type { Arm } from '../wallets/index.js'
+import { capabilitiesOf, profileOf, type Arm } from '../wallets/index.js'
 
 /**
  * Tool answers in words.
@@ -16,8 +16,10 @@ export function truncateAddress(address: string): string {
 }
 
 /** What to call a wallet: the label someone gave it, else the software it is. */
-export function walletName(arm: Pick<Arm, 'label' | 'walletType'>): string {
+export function walletName(arm: Pick<Arm, 'label' | 'walletType'> & { agentProvider?: string | null }): string {
   if (arm.label) return arm.label
+  const profile = profileOf({ walletType: arm.walletType, agentProvider: arm.agentProvider ?? null })
+  if (profile) return profile.name
   return arm.walletType
     .split(/[_\s-]+/)
     .filter(Boolean)
@@ -40,11 +42,12 @@ export function namespaceLabel(namespace: string): string {
 }
 
 /**
- * Whether Otto can ask this wallet to sign. Watch-only arms never can; a
- * connected one can only once its ownership was proved.
+ * Whether this wallet can carry out a plan. Watch-only arms never can; a
+ * connected one can once its ownership was proved; an agentic one does it
+ * through its vendor's CLI rather than a signature on the review page.
  */
-export function canSign(arm: Pick<Arm, 'isWatchOnly' | 'provedAt'>): boolean {
-  return !arm.isWatchOnly && arm.provedAt !== null
+export function canSign(arm: Pick<Arm, 'walletType' | 'agentProvider' | 'isWatchOnly' | 'provedAt'>): boolean {
+  return capabilitiesOf(arm).canSign
 }
 
 /**
@@ -52,7 +55,7 @@ export function canSign(arm: Pick<Arm, 'isWatchOnly' | 'provedAt'>): boolean {
  * enough on its own; a fallback like "Watch Only" is not — two pasted
  * addresses would both be called that — so the fallback carries the address.
  */
-export function holderName(arm: Pick<Arm, 'label' | 'walletType' | 'address'>): string {
+export function holderName(arm: Pick<Arm, 'label' | 'walletType' | 'agentProvider' | 'address'>): string {
   return arm.label ? arm.label : `${walletName(arm)} ${truncateAddress(arm.address)}`
 }
 
@@ -63,12 +66,16 @@ export function holderName(arm: Pick<Arm, 'label' | 'walletType' | 'address'>): 
  * can never pass to another tool.
  */
 export function describeWallet(arm: Arm): string {
+  const profile = profileOf(arm)
   const signing = arm.isWatchOnly
     ? 'watch only, cannot sign'
-    : canSign(arm)
-      ? 'can sign'
-      : 'not yet proved, cannot sign'
-  return `${walletName(arm)} — ${arm.walletType}, ${arm.address}, ${signing}, id ${arm.id}`
+    : !canSign(arm)
+      ? 'not yet proved, cannot sign'
+      : profile
+        ? `executes through ${profile.cli}`
+        : 'can sign'
+  const kind = profile ? profile.name : arm.walletType
+  return `${walletName(arm)} — ${kind}, ${arm.address}, ${signing}, id ${arm.id}`
 }
 
 export type WalletMatch = { ok: true; arm: Arm } | { ok: false; reason: string }

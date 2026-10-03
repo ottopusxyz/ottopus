@@ -36,7 +36,7 @@ import {
   verifyPlan,
 } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
+import { canSign, humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
 /**
@@ -199,7 +199,7 @@ function candidatesFrom(
       walletId: arm.id,
       account: accountOn(chain, arm.address),
       label: arm.label,
-      canSign: !arm.isWatchOnly && arm.provedAt !== null,
+      canSign: canSign(arm),
       assetBalance: holdingOf(portfolio, intent.from, arm.id),
       gasBalance: holdingOf(portfolio, gasAsset, arm.id),
     }))
