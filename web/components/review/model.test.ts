@@ -266,6 +266,16 @@ describe('what the page says', () => {
     expect(row).toMatchObject({ signature: 'transfer(0x67d2…98d2, 500000000)', verified: true, contractName: 'FiatTokenProxy' })
     expect(row!.raw).toEqual({ to: USDC, value: '0', data: '0xa9059cbb' })
     expect(verificationSummary(plan)).toEqual({ allVerified: true, contracts: 1 })
+    expect(row!.implementation).toBeNull()
+  })
+
+  it('carries a clone\'s implementation as a bare address', () => {
+    const IMPL = '0xf420ad09e466f76a2f52dfa35c6eb411764c9229'
+    const clone: Plan = {
+      ...plan,
+      decodedActions: [{ ...plan.decodedActions[0]!, implementation: `${BASE}:${IMPL}` }],
+    }
+    expect(decodedRows(clone)[0]!.implementation).toBe(IMPL)
   })
 })
 
