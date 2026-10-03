@@ -1,6 +1,6 @@
 {
   "name": "ottopus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shows an Ottopus plan as a card in Claude Code and follows it until it is signed, confirmed or expired.",
   "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
   "homepage": "https://ottopus.xyz",

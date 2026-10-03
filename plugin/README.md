@@ -18,7 +18,7 @@ Claude prepares it. You still sign.
 /plugin install ottopus@ottopus
 ```
 
-The plugin brings the Ottopus MCP server (`https://mcp.ottopus.xyz`) with it. Link
+The plugin brings the Ottopus MCP server (`https://mcp.ottopus.xyz/mcp`) with it. Link
 a wallet at [ottopus.xyz](https://ottopus.xyz) first; the first tool call opens a
 consent page where you choose what the agent may do.
 
