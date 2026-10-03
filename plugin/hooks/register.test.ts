@@ -430,8 +430,41 @@ test('a short quote repaints its bar in place between the seconds, on the termin
   await clock.advance(900)
   await ui.unmount()
   // Fifty seconds over 160 steps: a repaint every 312ms, each a little shorter.
-  expect(blits.map((b) => b.key)).toEqual(['ottopus-meter', 'ottopus-meter', 'ottopus-meter'])
-  expect(blits[2]!.glyphs).toMatch(/^█{18}[▏▎▍▌▋▊▉] $/)
+  const bars = blits.filter((b) => b.key === 'ottopus-meter')
+  expect(bars).toHaveLength(3)
+  expect(bars[2]!.glyphs).toMatch(/^█{18}[▏▎▍▌▋▊▉] $/)
+})
+
+test('otto blinks beside a plan awaiting a signature and holds still once it settles', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.parse('2026-10-02T10:00:00.000Z') })
+  const state = sessionState(on)
+  prepares(on, READY)
+  const frames: string[] = []
+  on('ui.blit', (_$, e) => {
+    if ('cells' in e && e.key === 'ottopus-otto') frames.push(e.cells)
+    return { value: {} }
+  })
+  on('tool.call', { tool: 'mcp__otto__get_plan' }, () => ({ result: JSON.stringify({ planId: READY.planId, status: 'confirmed' }) }))
+  await $.tool.call({ tool: 'mcp__otto__prepare_trade' })
+  // Nothing turns until a terminal has drawn him.
+  await clock.advance(2_000)
+  expect(frames).toHaveLength(0)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Raster', key: 'ottopus-otto' })).toBeDefined()
+  await clock.advance(1_800)
+  // Only a new frame is painted: his eyes open, and nothing more until the blink.
+  expect(frames).toHaveLength(1)
+  await clock.advance(600)
+  // The blink on the four-second mark: shut, then open again.
+  expect(frames).toHaveLength(3)
+  expect(frames[2]).toBe(frames[0])
+  expect(frames[1]).not.toBe(frames[0])
+  await $.tool.call({ tool: 'mcp__otto__get_plan' })
+  expect(state.plan()?.status).toBe('confirmed')
+  const painted = frames.length
+  await clock.advance(5_000)
+  expect(frames).toHaveLength(painted)
+  await ui.unmount()
 })
 
 test('a plan found already confirmed gets no sweep', async ($, on) => {
@@ -445,4 +478,24 @@ test('a plan found already confirmed gets no sweep', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^Ottopus · Plan confirmed/ })).toBeDefined()
   expect(await ui.find({ key: 'ottopus-meter' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a confirmed plan offers the explorer as a button in the chain colour', async ($, on) => {
+  mock.clock(on, { now: Date.parse('2026-10-02T10:00:00.000Z') })
+  sessionState(on)
+  prepares(on, READY)
+  const txHash = `0x${'ab'.repeat(32)}`
+  const view = { planId: READY.planId, status: 'confirmed', chain: { id: 'eip155:56', name: 'BNB Chain' }, txHash, explorerUrl: 'https://evil.example/tx/1' }
+  on('tool.call', { tool: 'mcp__otto__get_plan' }, () => ({ result: JSON.stringify(view) }))
+  await $.tool.call({ tool: 'mcp__otto__prepare_trade' })
+  await $.tool.call({ tool: 'mcp__otto__get_plan' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...BAND, surface })
+    const links = await ui.findAll({ type: 'Link' })
+    expect(links.map((l) => l.props.href)).toEqual([`https://bscscan.com/tx/${txHash}`])
+    const label = await ui.find({ type: 'Text', text: /Open explorer/ })
+    expect(label?.props.backgroundColor).toBe('#F0B90B')
+    expect(label?.props.color).toBe('#16213E')
+    await ui.unmount()
+  }
 })

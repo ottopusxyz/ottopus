@@ -19,6 +19,7 @@ import {
   spinFrame,
   timeLeft,
 } from './card'
+import { isMoving, OTTO_COLUMNS, OTTO_MS, OTTO_ROWS, ottoCells, poseOf } from './otto'
 import { capturePlan, followPlan, planView, prepareCall, statusCall } from './plan'
 import type { Trust } from './plan'
 
@@ -34,6 +35,7 @@ type Clock = {
 }
 
 const METER = 'ottopus-meter'
+const OTTO = 'ottopus-otto'
 /** The painted bar moves an eighth of a cell at a time; it is never repainted faster than this. */
 const STEPS = METER_CELLS * 8
 const MIN_PAINT_MS = 100
@@ -49,6 +51,7 @@ const NAVY = '#16213E'
 
 let ticking: Timer | null = null
 let painting: Timer | null = null
+let waving: Timer | null = null
 let spinning = false
 /** The band's own id once a terminal has drawn it: where the painted bar is repainted. */
 let band: string | null = null
@@ -61,14 +64,36 @@ function stop(): void {
   ticking = null
   painting?.cancel()
   painting = null
+  waving?.cancel()
+  waving = null
   spinning = false
   burst = null
 }
 
 /** Repaints the bar in place, between redraws. A band not drawn, or drawn elsewhere, has nothing to repaint. */
-function repaint($: Clock, cells: string | null): void {
+function repaint($: Clock, cells: string | null, key: string = METER): void {
   if (band === null || cells === null) return
-  void $.ui.blit({ requestId: band, key: METER, cells }).catch(() => {})
+  void $.ui.blit({ requestId: band, key, cells }).catch(() => {})
+}
+
+/**
+ * Otto blinks beside a plan that is waiting on a signature, painted only
+ * when the frame is new. Started by the terminal that drew
+ * him, so nothing turns where he is not shown.
+ */
+function wave($: Clock): void {
+  if (waving) return
+  let last: string | null = null
+  waving = $.clock.every(OTTO_MS, () => {
+    void $.clock.now().then(
+      (now) => {
+        const cells = ottoCells('idle', now)
+        if (cells !== last) repaint($, cells, OTTO)
+        last = cells
+      },
+      () => {},
+    )
+  })
 }
 
 /** The sweep across the bar as a plan confirms: a moment, then the card is still again. */
@@ -97,7 +122,8 @@ async function celebrate($: Clock): Promise<void> {
  * so the card stops offering a signature. A submitted plan has no quote to
  * count; it turns the loader instead, until the plan settles or the watch
  * on it ends. Between the seconds the painted bar drains on a faster timer
- * of its own, and a plan seen turning confirmed gets its sweep.
+ * of its own, and a plan seen turning confirmed gets its sweep. Otto, beside
+ * the card, blinks for as long as the plan waits on a signature.
  */
 async function countDown($: Clock, plan: CapturedPlan | null): Promise<void> {
   const was = seen
@@ -306,68 +332,77 @@ export const register: Register = (on, options) => {
     const cells = card.expiresAt && life !== null ? meterCells(life, Date.parse(card.expiresAt) - now) : null
     const sweep = card.kind === 'confirmed' && burst ? burstCells(now - burst.since) : null
     // A link, so the terminal or the app opens it and nothing here runs; a
-    // live plan's is drawn on a solid fill, to read as a button.
-    const fill = edge ? FILL[edge] : undefined
+    // live plan's is drawn on a solid fill, to read as a button, and so is a
+    // confirmed plan's way to the explorer, in the chain's own colour.
+    const fill = link?.paint?.fill ?? (edge ? FILL[edge] : undefined)
+    const ink = link?.paint?.ink ?? NAVY
     const glyph = card.kind === 'submitted' && spinning ? spinFrame(now) : paint.glyph
+    // Otto holds still once nothing is counting: a loader left turning would say otherwise.
+    const pose = poseOf(card.kind)
+    const otto = isMoving(pose) && !ticking ? ottoCells(pose, 0) : ottoCells(pose, now)
+    if (Raster && pose === 'idle' && ticking) wave($)
 
     return (
-      <Box key="ottopus-card" flexDirection="column" borderStyle="round" paddingX={1} {...(edge ? { borderColor: edge } : { borderDimColor: true })}>
-        <Box gap={1}>
-          <Text bold {...hue}>
-            {glyph}
-          </Text>
-          <Text>
+      <Box key="ottopus-card" gap={2} borderStyle="round" paddingX={1} {...(edge ? { borderColor: edge } : { borderDimColor: true })}>
+        {Raster ? <Raster key={OTTO} columns={OTTO_COLUMNS} rows={OTTO_ROWS} cells={otto} /> : null}
+        <Box flexDirection="column">
+          <Box gap={1}>
             <Text bold {...hue}>
-              Ottopus · {card.title}
+              {glyph}
             </Text>
-            {card.kind === 'submitted' ? <Text dimColor> · awaiting confirmation</Text> : null}
-          </Text>
-        </Box>
-        {until || left ? (
-          <Box key="ottopus-clock" gap={1}>
             <Text>
-              {until ? <Text dimColor>quote holds until {until}</Text> : null}
-              {left && isLate ? (
-                <Text bold color="yellow">
-                  {until ? ' · ' : ''}
-                  {left} left · sign soon
-                </Text>
-              ) : null}
-              {left && !isLate ? (
-                <Text dimColor>
-                  {until ? ' · ' : ''}
-                  {left} left
-                </Text>
-              ) : null}
+              <Text bold {...hue}>
+                Ottopus · {card.title}
+              </Text>
+              {card.kind === 'submitted' ? <Text dimColor> · awaiting confirmation</Text> : null}
             </Text>
-            {Raster && cells ? <Raster key={METER} columns={METER_CELLS} rows={1} cells={cells} /> : null}
-            {bar && !(Raster && cells) ? (
-              <Box key={METER}>
-                <Text {...(edge ? { color: edge } : {})}>{bar.full}</Text>
-                <Text dimColor>{bar.rest}</Text>
-              </Box>
-            ) : null}
           </Box>
-        ) : null}
-        {Raster && sweep ? <Raster key={METER} columns={METER_CELLS} rows={1} cells={sweep} /> : null}
-        <Text bold>{card.summary}</Text>
-        {card.lines.map((line) => (card.kind === 'refused' ? <Text color="red">{line}</Text> : <Text dimColor>{line}</Text>))}
-        {card.warnings.map((warning) => (
-          <Text color="magenta">⚠ {warning}</Text>
-        ))}
-        {link ? (
-          <Box>
-            {fill ? (
-              <Link key="review" href={link.href}>
-                <Text bold color={NAVY} backgroundColor={fill}>
-                  {`  ${link.label}  `}
-                </Text>
-              </Link>
-            ) : (
-              <Link key="review" href={link.href} label={link.label} />
-            )}
-          </Box>
-        ) : null}
+          {until || left ? (
+            <Box key="ottopus-clock" gap={1}>
+              <Text>
+                {until ? <Text dimColor>quote holds until {until}</Text> : null}
+                {left && isLate ? (
+                  <Text bold color="yellow">
+                    {until ? ' · ' : ''}
+                    {left} left · sign soon
+                  </Text>
+                ) : null}
+                {left && !isLate ? (
+                  <Text dimColor>
+                    {until ? ' · ' : ''}
+                    {left} left
+                  </Text>
+                ) : null}
+              </Text>
+              {Raster && cells ? <Raster key={METER} columns={METER_CELLS} rows={1} cells={cells} /> : null}
+              {bar && !(Raster && cells) ? (
+                <Box key={METER}>
+                  <Text {...(edge ? { color: edge } : {})}>{bar.full}</Text>
+                  <Text dimColor>{bar.rest}</Text>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+          {Raster && sweep ? <Raster key={METER} columns={METER_CELLS} rows={1} cells={sweep} /> : null}
+          <Text bold>{card.summary}</Text>
+          {card.lines.map((line) => (card.kind === 'refused' ? <Text color="red">{line}</Text> : <Text dimColor>{line}</Text>))}
+          {card.warnings.map((warning) => (
+            <Text color="magenta">⚠ {warning}</Text>
+          ))}
+          {link ? (
+            <Box>
+              {fill ? (
+                <Link key="review" href={link.href}>
+                  <Text bold color={ink} backgroundColor={fill}>
+                    {`  ${link.label}  `}
+                  </Text>
+                </Link>
+              ) : (
+                <Link key="review" href={link.href} label={link.label} />
+              )}
+            </Box>
+          ) : null}
+        </Box>
       </Box>
     )
   })
