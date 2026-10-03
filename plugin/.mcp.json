@@ -2,7 +2,7 @@
   "mcpServers": {
     "ottopus": {
       "type": "http",
-      "url": "https://mcp.ottopus.xyz"
+      "url": "https://mcp.ottopus.xyz/mcp"
     }
   }
 }
