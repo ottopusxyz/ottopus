@@ -774,6 +774,27 @@ describe('an agent-authored plan', () => {
       })
     })
 
+    /** A factory clone is read through to the code it runs. */
+    it('passes a call to a clone whose implementation is verified, and not one whose is not', async () => {
+      const CLONE = '0x6666666666666666666666666666666666666666'
+      const proxyOf = (impl: string) => `0x363d3d373d3d3d363d73${impl.slice(2)}5af43d82803e903d91602b57fd5bf3`
+      const through = (impl: string): Lookups => ({
+        ...custom,
+        async getCode(c, address) {
+          return address.toLowerCase() === CLONE ? proxyOf(impl) : custom.getCode(c, address)
+        },
+      })
+      const calls = [call(CLONE, claimFees)]
+      const bare = intent({ expectedChanges: [], approvals: [] })
+      const verify = async (impl: string) =>
+        verifyPlan({ intent: bare, calls, decodedActions: await decodeCalls(calls, through(impl)), simulation: traced([]) })
+      expect(await verify(PM)).toEqual({ ok: true, warnings: [] })
+      expect(await verify(GUESSED)).toMatchObject({
+        ok: false,
+        reasons: expect.arrayContaining([expect.stringMatching(/no verified source/)]),
+      })
+    })
+
     it('refuses calldata sent to an address with no code', async () => {
       const verdict = await verifyCustom(intent({ expectedChanges: [], approvals: [] }), [call(ALICE, claimFees)], traced([]))
       expect(verdict).toMatchObject({ ok: false, reasons: [expect.stringMatching(/which has no code/)] })
