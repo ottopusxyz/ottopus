@@ -9,7 +9,29 @@ import type { Plan, WebTransition } from '@/lib/api'
 import { chainName, explorerName, explorerTxUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
-import { installedFor, type InjectedWallet } from './injected'
+import {
+  describeConnectError,
+  installedConnector,
+  installedFor,
+  isPhone,
+  needsSwitch,
+  pairingLink,
+  preloadSdkWallets,
+  routeFor,
+  routeForSdk,
+  sdkWalletsHere,
+  switchTo,
+  walletConnectProjectId,
+  walletLinks,
+  type Connector,
+  type DirectoryWallet,
+  type Held,
+  type InjectedWallet,
+  type Route,
+  type SdkWallet,
+  type WalletFace,
+  type WalletProvider,
+} from './connectors'
 import { approvals, chainOfPlan, type PlanStep, planSteps, standingApproval } from './model'
 import {
   BatchAccepted,
@@ -22,10 +44,8 @@ import {
   sendPlanCalls,
   waitForReceipt,
 } from './send-calls'
-import { describeConnectError, needsSwitch, switchTo } from './signer'
 import { useSigner } from './use-signer'
 import { gateFor } from './wallet-gate'
-import { isPhone, walletLinks } from './wallet-links'
 import { WalletConnecting, type ConnectingStep } from './wallet-connecting'
 import { WalletPicker } from './wallet-picker'
 
@@ -67,6 +87,9 @@ interface Connected {
   provider: () => Promise<Eip1193>
 }
 
+/** What a retry repeats: an installed wallet, or a pairing with the wallet picked (null for any phone wallet). */
+type Again = { installed: InjectedWallet } | { sdk: SdkWallet } | { elsewhere: DirectoryWallet | null }
+
 type Phase =
   | { kind: 'idle' }
   | { kind: 'connecting' }
@@ -80,10 +103,11 @@ const isHash = (v: unknown): v is `0x${string}` => typeof v === 'string' && /^0x
 
 export function SignPanel({ plan, move, open, txHash, recheck, walletType }: SignPanelProps) {
   const router = useRouter()
-  const { installed, signer, connect: connectInjected, refresh } = useSigner()
+  const chain = chainOfPlan(plan)
+  const { installed, signer, connect: connectWith, walletConnect, refresh, disconnect: disconnectSigner } = useSigner(chain)
   const [picking, setPicking] = useState(false)
-  /** The wallet being opened and how far it got; the connecting dialog draws this. */
-  const [attempt, setAttempt] = useState<{ wallet: InjectedWallet; step: ConnectingStep } | null>(null)
+  /** The wallet being opened, how far it got, and what "Try again" asks; the connecting dialog draws this. */
+  const [attempt, setAttempt] = useState<{ wallet: WalletFace; step: ConnectingStep; again: Again } | null>(null)
   /** Bumped by every new attempt and every dismissal, so a late answer changes nothing on screen. */
   const attemptId = useRef(0)
   // A page opened on a plan already submitted starts where the plan is.
@@ -122,7 +146,6 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
   const [progress, setProgress] = useState<{ signing: number | null; done: number }>({ signing: null, done: 0 })
   const wroteAwaiting = useRef(false)
 
-  const chain = chainOfPlan(plan)
   const bound = { account: plan.resolution.account.caip10, chain }
   const wanted = addressOf(bound.account)
   // Only the wallet this page connected itself. Whatever the sign-in library
@@ -223,49 +246,128 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
     }
   }, [wallet, chain, refresh])
 
+  /** What follows a wallet's yes, however it was reached: the one switch on the back of the click. */
+  const settle = useCallback(
+    async (mine: number, face: WalletFace, provider: WalletProvider, held: Held, again: Again) => {
+      if (needsSwitch(held, wanted, chain)) {
+        setAttempt({ wallet: face, step: { kind: 'switching', chain: chainName(chain) }, again })
+        setPhase({ kind: 'switching' })
+        try {
+          await switchTo(provider, chain)
+          await refresh()
+        } catch (err) {
+          if (mine === attemptId.current) setProblem(`Could not switch to ${chainName(chain)}: ${describeWalletError(err)}`)
+        }
+      }
+      if (mine !== attemptId.current) return
+      setAttempt(null)
+      setPhase({ kind: 'idle' })
+    },
+    [refresh, wanted, chain],
+  )
+
   /**
-   * Open one installed wallet, with no list in between. If it answers with
-   * the plan's account on another chain, the switch is asked for once on the
-   * back of the same click; declined, the switch button is the retry. A
-   * different account is never asked to switch.
+   * Open one wallet through its connector, whichever kind it is. If it
+   * answers with the plan's account on another chain, the switch is asked for
+   * once on the back of the same click; declined, the switch button is the
+   * retry. A different account is never asked to switch.
    *
    * The dialog stays up while the wallet is silent. Dismissing it, or leaving
    * for another wallet, stops the page waiting; the wallet's own request
    * cannot be withdrawn, and a late approval of it still connects unless
    * another wallet was asked since.
+   *
+   * `shown` is what the dialog calls the wallet; `face` is what the connector
+   * is told the person picked, null to let the wallet name itself. `href`
+   * turns a pairing code into a link that hands it to a wallet app.
    */
-  const connect = useCallback(
-    async (target: InjectedWallet) => {
+  const openWallet = useCallback(
+    async (
+      connector: Connector,
+      opts: { shown: WalletFace; face: WalletFace | null; again: Again; href?: (uri: string) => string | null },
+    ) => {
       const mine = ++attemptId.current
-      const current = () => mine === attemptId.current
+      const { shown, again } = opts
+      const first: ConnectingStep =
+        connector.kind === 'walletconnect'
+          ? { kind: 'pairing', uri: null, href: null }
+          : { kind: 'opening', popup: connector.kind === 'sdk' }
       setPicking(false)
       setProblem(null)
-      setAttempt({ wallet: target, step: { kind: 'opening' } })
+      setAttempt({ wallet: shown, step: first, again })
       setPhase({ kind: 'connecting' })
       try {
-        const held = await connectInjected(target)
-        if (!held || !current()) return
-        if (needsSwitch(held, wanted, chain)) {
-          setAttempt({ wallet: target, step: { kind: 'switching', chain: chainName(chain) } })
-          setPhase({ kind: 'switching' })
-          try {
-            await switchTo(target.provider, chain)
-            await refresh()
-          } catch (err) {
-            if (current()) setProblem(`Could not switch to ${chainName(chain)}: ${describeWalletError(err)}`)
-          }
-        }
-        if (!current()) return
-        setAttempt(null)
-        setPhase({ kind: 'idle' })
+        const found = await connectWith(connector, {
+          face: opts.face,
+          onUri: (uri) => {
+            if (mine !== attemptId.current) return
+            setAttempt({ wallet: shown, step: { kind: 'pairing', uri, href: opts.href?.(uri) ?? null }, again })
+          },
+        })
+        if (!found || mine !== attemptId.current) return
+        await settle(mine, found.wallet, found.wallet.provider, found.held, again)
       } catch (err) {
-        if (!current()) return
-        setAttempt({ wallet: target, step: { kind: 'failed', reason: describeConnectError(err, target.name) } })
+        if (mine !== attemptId.current) return
+        setAttempt({ wallet: shown, step: { kind: 'failed', reason: describeConnectError(err, shown.name) }, again })
         setPhase({ kind: 'idle' })
       }
     },
-    [connectInjected, refresh, wanted, chain],
+    [connectWith, settle],
   )
+
+  /** An installed wallet, with no list in between. */
+  const connect = useCallback(
+    (target: InjectedWallet) => openWallet(installedConnector(target), { shown: target, face: null, again: { installed: target } }),
+    [openWallet],
+  )
+
+  /** Take a route: leave for the wallet's app, open its own SDK, or draw a pairing code in our own dialog. */
+  const follow = useCallback(
+    (route: Route, face: WalletFace, again: Again, choice: DirectoryWallet | null) => {
+      if (route.via === 'app-link') {
+        setPicking(false)
+        window.location.assign(route.href)
+        return
+      }
+      if (route.via === 'sdk') return openWallet(route.wallet.connector, { shown: face, face, again })
+      if (!walletConnect) return
+      const onPhone = isPhone(window.navigator.userAgent)
+      return openWallet(walletConnect, {
+        shown: face,
+        face: choice ? face : null,
+        again,
+        // On a phone the code cannot be scanned off its own screen: hand it to
+        // the app picked, or as a bare wc: link to whichever wallet answers it.
+        href: (uri) => (!onPhone ? null : choice ? pairingLink(choice, uri) : uri),
+      })
+    },
+    [walletConnect, openWallet],
+  )
+
+  /**
+   * A wallet that is not in this browser. `choice` is the wallet picked from
+   * the registry; null is "whatever is on my phone", which any wallet app can
+   * scan.
+   */
+  const connectElsewhere = useCallback(
+    (choice: DirectoryWallet | null) => {
+      const face: WalletFace = choice ? { name: choice.name, icon: choice.icon } : { name: 'your wallet', icon: null }
+      return follow(routeFor(choice, here()), face, { elsewhere: choice }, choice)
+    },
+    [follow],
+  )
+
+  /** A wallet with a connector of its own, picked from its own row. Needs nothing from the registry. */
+  const connectSdk = useCallback(
+    (target: SdkWallet) => follow(routeForSdk(target, here()), { name: target.name, icon: target.icon }, { sdk: target }, null),
+    [follow],
+  )
+
+  // An SDK wallet's window can only open on the back of a click, so its code
+  // is fetched while the list is still being read.
+  useEffect(() => {
+    if (picking) preloadSdkWallets()
+  }, [picking])
 
   /** Stop waiting on the wallet being opened. Its answer, if it comes, no longer moves the page. */
   const stopWaiting = useCallback(() => {
@@ -273,6 +375,16 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
     setAttempt(null)
     setPhase((p) => (p.kind === 'connecting' || p.kind === 'switching' ? { kind: 'idle' } : p))
   }, [])
+
+  /** Back to the connect button, for a person who brought the wrong wallet. */
+  const disconnect = useCallback(() => {
+    attemptId.current++
+    setAttempt(null)
+    setProblem(null)
+    setAskConsent(false)
+    setBatching('unknown')
+    disconnectSigner()
+  }, [disconnectSigner])
 
   const sign = useCallback(async () => {
     if (!wallet || gate.kind !== 'ready' || plan.outcome.type !== 'calls') return
@@ -571,6 +683,12 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
         </Button>
       ) : null}
 
+      {signer ? (
+        <Button variant="link" size="sm" className="self-center" disabled={busy} onClick={disconnect}>
+          Disconnect {signer.wallet.name}
+        </Button>
+      ) : null}
+
       <WalletPicker
         open={picking}
         onClose={() => setPicking(false)}
@@ -579,13 +697,22 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
         linked={linked}
         onPick={(target) => void connect(target)}
         links={phoneLinks(walletType)}
+        sdkWallets={typeof window === 'undefined' ? [] : sdkWalletsHere(here())}
+        onPickSdk={(target) => void connectSdk(target)}
+        projectId={walletConnect ? walletConnectProjectId() : null}
+        onPair={(choice) => void connectElsewhere(choice)}
       />
 
       <WalletConnecting
         wallet={attempt?.wallet ?? null}
         step={attempt?.step ?? { kind: 'opening' }}
         onClose={stopWaiting}
-        onRetry={() => (attempt ? void connect(attempt.wallet) : undefined)}
+        onRetry={() => {
+          if (!attempt) return
+          if ('installed' in attempt.again) void connect(attempt.again.installed)
+          else if ('sdk' in attempt.again) void connectSdk(attempt.again.sdk)
+          else void connectElsewhere(attempt.again.elsewhere)
+        }}
         onMore={() => {
           stopWaiting()
           setPicking(true)
@@ -723,6 +850,11 @@ function BatchMark() {
       <path d="M3.9 6h4.2M6 3.9v4.2" strokeLinecap="round" strokeWidth="1.2" opacity="0.6" />
     </svg>
   )
+}
+
+/** The device and page a wallet is being routed from. Only ever called in the browser. */
+function here() {
+  return { onPhone: isPhone(window.navigator.userAgent), pageUrl: window.location.href }
 }
 
 /** Wallet apps that can open this page themselves; none off a phone. */
