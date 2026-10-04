@@ -2,8 +2,8 @@ import { addressOf } from '@/lib/format'
 
 /**
  * Whether the connected wallet is the one the plan named, on the chain the
- * plan runs on. Pure, so the decision is testable without Privy: the panel
- * feeds it what the wallet library reports and renders what comes back.
+ * plan runs on. Pure, so the decision is testable without a wallet: the panel
+ * feeds it what the connected wallet reports and renders what comes back.
  *
  * The gate is a hard rule, not a nudge. A plan is bound to one account and one
  * chain by its hash; signing from another account would execute the same
@@ -12,7 +12,7 @@ import { addressOf } from '@/lib/format'
  */
 export interface ConnectedAccount {
   address: string
-  /** CAIP-2 the wallet is currently on, as Privy reports it. */
+  /** CAIP-2 the wallet is currently on, as the wallet reports it. */
   chainId: string
 }
 
