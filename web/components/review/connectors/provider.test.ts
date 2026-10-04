@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { caip2OfHex, describeConnectError, needsSwitch, readConnection, requestConnection, switchTo } from './signer'
+import { caip2OfHex, describeConnectError, needsSwitch, readConnection, requestConnection, rereadHeld, revokeConnection, switchTo } from './provider'
 
 type Answer = unknown | (() => unknown)
 
@@ -96,5 +96,45 @@ describe('describeConnectError', () => {
   it("passes on the wallet's own message, and says something when there is none", () => {
     expect(describeConnectError(new Error('Wallet is locked'), 'MetaMask')).toBe('Wallet is locked')
     expect(describeConnectError(null, 'MetaMask')).toBe('MetaMask did not answer.')
+  })
+})
+
+describe('disconnecting', () => {
+  it('asks the wallet to revoke the accounts permission', async () => {
+    const provider = fake({ wallet_revokePermissions: [null] })
+    await revokeConnection(provider)
+    expect(provider.asked).toEqual([{ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }])
+  })
+
+  it('does not throw when the wallet has no such method', async () => {
+    const provider = fake({ wallet_revokePermissions: [refuse(-32601, 'method not found')] })
+    await expect(revokeConnection(provider)).resolves.toBeUndefined()
+  })
+})
+
+describe('rereadHeld', () => {
+  const walletOn = (chain: string, gate?: Promise<void>) => ({
+    provider: {
+      request: async ({ method }: { method: string }) => {
+        await gate
+        return method === 'eth_accounts' ? [A] : chain
+      },
+    },
+  })
+
+  it('reads the wallet held now, not one a caller remembered', async () => {
+    const now = walletOn('0x38')
+    expect(await rereadHeld(() => now)).toEqual({ wallet: now, held: { accounts: [A], chainId: 'eip155:56' } })
+    expect(await rereadHeld(() => null)).toBeNull()
+  })
+
+  it('drops the answer of a wallet that was replaced while it answered', async () => {
+    let release = () => {}
+    const slow = walletOn('0x1', new Promise<void>((r) => (release = r)))
+    let current: { provider: unknown } = slow
+    const reading = rereadHeld(() => current as typeof slow)
+    current = walletOn('0x38')
+    release()
+    expect(await reading).toBeNull()
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInjectedStore, installedFor, type InjectedWallet } from './injected'
+import { createInjectedStore, installedFor, type InjectedWallet } from './installed'
 
 const provider = { request: async () => null }
 

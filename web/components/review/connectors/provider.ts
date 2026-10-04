@@ -1,5 +1,5 @@
 import { addChainParams, evmIdOf } from '@/lib/chains'
-import type { Eip1193 } from './send-calls'
+import type { Eip1193 } from '../send-calls'
 
 /**
  * Talking to a wallet's own provider: who it is, where it is, and asking it
@@ -33,6 +33,16 @@ export function requestConnection(provider: Eip1193): Promise<Held> {
 export async function readConnection(provider: Eip1193): Promise<Held | null> {
   const held = await read(provider, 'eth_accounts')
   return held.accounts.length > 0 ? held : null
+}
+
+/**
+ * Ask the wallet to forget this page. Best effort: wallets without
+ * `wallet_revokePermissions` refuse, and the page lets go of them regardless.
+ */
+export async function revokeConnection(provider: Eip1193): Promise<void> {
+  try {
+    await provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
+  } catch {}
 }
 
 /**
@@ -72,4 +82,16 @@ export async function switchTo(provider: Eip1193, chain: string): Promise<void> 
 export function needsSwitch(held: Held, wanted: string, chain: string): boolean {
   const has = held.accounts.some((a) => a.toLowerCase() === wanted.toLowerCase())
   return has && held.chainId.toLowerCase() !== chain.toLowerCase()
+}
+
+/**
+ * Re-read whichever wallet is held now. Null when there is none, when it
+ * shares nothing, or when another wallet took its place while it answered:
+ * a slow answer from the last wallet must not be written over the new one.
+ */
+export async function rereadHeld<W extends { provider: Eip1193 }>(current: () => W | null): Promise<{ wallet: W; held: Held } | null> {
+  const wallet = current()
+  if (!wallet) return null
+  const held = await readConnection(wallet.provider)
+  return held && current() === wallet ? { wallet, held } : null
 }

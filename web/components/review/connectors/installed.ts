@@ -1,4 +1,5 @@
-import type { Eip1193 } from './send-calls'
+import { readConnection, requestConnection, revokeConnection } from './provider'
+import type { Connector, WalletProvider } from './types'
 
 /**
  * The wallets this browser actually has, found the way EIP-6963 says to: the
@@ -10,16 +11,13 @@ import type { Eip1193 } from './send-calls'
  * address-and-chain gate decides who may sign, whatever the wallet is called.
  */
 
-export interface InjectedProvider extends Eip1193 {
-  on?(event: string, listener: (...args: never[]) => void): unknown
-  removeListener?(event: string, listener: (...args: never[]) => void): unknown
-}
+export type InjectedProvider = WalletProvider
 
 export interface InjectedWallet {
   /** Reverse-DNS the wallet names itself by, "io.metamask". */
   rdns: string
   name: string
-  /** A data URI, or null when the wallet offered anything else. */
+  /** A data URI the wallet announced, or null when it offered anything else. */
   icon: string | null
   provider: InjectedProvider
 }
@@ -109,4 +107,29 @@ export function installedFor(
   const wanted = walletType && Object.hasOwn(RDNS, walletType) ? RDNS[walletType] : undefined
   if (!wanted) return null
   return installed.find((w) => wanted.includes(w.rdns)) ?? null
+}
+
+// One connector per announced wallet, so the page can tell by identity
+// whether the wallet it holds is still the one it asked.
+const connectors = new WeakMap<InjectedWallet, Connector>()
+
+/** The connector for a wallet in this browser: its own provider, asked directly. */
+export function installedConnector(wallet: InjectedWallet): Connector {
+  const known = connectors.get(wallet)
+  if (known) return known
+  const { provider } = wallet
+  const connector: Connector = {
+    id: wallet.rdns,
+    kind: 'installed',
+    connect: async () => ({ wallet: connected, held: await requestConnection(provider) }),
+    // `eth_accounts` never prompts: it answers only if the wallet still allows this page.
+    async restore() {
+      const held = await readConnection(provider)
+      return held ? { wallet: connected, held } : null
+    },
+    disconnect: () => revokeConnection(provider),
+  }
+  const connected = { connector, name: wallet.name, icon: wallet.icon, provider }
+  connectors.set(wallet, connector)
+  return connector
 }
