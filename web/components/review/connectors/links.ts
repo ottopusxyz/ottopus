@@ -14,15 +14,25 @@ export interface WalletLink {
   href: string
 }
 
-const BUILDERS: readonly { type: string; name: string; href: (url: string) => string }[] = [
-  { type: 'metamask', name: 'MetaMask', href: (url) => `https://link.metamask.io/dapp/${url.replace(/^https?:\/\//, '')}` },
-  { type: 'trust', name: 'Trust Wallet', href: (url) => `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(url)}` },
+const BUILDERS: readonly { type: string; name: string; rdns: string; href: (url: string) => string }[] = [
+  { type: 'metamask', name: 'MetaMask', rdns: 'io.metamask', href: (url) => `https://link.metamask.io/dapp/${url.replace(/^https?:\/\//, '')}` },
+  { type: 'trust', name: 'Trust Wallet', rdns: 'com.trustwallet.app', href: (url) => `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(url)}` },
+  { type: 'coinbase_wallet', name: 'Base', rdns: 'com.coinbase.wallet', href: (url) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}` },
 ]
 
 /** The wallet the plan's account was linked with leads, when it has a link. */
 export function walletLinks(pageUrl: string, preferred?: string): WalletLink[] {
   const links = BUILDERS.map((b) => ({ type: b.type, name: b.name, href: b.href(pageUrl) }))
   return [...links.filter((l) => l.type === preferred), ...links.filter((l) => l.type !== preferred)]
+}
+
+/**
+ * The open-this-page link of the wallet a registry row names, by the rdns the
+ * row carries. For a wallet the registry lists with no pairing link of its
+ * own, this is the only way into its app from a phone.
+ */
+export function appLinkFor(rdns: string | null, pageUrl: string): string | null {
+  return BUILDERS.find((b) => b.rdns === rdns)?.href(pageUrl) ?? null
 }
 
 export function isPhone(userAgent: string): boolean {
