@@ -96,12 +96,19 @@
   .ot-dialog-panel {
     border-radius: 18px 18px 0 0;
     /* Clear of the home indicator on a phone. */
-    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    --ot-dialog-pad-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-bottom: var(--ot-dialog-pad-bottom);
   }
 }
 
 /* --- Overlay, 640px and up. A pop rather than a slide. --- */
 @media (min-width: 640px) {
+  /* The panel's own bottom padding, named so content that bleeds to the
+     bottom edge can match it at either size. */
+  .ot-dialog-panel {
+    --ot-dialog-pad-bottom: 22px;
+  }
+
   .ot-dialog {
     transform: scale(0.96) translateY(6px);
   }

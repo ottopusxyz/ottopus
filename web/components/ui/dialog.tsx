@@ -48,6 +48,8 @@ export interface DialogProps {
    * destructive dialog must say what stops working.
    */
   tone?: DialogTone
+  /** Wide gives a dialog laid out in tiles the room for three across. */
+  size?: 'default' | 'wide'
   /**
    * Buttons. Stacked full width below 640px with the primary last, because on
    * a phone the last item is the one under the thumb.
@@ -75,6 +77,7 @@ export function Dialog({
   hideTitle = false,
   description,
   tone = 'default',
+  size = 'default',
   actions,
   children,
   className,
@@ -158,7 +161,8 @@ export function Dialog({
         className={cn(
           'ot-dialog-panel flex flex-col gap-4 border bg-[var(--ot-card)] p-[18px]',
           'shadow-[var(--ot-shadow-card)]',
-          'sm:w-[min(420px,calc(100vw-2rem))] sm:rounded-[16px] sm:p-[22px]',
+          size === 'wide' ? 'sm:w-[min(480px,calc(100vw-2rem))]' : 'sm:w-[min(420px,calc(100vw-2rem))]',
+          'sm:rounded-[16px] sm:p-[22px]',
           destructive ? 'border-[var(--ot-block-border)]' : 'border-[var(--ot-border)]',
         )}
       >
