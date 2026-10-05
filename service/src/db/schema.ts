@@ -95,6 +95,39 @@ export const linkedWallets = pgTable(
   ],
 )
 
+/**
+ * A challenge an agent was handed to prove it operates a wallet.
+ *
+ * In the database rather than in memory for the reason all OAuth state is:
+ * start and finish are two requests, and nothing says they reach the same
+ * process. The row holds what the typed data was built from, so finish
+ * rebuilds exactly what was signed rather than trusting anything sent back.
+ *
+ * One use. `consumedAt` is set in the transaction that stores the arm, and a
+ * second finish for the same row is a replay.
+ */
+export const walletLinkChallenges = pgTable(
+  'wallet_link_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    /** Lowercased, like the arm it becomes. */
+    address: text('address').notNull(),
+    /** 32 random bytes as 0x hex, so no two challenges sign the same. */
+    nonce: text('nonce').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt,
+  },
+  (t) => [
+    index('wallet_link_challenges_expires_idx').on(t.expiresAt),
+    check('wallet_link_challenges_address_lowercase', sql`${t.address} = lower(${t.address})`),
+  ],
+)
+
 /** An agent that registered against the MCP server. */
 export const oauthClients = pgTable('oauth_clients', {
   clientId: text('client_id').primaryKey(),
