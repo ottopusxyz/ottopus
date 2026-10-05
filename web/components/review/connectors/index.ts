@@ -32,7 +32,7 @@ export type { ConnectedWallet, Connection, Connector, ConnectorKind, ConnectOpti
 export { createInjectedStore, installedConnector, installedFor, type InjectedStore, type InjectedWallet } from './installed'
 export { walletConnectProjectId } from './walletconnect'
 export { preloadSdkWallets, sdkWalletFor, type SdkWallet } from './sdk'
-export { routeFor, routeForSdk, sdkWalletsHere, type Route } from './route'
+export { routeFor, routeForSdk, sdkWalletLinked, sdkWalletsHere, type Route } from './route'
 export { DIRECTORY_PAGE_SIZE, fetchDirectory, pairingLink, type DirectoryWallet } from './directory'
 export { isPhone, walletLinks, type WalletLink } from './links'
 export { caip2OfHex, describeConnectError, needsSwitch, readConnection, rereadHeld, switchTo, type Held } from './provider'

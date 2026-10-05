@@ -55,3 +55,13 @@ export function routeFor(choice: DirectoryWallet | null, where: Where): Route {
 export function sdkWalletsHere(where: Where): SdkWallet[] {
   return SDK_WALLETS.filter((wallet) => routeForSdk(wallet, where).via === 'sdk')
 }
+
+/**
+ * The SDK wallet the plan's account was linked with, if its window opens
+ * here. Like `installedFor`, the kind is display metadata that may be stale:
+ * this only picks which wallet the button opens first, never who may sign.
+ */
+export function sdkWalletLinked(walletType: string | undefined, where: Where): SdkWallet | null {
+  if (!walletType) return null
+  return sdkWalletsHere(where).find((wallet) => wallet.walletTypes.includes(walletType)) ?? null
+}

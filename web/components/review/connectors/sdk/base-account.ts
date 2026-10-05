@@ -1,3 +1,4 @@
+import { walletMark } from '@/components/wallets/naming'
 import { evmIdOf } from '@/lib/chains'
 import { readConnection, requestConnection, type Held } from '../provider'
 import type { ConnectedWallet, Connector, WalletFace, WalletProvider } from '../types'
@@ -82,7 +83,8 @@ export function baseAccountConnector(init?: BaseInit): Connector {
   const walletOf = (provider: BaseProvider, face?: WalletFace | null): ConnectedWallet => ({
     connector,
     name: face?.name ?? 'Base',
-    icon: face?.icon ?? null,
+    // A restore has no face to carry the mark, so it falls back to the bundled one.
+    icon: face?.icon ?? walletMark('base_account'),
     provider,
   })
   const connector: Connector = {
@@ -103,10 +105,15 @@ export function baseAccountConnector(init?: BaseInit): Connector {
 
 export const baseAccount: SdkWallet = {
   name: 'Base',
-  icon: null,
+  // The bundled mark the rest of the app draws a Base account with.
+  icon: walletMark('base_account'),
   connector: baseAccountConnector(),
   // A phone has the Base app, where the wallet is simply there; a desktop has only the window.
   route: { desktop: 'sdk', phone: 'app-link' },
+  // Every name the passkey account has been linked by. `coinbase_wallet` is
+  // also the extension's recovery-phrase wallet, which is offered first when
+  // it is installed; with no extension here, that kind can only be this one.
+  walletTypes: ['base_account', 'coinbase_smart_wallet', 'coinbase_wallet'],
   // The registry row for Base carries its extension's rdns.
   rdns: ['com.coinbase.wallet'],
   preload: () => void load().catch(() => {}),

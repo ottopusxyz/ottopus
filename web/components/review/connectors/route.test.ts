@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DirectoryWallet } from './directory'
-import { routeFor, routeForSdk, sdkWalletsHere } from './route'
+import { routeFor, routeForSdk, sdkWalletLinked, sdkWalletsHere } from './route'
 import { baseAccount } from './sdk/base-account'
 
 const PAGE = 'https://ottopus.xyz/review/abc'
@@ -58,6 +58,17 @@ describe('routeFor', () => {
   it('gives an SDK wallet its own row only where its window opens', () => {
     expect(sdkWalletsHere(desktop)).toContain(baseAccount)
     expect(sdkWalletsHere(phone)).not.toContain(baseAccount)
+  })
+
+  it('offers an SDK wallet first for an account linked with it, where its window opens', () => {
+    expect(sdkWalletLinked('base_account', desktop)).toBe(baseAccount)
+    expect(sdkWalletLinked('coinbase_smart_wallet', desktop)).toBe(baseAccount)
+    expect(sdkWalletLinked('base_account', phone)).toBeNull()
+    // Passkey accounts are also stored under the extension's kind; an installed extension is offered ahead of this.
+    expect(sdkWalletLinked('coinbase_wallet', desktop)).toBe(baseAccount)
+    expect(sdkWalletLinked('coinbase_wallet', phone)).toBeNull()
+    expect(sdkWalletLinked('metamask', desktop)).toBeNull()
+    expect(sdkWalletLinked(undefined, desktop)).toBeNull()
   })
 
   it('still draws a code for a wallet with no link and no SDK', () => {

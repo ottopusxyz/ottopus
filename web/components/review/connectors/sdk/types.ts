@@ -10,6 +10,13 @@ export type SdkRoute = 'sdk' | 'app-link'
  */
 export interface SdkWallet extends WalletFace {
   connector: Connector
+  /**
+   * The stored wallet kinds (the service's WALLET_TYPES) this wallet signs
+   * for. An account linked as one of them gets this wallet as the button's
+   * first offer, the way an installed wallet does. An
+   * installed wallet matching the same kind is offered ahead of it.
+   */
+  walletTypes: readonly string[]
   /** The rdns values a registry row for this wallet may carry. */
   rdns: readonly string[]
   /** How it connects on each kind of device. `app-link` needs a published link, and falls back to `sdk` without one. */
