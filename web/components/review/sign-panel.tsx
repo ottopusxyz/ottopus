@@ -1,20 +1,43 @@
 'use client'
 
-import { useConnectWallet, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Otto } from '@/components/brand'
 import { LoaderDots, TentacleRing } from '@/components/motion'
 import { Button, Dialog } from '@/components/ui'
 import type { Plan, WebTransition } from '@/lib/api'
-import { addChainParams, chainName, evmIdOf, explorerName, explorerTxUrl } from '@/lib/chains'
-import { getAddress } from 'viem'
+import { chainName, explorerName, explorerTxUrl } from '@/lib/chains'
 import { cn } from '@/lib/cn'
 import { addressOf, truncateAddress } from '@/lib/format'
+import {
+  describeConnectError,
+  installedConnector,
+  installedFor,
+  isPhone,
+  needsSwitch,
+  pairingLink,
+  preloadSdkWallets,
+  routeFor,
+  routeForSdk,
+  sdkWalletLinked,
+  sdkWalletsHere,
+  switchTo,
+  walletConnectProjectId,
+  walletLinks,
+  type Connector,
+  type DirectoryWallet,
+  type Held,
+  type InjectedWallet,
+  type Route,
+  type SdkWallet,
+  type WalletFace,
+  type WalletProvider,
+} from './connectors'
 import { approvals, chainOfPlan, type PlanStep, planSteps, standingApproval } from './model'
 import {
   BatchAccepted,
   type Batching,
+  type Eip1193,
   SequentialNeedsConsent,
   UserRejected,
   describeWalletError,
@@ -22,7 +45,11 @@ import {
   sendPlanCalls,
   waitForReceipt,
 } from './send-calls'
-import { gateFor } from './wallet-gate'
+import { useSigner } from './use-signer'
+import { SignerChip } from './signer-chip'
+import { gateFor, signerStatus } from './wallet-gate'
+import { WalletConnecting, type ConnectingStep } from './wallet-connecting'
+import { WalletPicker } from './wallet-picker'
 
 /**
  * The bottom of the card while a plan can still be signed: the gate, then the
@@ -47,10 +74,27 @@ export interface SignPanelProps {
    * Untraced and read straight from the chain, never through the wallet.
    */
   recheck?: (() => Promise<{ success: boolean; revertReason?: string; failedCall?: number } | null>) | undefined
+  /**
+   * The wallet app the plan's account was linked with. Display metadata from
+   * outside the plan, editable and possibly stale: it chooses which wallet
+   * the button opens first and nothing else.
+   */
+  walletType?: string | undefined
 }
+
+/** A connected account, whichever way it was connected. */
+interface Connected {
+  address: string
+  chainId: string
+  provider: () => Promise<Eip1193>
+}
+
+/** What a retry repeats: an installed wallet, or a pairing with the wallet picked (null for any phone wallet). */
+type Again = { installed: InjectedWallet } | { sdk: SdkWallet } | { elsewhere: DirectoryWallet | null }
 
 type Phase =
   | { kind: 'idle' }
+  | { kind: 'connecting' }
   | { kind: 'switching' }
   | { kind: 'signing' }
   | { kind: 'submitted'; txHash: `0x${string}` }
@@ -59,10 +103,15 @@ type Phase =
 
 const isHash = (v: unknown): v is `0x${string}` => typeof v === 'string' && /^0x[0-9a-f]{64}$/i.test(v)
 
-export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps) {
+export function SignPanel({ plan, move, open, txHash, recheck, walletType }: SignPanelProps) {
   const router = useRouter()
-  const { wallets, ready } = useWallets()
-  const { connectWallet } = useConnectWallet()
+  const chain = chainOfPlan(plan)
+  const { installed, signer, connect: connectWith, walletConnect, refresh, disconnect: disconnectSigner } = useSigner(chain)
+  const [picking, setPicking] = useState(false)
+  /** The wallet being opened, how far it got, and what "Try again" asks; the connecting dialog draws this. */
+  const [attempt, setAttempt] = useState<{ wallet: WalletFace; step: ConnectingStep; again: Again } | null>(null)
+  /** Bumped by every new attempt and every dismissal, so a late answer changes nothing on screen. */
+  const attemptId = useRef(0)
   // A page opened on a plan already submitted starts where the plan is.
   const [phase, setPhase] = useState<Phase>(() =>
     plan.status === 'submitted' && isHash(txHash) ? { kind: 'submitted', txHash } : { kind: 'idle' },
@@ -99,14 +148,45 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
   const [progress, setProgress] = useState<{ signing: number | null; done: number }>({ signing: null, done: 0 })
   const wroteAwaiting = useRef(false)
 
-  const chain = chainOfPlan(plan)
   const bound = { account: plan.resolution.account.caip10, chain }
   const wanted = addressOf(bound.account)
-  const gate = gateFor(
-    bound,
-    wallets.map((w) => ({ address: w.address, chainId: w.chainId })),
+  // Only the wallet this page connected itself. Whatever the sign-in library
+  // holds is for signing in, and never signs a plan here.
+  const connected = useMemo<Connected[]>(
+    () =>
+      (signer?.accounts ?? []).map((address) => ({
+        address,
+        chainId: signer!.chainId,
+        provider: async () => signer!.wallet.provider,
+      })),
+    [signer],
   )
-  const wallet = wallets.find((w) => w.address.toLowerCase() === wanted.toLowerCase())
+  const gate = gateFor(bound, connected)
+  const wallet = useMemo(
+    () => connected.find((c) => c.address.toLowerCase() === wanted.toLowerCase()),
+    [connected, wanted],
+  )
+  const linked = installedFor(walletType, installed)
+  // The device is only known in the browser, so the server render offers none.
+  const linkedSdk = useSyncExternalStore(
+    noSubscription,
+    () => sdkWalletLinked(walletType, here()),
+    () => null,
+  )
+  // What the button opens with no list in between: the installed wallet the
+  // account was linked with, else the web wallet it was linked with. Still
+  // offered over another wallet a reload brought back with the wrong account;
+  // not when that wrong account is in the offered wallet itself, where asking
+  // again would only hand back the same one.
+  const offer = linked
+    ? { name: linked.name, connector: installedConnector(linked) }
+    : linkedSdk
+      ? { name: linkedSdk.name, connector: linkedSdk.connector }
+      : null
+  const first =
+    offer && (gate.kind === 'connect' || (gate.kind === 'wrong_account' && signer?.wallet.connector !== offer.connector))
+      ? offer
+      : null
   // Memoised: called bare in the body, it defeated the React Compiler's
   // memoisation of every callback below it.
   const standing = useMemo(() => standingApproval(plan), [plan])
@@ -136,7 +216,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
     let live = true
     void (async () => {
       try {
-        const answer = await probeBatching(await wallet.getEthereumProvider(), wanted, chain)
+        const answer = await probeBatching(await wallet.provider(), wanted, chain)
         if (live) setBatching(answer)
       } catch {
         if (live) setBatching('unknown')
@@ -156,7 +236,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
     const hash = phase.txHash
     void (async () => {
       try {
-        const provider = await wallet.getEthereumProvider()
+        const provider = await wallet.provider()
         const outcome = await waitForReceipt(provider, hash)
         if (outcome === 'success') {
           await move({ status: 'confirmed', detail: { txHash: hash } })
@@ -174,37 +254,163 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
 
   const switchChain = useCallback(async () => {
     if (!wallet) return
-    const evmId = evmIdOf(chain)
-    if (evmId === null) return
     setPhase({ kind: 'switching' })
     setProblem(null)
     try {
-      try {
-        await wallet.switchChain(evmId)
-      } catch (err) {
-        const message = String((err as Error).message)
-        // Privy refuses a chain outside its own list before the wallet is
-        // asked. The wallet may well know it: ask the wallet directly.
-        if (/unsupported chainid/i.test(message)) {
-          await switchDirectly(wallet, evmId, chain)
-          return
-        }
-        // 4902: the wallet has never heard of the chain. Teach it from the
-        // registry, then ask again. Anything else is the wallet's answer.
-        const code = (err as { code?: number }).code
-        if (code !== 4902 && !/unrecognized|not added|4902/i.test(message)) throw err
-        const params = addChainParams(chain)
-        if (!params) throw err
-        const provider = await wallet.getEthereumProvider()
-        await provider.request({ method: 'wallet_addEthereumChain', params: [params] })
-        await wallet.switchChain(evmId)
-      }
+      // Straight to the wallet's provider: the wallet may know a chain the
+      // wallet library does not list. Both hear the wallet's chainChanged.
+      await switchTo(await wallet.provider(), chain)
+      await refresh()
     } catch (err) {
-      setProblem(`Could not switch to ${chainName(chain)}: ${(err as Error).message}`)
+      setProblem(`Could not switch to ${chainName(chain)}: ${describeWalletError(err)}`)
     } finally {
       setPhase({ kind: 'idle' })
     }
-  }, [wallet, chain])
+  }, [wallet, chain, refresh])
+
+  /** What follows a wallet's yes, however it was reached: the one switch on the back of the click. */
+  const settle = useCallback(
+    async (mine: number, face: WalletFace, provider: WalletProvider, held: Held, again: Again) => {
+      if (needsSwitch(held, wanted, chain)) {
+        // Name and icon only: `face` may be the whole wallet, and its provider must not become a prop.
+        setAttempt({ wallet: { name: face.name, icon: face.icon }, step: { kind: 'switching', chain: chainName(chain) }, again })
+        setPhase({ kind: 'switching' })
+        try {
+          await switchTo(provider, chain)
+          await refresh()
+        } catch (err) {
+          if (mine === attemptId.current) setProblem(`Could not switch to ${chainName(chain)}: ${describeWalletError(err)}`)
+        }
+      }
+      if (mine !== attemptId.current) return
+      setAttempt(null)
+      setPhase({ kind: 'idle' })
+    },
+    [refresh, wanted, chain],
+  )
+
+  /**
+   * Open one wallet through its connector, whichever kind it is. If it
+   * answers with the plan's account on another chain, the switch is asked for
+   * once on the back of the same click; declined, the switch button is the
+   * retry. A different account is never asked to switch.
+   *
+   * The dialog stays up while the wallet is silent. Dismissing it, or leaving
+   * for another wallet, stops the page waiting; the wallet's own request
+   * cannot be withdrawn, and a late approval of it still connects unless
+   * another wallet was asked since.
+   *
+   * `shown` is what the dialog calls the wallet; `face` is what the connector
+   * is told the person picked, null to let the wallet name itself. `href`
+   * turns a pairing code into a link that hands it to a wallet app.
+   */
+  const openWallet = useCallback(
+    async (
+      connector: Connector,
+      opts: { shown: WalletFace; face: WalletFace | null; again: Again; href?: (uri: string) => string | null },
+    ) => {
+      const mine = ++attemptId.current
+      const { shown, again } = opts
+      const first: ConnectingStep =
+        connector.kind === 'walletconnect'
+          ? { kind: 'pairing', uri: null, href: null }
+          : { kind: 'opening', popup: connector.kind === 'sdk' }
+      setPicking(false)
+      setProblem(null)
+      setAttempt({ wallet: shown, step: first, again })
+      setPhase({ kind: 'connecting' })
+      try {
+        const found = await connectWith(connector, {
+          face: opts.face,
+          onUri: (uri) => {
+            if (mine !== attemptId.current) return
+            setAttempt({ wallet: shown, step: { kind: 'pairing', uri, href: opts.href?.(uri) ?? null }, again })
+          },
+        })
+        if (!found || mine !== attemptId.current) return
+        await settle(mine, found.wallet, found.wallet.provider, found.held, again)
+      } catch (err) {
+        if (mine !== attemptId.current) return
+        setAttempt({ wallet: shown, step: { kind: 'failed', reason: describeConnectError(err, shown.name) }, again })
+        setPhase({ kind: 'idle' })
+      }
+    },
+    [connectWith, settle],
+  )
+
+  /** An installed wallet, with no list in between. */
+  const connect = useCallback(
+    (target: InjectedWallet) => openWallet(installedConnector(target), { shown: target, face: null, again: { installed: target } }),
+    [openWallet],
+  )
+
+  /** Take a route: leave for the wallet's app, open its own SDK, or draw a pairing code in our own dialog. */
+  const follow = useCallback(
+    (route: Route, face: WalletFace, again: Again, choice: DirectoryWallet | null) => {
+      if (route.via === 'app-link') {
+        setPicking(false)
+        window.location.assign(route.href)
+        return
+      }
+      if (route.via === 'sdk') return openWallet(route.wallet.connector, { shown: face, face, again })
+      if (!walletConnect) return
+      const onPhone = isPhone(window.navigator.userAgent)
+      return openWallet(walletConnect, {
+        shown: face,
+        face: choice ? face : null,
+        again,
+        // On a phone the code cannot be scanned off its own screen: hand it to
+        // the app picked, or as a bare wc: link to whichever wallet answers it.
+        href: (uri) => (!onPhone ? null : choice ? pairingLink(choice, uri) : uri),
+      })
+    },
+    [walletConnect, openWallet],
+  )
+
+  /**
+   * A wallet that is not in this browser. `choice` is the wallet picked from
+   * the registry; null is "whatever is on my phone", which any wallet app can
+   * scan.
+   */
+  const connectElsewhere = useCallback(
+    (choice: DirectoryWallet | null) => {
+      const face: WalletFace = choice ? { name: choice.name, icon: choice.icon } : { name: 'your wallet', icon: null }
+      return follow(routeFor(choice, here()), face, { elsewhere: choice }, choice)
+    },
+    [follow],
+  )
+
+  /** A wallet with a connector of its own, picked from its own row. Needs nothing from the registry. */
+  const connectSdk = useCallback(
+    (target: SdkWallet) => follow(routeForSdk(target, here()), { name: target.name, icon: target.icon }, { sdk: target }, null),
+    [follow],
+  )
+
+  // An SDK wallet's window can only open on the back of a click, so its code
+  // is fetched while the list is still being read.
+  useEffect(() => {
+    if (picking) preloadSdkWallets()
+  }, [picking])
+  useEffect(() => {
+    if (!linked) linkedSdk?.preload()
+  }, [linked, linkedSdk])
+
+  /** Stop waiting on the wallet being opened. Its answer, if it comes, no longer moves the page. */
+  const stopWaiting = useCallback(() => {
+    attemptId.current++
+    setAttempt(null)
+    setPhase((p) => (p.kind === 'connecting' || p.kind === 'switching' ? { kind: 'idle' } : p))
+  }, [])
+
+  /** Back to the connect button, for a person who brought the wrong wallet. */
+  const disconnect = useCallback(() => {
+    attemptId.current++
+    setAttempt(null)
+    setProblem(null)
+    setAskConsent(false)
+    setBatching('unknown')
+    disconnectSigner()
+  }, [disconnectSigner])
 
   const sign = useCallback(async () => {
     if (!wallet || gate.kind !== 'ready' || plan.outcome.type !== 'calls') return
@@ -214,7 +420,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
     setPhase({ kind: 'signing' })
     let txHash: `0x${string}` | null = null
     try {
-      const provider = await wallet.getEthereumProvider()
+      const provider = await wallet.provider()
       // The last check before the wallet opens. A run that cannot answer says
       // nothing and does not stop anybody; one that reverts does, because the
       // alternative is a signature that burns a fee for nothing.
@@ -351,7 +557,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
 
   if (!open) return null
 
-  const busy = phase.kind === 'signing' || phase.kind === 'switching'
+  const busy = phase.kind === 'signing' || phase.kind === 'switching' || phase.kind === 'connecting'
 
   return (
     <div className="flex flex-col gap-3">
@@ -430,7 +636,7 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
           Cancel
         </Button>
         {gate.kind === 'ready' ? (
-          <Button variant="primary" size="lg" fullWidth disabled={busy || !ready} onClick={() => void sign()}>
+          <Button variant="primary" size="lg" fullWidth disabled={busy} onClick={() => void sign()}>
             {phase.kind === 'signing' ? (
               <span className="inline-flex items-center gap-2">
                 <TentacleRing size={18} tone="current" />
@@ -452,33 +658,87 @@ export function SignPanel({ plan, move, open, txHash, recheck }: SignPanelProps)
             )}
           </Button>
         ) : (
-          <Button variant="primary" size="lg" fullWidth disabled={!ready} onClick={() => connectWallet({ suggestedAddress: getAddress(wanted) })}>
-            Connect wallet
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            disabled={busy}
+            onClick={() => {
+              if (!first) setPicking(true)
+              else if (linked) void connect(linked)
+              else if (linkedSdk) void connectSdk(linkedSdk)
+            }}
+          >
+            {phase.kind === 'connecting' ? (
+              <span className="inline-flex items-center gap-2">
+                <TentacleRing size={18} tone="current" />
+                Check your wallet
+              </span>
+            ) : first ? (
+              `Connect ${first.name}`
+            ) : (
+              'Connect wallet'
+            )}
           </Button>
         )}
       </div>
 
-      <p className="m-0 text-center text-[12px] text-[var(--ot-text-2)]">
-        {gate.kind === 'ready' ? (
-          <>
-            Signing with <strong className="text-[var(--ot-text)]">{signerName}</strong> on {chainName(chain)}
-          </>
-        ) : gate.kind === 'wrong_chain' ? (
-          <>
-            <strong className="text-[var(--ot-text)]">{signerName}</strong> is on {chainName(gate.on)}; this plan runs on{' '}
-            {chainName(chain)}
-          </>
-        ) : gate.kind === 'wrong_account' ? (
-          <>
-            Connected as {truncateAddress(gate.connected)}. This plan needs{' '}
-            <strong className="text-[var(--ot-text)]">{signerName}</strong>.
-          </>
-        ) : (
-          <>
-            Connect <strong className="text-[var(--ot-text)]">{signerName}</strong> to sign
-          </>
-        )}
-      </p>
+      <SignerChip
+        status={signerStatus(gate, {
+          signerName,
+          wantedShort: truncateAddress(wanted),
+          connectedShort: gate.kind === 'wrong_account' ? truncateAddress(gate.connected) : null,
+          chainName: chainName(chain),
+          onChainName: gate.kind === 'wrong_chain' ? chainName(gate.on) : null,
+          wallet: signer ? { name: signer.wallet.name, kind: signer.wallet.connector.kind } : null,
+        })}
+        // The face alone, never the wallet: in development React reads every
+        // prop a few levels deep, and a web wallet's provider holds its
+        // cross-origin window, which throws when read.
+        wallet={signer ? { name: signer.wallet.name, icon: signer.wallet.icon } : null}
+        onDisconnect={disconnect}
+        disabled={busy}
+      />
+
+      {first ? (
+        <Button variant="link" size="sm" className="self-center" disabled={busy} onClick={() => setPicking(true)}>
+          Use another wallet
+        </Button>
+      ) : null}
+
+      <WalletPicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        account={wanted}
+        accountLabel={plan.resolution.account.label}
+        chainName={chainName(chain)}
+        installed={installed}
+        linked={linked}
+        onPick={(target) => void connect(target)}
+        links={phoneLinks(walletType)}
+        linkedType={walletType}
+        sdkWallets={typeof window === 'undefined' ? [] : sdkWalletsHere(here())}
+        linkedSdk={linkedSdk}
+        onPickSdk={(target) => void connectSdk(target)}
+        projectId={walletConnect ? walletConnectProjectId() : null}
+        onPair={(choice) => void connectElsewhere(choice)}
+      />
+
+      <WalletConnecting
+        wallet={attempt?.wallet ?? null}
+        step={attempt?.step ?? { kind: 'opening' }}
+        onClose={stopWaiting}
+        onRetry={() => {
+          if (!attempt) return
+          if ('installed' in attempt.again) void connect(attempt.again.installed)
+          else if ('sdk' in attempt.again) void connectSdk(attempt.again.sdk)
+          else void connectElsewhere(attempt.again.elsewhere)
+        }}
+        onMore={() => {
+          stopWaiting()
+          setPicking(true)
+        }}
+      />
 
       <Dialog
         open={confirmCancel}
@@ -613,24 +873,15 @@ function BatchMark() {
   )
 }
 
-/**
- * The switch, over the raw EIP-1193 provider rather than through Privy's
- * wrapper — for a chain Privy does not list but the wallet may know. On
- * 4902 the wallet is taught the chain from the registry and asked again.
- * Privy still hears the wallet's chainChanged event, so its idea of the
- * current chain follows.
- */
-async function switchDirectly(wallet: ConnectedWallet, evmId: number, chain: string): Promise<void> {
-  const provider = await wallet.getEthereumProvider()
-  const hex = `0x${evmId.toString(16)}`
-  try {
-    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
-  } catch (err) {
-    const code = (err as { code?: number }).code
-    if (code !== 4902 && !/unrecognized|not added|4902/i.test(String((err as Error).message))) throw err
-    const params = addChainParams(chain)
-    if (!params) throw err
-    await provider.request({ method: 'wallet_addEthereumChain', params: [params] })
-    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] })
-  }
+/** The device and page a wallet is being routed from. Only ever called in the browser. */
+const noSubscription = () => () => {}
+
+function here() {
+  return { onPhone: isPhone(window.navigator.userAgent), pageUrl: window.location.href }
+}
+
+/** Wallet apps that can open this page themselves; none off a phone. */
+function phoneLinks(walletType: string | undefined) {
+  if (typeof window === 'undefined' || !isPhone(window.navigator.userAgent)) return []
+  return walletLinks(window.location.href, walletType)
 }

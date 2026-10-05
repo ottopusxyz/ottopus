@@ -141,7 +141,13 @@ function Review({ token }: { token: string }) {
             }
           >
             {canSign(status) ? (
-              <SignPanel plan={plan} move={move} open recheck={simulation.recheck} />
+              <SignPanel
+                plan={plan}
+                move={move}
+                open
+                recheck={simulation.recheck}
+                walletType={visuals?.wallets[plan.resolution.account.caip10]?.walletType}
+              />
             ) : status === 'submitted' ? (
               <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
             ) : (

@@ -19,6 +19,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { ProofMark } from '@/components/wallets'
 import { AccountMenuDemo } from './account-menu-demo'
 import { DialogDemo } from './dialog-demo'
+import { SignerChipDemo } from './signer-chip-demo'
 import { WalletsDemo } from './wallets-demo'
 import { LoaderDemo } from './loader-demo'
 import { cn } from '@/lib/cn'
@@ -419,6 +420,10 @@ export default function Styleguide() {
             filter — a chip that looks pressable implies a filter that does not exist.
           </p>
         </div>
+      </Section>
+
+      <Section title="Connected wallet">
+        <SignerChipDemo />
       </Section>
 
       <Section title="Empty states">
