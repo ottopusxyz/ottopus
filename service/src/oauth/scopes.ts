@@ -104,6 +104,15 @@ export function defaultScopes(): Scope[] {
   return SCOPES.filter((scope) => !OPT_IN.has(scope))
 }
 
+/**
+ * What the local stdio server runs with: the defaults, plus whatever its
+ * launcher named. There is no consent screen there, so the environment is the
+ * only place an opt-in scope can be asked for by name.
+ */
+export function localScopes(extra: string | undefined | null): Scope[] {
+  return [...new Set([...defaultScopes(), ...parseScopes(extra)])]
+}
+
 export function hasScope(granted: readonly string[], required: Scope): boolean {
   return granted.includes(required)
 }

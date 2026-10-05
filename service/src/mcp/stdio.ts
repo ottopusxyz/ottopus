@@ -4,7 +4,7 @@ import { config } from '../config.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { getDb } from '../db/client.js'
-import { SCOPES } from '../oauth/scopes.js'
+import { localScopes } from '../oauth/scopes.js'
 import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
 import { portfolioProvider } from '../routes/portfolio-provider.js'
 import { routeProvider } from '../routes/route-provider.js'
@@ -93,7 +93,8 @@ async function main(): Promise<void> {
       userId,
       clientId: 'stdio',
       // No grant to narrow, because there was no consent screen to narrow it.
-      scopes: [...SCOPES],
+      // An opt-in scope still has to be named: OTTOPUS_EXTRA_SCOPES=wallets:write.
+      scopes: localScopes(process.env.OTTOPUS_EXTRA_SCOPES),
       grantId: null,
     },
     deps,
