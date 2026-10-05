@@ -33,6 +33,7 @@ const WALLETS: Arm[] = [
     address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
     label: 'Main',
     walletType: 'rabby',
+    agentProvider: null,
     isWatchOnly: false,
     provedAt: '2026-09-05T00:00:00Z',
     createdAt: '2026-09-05T00:00:00Z',
@@ -43,6 +44,7 @@ const WALLETS: Arm[] = [
     address: '0x7922000000000000000000000000000000000f93',
     label: null,
     walletType: 'watch_only',
+    agentProvider: null,
     isWatchOnly: true,
     provedAt: null,
     createdAt: '2026-09-06T00:00:00Z',
@@ -257,8 +259,8 @@ describe('list_wallets', () => {
     expect(words).toContain('2. Watch Only — watch_only, 0x7922000000000000000000000000000000000f93, watch only, cannot sign, id w2')
     expect(result.structuredContent).toMatchObject({
       wallets: [
-        { id: 'w1', name: 'Main', canSign: true, watchOnly: false },
-        { id: 'w2', name: null, canSign: false, watchOnly: true },
+        { id: 'w1', name: 'Main', canSign: true, watchOnly: false, browserSigner: true, agentExecutes: false, agentProvider: null },
+        { id: 'w2', name: null, canSign: false, watchOnly: true, browserSigner: false, agentExecutes: false },
       ],
     })
   })

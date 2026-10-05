@@ -81,7 +81,27 @@ export const WALLET_NAMES: Readonly<Record<string, string>> = {
   wallet_connect: 'WalletConnect',
   walletconnect: 'WalletConnect',
   watch_only: 'Watch-only',
+  agentic: 'Agent wallet',
   unknown: 'Wallet',
+}
+
+/** The kind an agent-operated arm carries. Linked through an agent, never picked in the edit dialog. */
+export const AGENTIC = 'agentic'
+
+/**
+ * An agentic arm's vendor, in words and as a mark. The service's provider
+ * profiles are the registry; this only has to name and draw the ones it has.
+ * Binance's agent wallet takes the Binance Wallet mark: same maker, one mark.
+ */
+export const AGENT_PROVIDERS: Readonly<Record<string, { name: string; mark: string }>> = {
+  binance: { name: 'Binance Agentic Wallet', mark: 'binance_wallet' },
+}
+
+type Named = Pick<Arm, 'label' | 'walletType' | 'agentProvider'>
+
+function providerOf(arm: Pick<Arm, 'walletType' | 'agentProvider'>) {
+  const id = arm.walletType === AGENTIC ? arm.agentProvider : null
+  return id && Object.hasOwn(AGENT_PROVIDERS, id) ? AGENT_PROVIDERS[id]! : null
 }
 
 /** The kinds a person may pick for an arm: the ones with a bundled mark, so the choice is visible. */
@@ -106,8 +126,10 @@ export const LINK_ERRORS: Readonly<Record<string, string>> = {
  * A person's label wins over the wallet client's name: someone who called it
  * "Treasury" should see "Treasury", not "Safe".
  */
-export function armName(arm: Pick<Arm, 'label' | 'walletType'>): string {
+export function armName(arm: Named): string {
   if (arm.label) return arm.label
+  const provider = providerOf(arm)
+  if (provider) return provider.name
   return WALLET_NAMES[arm.walletType] ?? arm.walletType.replace(/_/g, ' ')
 }
 
@@ -118,8 +140,8 @@ export function armName(arm: Pick<Arm, 'label' | 'walletType'>): string {
  * already called "MetaMask", and "MetaMask · MetaMask" is the kind of thing
  * that looks like a rendering bug rather than a detail.
  */
-export function walletClientName(arm: Pick<Arm, 'label' | 'walletType'>): string | null {
-  const client = WALLET_NAMES[arm.walletType]
+export function walletClientName(arm: Named): string | null {
+  const client = providerOf(arm)?.name ?? WALLET_NAMES[arm.walletType]
   if (!client || client === armName(arm)) return null
   // Watch-only is not a wallet client, it is the absence of one — the proof
   // mark already says so, and repeating it as a make of wallet is misleading.
@@ -148,9 +170,11 @@ export const MARKS: ReadonlySet<string> = new Set([
 /**
  * The wallet client's own mark, as a path under public/, or null for a client
  * we have no mark for. See public/wallets/README.md for where they came from
- * and why they are bundled rather than read from the session.
+ * and why they are bundled rather than read from the session. An agentic arm
+ * is drawn with its vendor's mark, so it needs the provider to have one.
  */
-export function walletMark(walletType: string): string | null {
-  const type = MARK_ALIASES[walletType] ?? walletType
+export function walletMark(walletType: string, agentProvider?: string | null): string | null {
+  const provider = providerOf({ walletType, agentProvider })
+  const type = provider?.mark ?? MARK_ALIASES[walletType] ?? walletType
   return MARKS.has(type) ? `/wallets/${type}.svg` : null
 }

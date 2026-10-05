@@ -8,11 +8,13 @@ import { userIdForDid } from '../auth/session.js'
 import { MAX_ARMS } from './reconcile.js'
 import {
   WalletError,
+  addAgenticWallet,
   addWatchOnlyWallet,
   linkArms,
   listWallets,
   syncWallets,
   unlinkWallet,
+  updateWallet,
   userLockQuery,
 } from './store.js'
 
@@ -164,6 +166,81 @@ describe('watch-only wallets', () => {
     for (let i = 0; i < MAX_ARMS; i++) await addWatchOnlyWallet(db, userId, { address: address(i) })
     const { overflow } = await syncWallets(db, userId, [attested(99)])
     expect(overflow).toEqual([address(99)])
+  })
+})
+
+describe('agentic wallets', () => {
+  const proof = { via: 'agent_signed_challenge' as const, signature: '0x01' }
+  const insert = (values: string) =>
+    pg.exec(
+      `insert into linked_wallets (user_id, address, wallet_type, agent_provider, is_watch_only, ownership_proof)
+       values ('${userId}', '${address(7)}', ${values})`,
+    )
+
+  it('stores a proved arm with its provider', async () => {
+    const arm = await addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof })
+    expect(arm).toMatchObject({ walletType: 'agentic', agentProvider: 'binance', isWatchOnly: false, label: null })
+    expect(arm.provedAt).not.toBeNull()
+    expect(await listWallets(db, userId)).toEqual([arm])
+  })
+
+  it('refuses a provider that is not in the registry', async () => {
+    for (const provider of ['abacus', 'constructor', '']) {
+      await expect(addAgenticWallet(db, userId, { provider, address: address(7), proof })).rejects.toMatchObject({
+        code: 'invalid_provider',
+      })
+    }
+    expect(await listWallets(db, userId)).toEqual([])
+  })
+
+  it('does not re-link an address that is already another kind', async () => {
+    await syncWallets(db, userId, [attested(7)])
+    await expect(
+      addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof }),
+    ).rejects.toMatchObject({ code: 'already_linked', message: expect.stringContaining('another kind') })
+  })
+
+  it('counts against the eight arms', async () => {
+    await syncWallets(db, userId, Array.from({ length: MAX_ARMS }, (_, i) => attested(i + 10)))
+    await expect(
+      addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof }),
+    ).rejects.toMatchObject({ code: 'too_many_wallets' })
+  })
+
+  /** Privy never hears of an agentic arm, so a sync that omits it must leave it be. */
+  it('survives a sync from Privy', async () => {
+    await addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof })
+    const { wallets } = await syncWallets(db, userId, [attested(1)])
+    expect(wallets.map((w) => w.walletType).sort()).toEqual(['agentic', 'metamask'])
+  })
+
+  it('keeps its kind through an edit, and takes a name', async () => {
+    const arm = await addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof })
+    await expect(updateWallet(db, userId, arm.id, { walletType: 'metamask' })).rejects.toMatchObject({ code: 'invalid_type' })
+    expect(await updateWallet(db, userId, arm.id, { label: 'Trader' })).toMatchObject({ label: 'Trader', walletType: 'agentic' })
+  })
+
+  it('cannot be reached by editing another arm', async () => {
+    const { wallets } = await syncWallets(db, userId, [attested(1)])
+    await expect(updateWallet(db, userId, wallets[0]!.id, { walletType: 'agentic' })).rejects.toMatchObject({ code: 'invalid_type' })
+  })
+
+  describe('the database agrees', () => {
+    it('refuses an agentic arm with no provider', async () => {
+      await expect(insert(`'agentic', null, false, '{}'::jsonb`)).rejects.toThrow(/linked_wallets_agent_provider_iff_agentic/)
+    })
+
+    it('refuses a provider on any other kind', async () => {
+      await expect(insert(`'metamask', 'binance', false, '{}'::jsonb`)).rejects.toThrow(/linked_wallets_agent_provider_iff_agentic/)
+    })
+
+    it('refuses a watch-only agentic arm', async () => {
+      await expect(insert(`'agentic', 'binance', true, null`)).rejects.toThrow(/linked_wallets_agentic_is_proved/)
+    })
+
+    it('refuses an agentic arm with no proof', async () => {
+      await expect(insert(`'agentic', 'binance', false, null`)).rejects.toThrow(/linked_wallets_proof_required/)
+    })
   })
 })
 

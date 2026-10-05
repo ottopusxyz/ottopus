@@ -26,7 +26,7 @@ import {
 import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
 import { KNOWN_ABI, type Lookups, blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { humanAmount, resolveWallet, truncateAddress } from './readable.js'
+import { canSign, humanAmount, resolveWallet, truncateAddress } from './readable.js'
 
 /**
  * prepare_transfer, end to end: intent, wallet, one call, decode, verify,
@@ -142,7 +142,7 @@ function candidatesFrom(
       walletId: arm.id,
       account: accountOn(chain, arm.address),
       label: arm.label,
-      canSign: !arm.isWatchOnly && arm.provedAt !== null,
+      canSign: canSign(arm),
       assetBalance: holdingOf(portfolio, intent.asset, arm.id),
       gasBalance: holdingOf(portfolio, gasAsset, arm.id),
     }))

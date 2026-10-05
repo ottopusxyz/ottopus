@@ -18,6 +18,7 @@ const arm = (over: Partial<Arm> = {}): Arm => ({
   address: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
   label: null,
   walletType: 'rabby',
+  agentProvider: null,
   isWatchOnly: false,
   provedAt: '2026-09-05T00:00:00Z',
   createdAt: '2026-09-05T00:00:00Z',
@@ -63,6 +64,12 @@ describe('wallets in words', () => {
       'watch only, cannot sign',
     )
     expect(describeWallet(arm({ provedAt: null }))).toContain('not yet proved, cannot sign')
+    expect(describeWallet(arm({ walletType: 'agentic', agentProvider: 'binance' }))).toBe(
+      'Binance Agentic Wallet — Binance Agentic Wallet, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045, executes through baw, id w1',
+    )
+    expect(describeWallet(arm({ label: 'Trader', walletType: 'agentic', agentProvider: 'binance' }))).toContain(
+      'Trader — Binance Agentic Wallet, ',
+    )
   })
 
   it('finds a wallet however it is named', () => {

@@ -4,6 +4,7 @@ import type { PrivyWallet } from '../auth/privy.js'
 import { EVM_ADDRESS_RE } from '../core/caip.js'
 import type * as schema from '../db/schema.js'
 import { linkedWallets, users } from '../db/schema.js'
+import { AGENTIC, agentProvider } from './agentic/index.js'
 import { MAX_ARMS, reconcile, type WalletToLink } from './reconcile.js'
 
 export type WalletDb = PgDatabase<PgQueryResultHKT, typeof schema>
@@ -15,6 +16,8 @@ export interface Arm {
   address: string
   label: string | null
   walletType: string
+  /** The vendor of an agentic arm; null for every other kind. */
+  agentProvider: string | null
   isWatchOnly: boolean
   provedAt: string | null
   createdAt: string
@@ -22,7 +25,13 @@ export interface Arm {
 
 export class WalletError extends Error {
   constructor(
-    readonly code: 'invalid_address' | 'already_linked' | 'too_many_wallets' | 'not_found' | 'invalid_type',
+    readonly code:
+      | 'invalid_address'
+      | 'already_linked'
+      | 'too_many_wallets'
+      | 'not_found'
+      | 'invalid_type'
+      | 'invalid_provider',
     message: string,
   ) {
     super(message)
@@ -33,6 +42,8 @@ export class WalletError extends Error {
  * The kinds a wallet may be called. The web's WALLET_NAMES has words for
  * each; a kind not here is a typo, not a new client. `watch_only` is a fact
  * about proof rather than a kind, and only a watch-only arm may keep it.
+ * `agentic` is deliberately absent: it is set by linking through an agent,
+ * never by an edit, and an agentic arm cannot be renamed into something else.
  */
 export const WALLET_TYPES: readonly string[] = [
   'metamask', 'rabby_wallet', 'coinbase_wallet', 'coinbase_smart_wallet', 'base_account', 'rainbow',
@@ -52,6 +63,7 @@ const columns = {
   address: linkedWallets.address,
   label: linkedWallets.label,
   walletType: linkedWallets.walletType,
+  agentProvider: linkedWallets.agentProvider,
   isWatchOnly: linkedWallets.isWatchOnly,
   provedAt: linkedWallets.provedAt,
   createdAt: linkedWallets.createdAt,
@@ -63,6 +75,7 @@ interface Row {
   address: string
   label: string | null
   walletType: string
+  agentProvider: string | null
   isWatchOnly: boolean
   provedAt: Date | null
   createdAt: Date
@@ -255,6 +268,70 @@ export async function addWatchOnlyWallet(
 }
 
 /**
+ * What the agent's signature proved, stored as the arm's ownership proof. The
+ * shape past `via` belongs to the linking flow that verified it.
+ */
+export type AgenticProof = { via: 'agent_signed_challenge' } & Record<string, unknown>
+
+export interface AgenticInput {
+  provider: string
+  address: string
+  label?: string | undefined
+  /** Already verified by the caller: this function stores, it does not check signatures. */
+  proof: AgenticProof
+}
+
+/**
+ * An arm an agent operates through its vendor's CLI.
+ *
+ * Proved on the way in, always: there is no watch-only agentic arm, and the
+ * database refuses one. An address already linked as another kind is not
+ * re-linked here — the person unlinks it first, so one address never answers
+ * to two ways of signing.
+ */
+export async function addAgenticWallet(db: WalletDb, userId: string, input: AgenticInput): Promise<Arm> {
+  const profile = agentProvider(input.provider)
+  if (!profile) throw new WalletError('invalid_provider', `${input.provider} is not an agent wallet provider`)
+  const address = input.address.trim().toLowerCase()
+  if (!EVM_ADDRESS_RE.test(address)) {
+    throw new WalletError('invalid_address', 'Not a 20-byte hex address')
+  }
+
+  return db.transaction(async (tx) => {
+    await lockUser(tx as WalletDb, userId)
+    const existing = await activeRows(tx as WalletDb, userId)
+    const same = existing.find((w) => w.address === address)
+    if (same) {
+      throw new WalletError(
+        'already_linked',
+        same.walletType === AGENTIC
+          ? 'That address is already linked as an agent wallet'
+          : 'That address is already linked as another kind of wallet; unlink it first',
+      )
+    }
+    if (existing.length >= MAX_ARMS) {
+      throw new WalletError('too_many_wallets', `Otto has ${MAX_ARMS} arms and they are all full`)
+    }
+
+    const [row] = await tx
+      .insert(linkedWallets)
+      .values({
+        userId,
+        address,
+        label: input.label?.trim() || null,
+        walletType: AGENTIC,
+        agentProvider: profile.id,
+        provedAt: new Date(),
+        ownershipProof: input.proof,
+      })
+      .returning(columns)
+
+    if (!row) throw new WalletError('not_found', 'The wallet could not be stored')
+    return toArm(row)
+  })
+}
+
+/**
  * The name and the kind, which are the person's to set. Everything else on
  * the row — the address, the proof, whether it can sign — is not, and a
  * proved wallet cannot be relabelled watch-only: the kind is what the mark
@@ -277,6 +354,9 @@ export async function updateWallet(db: WalletDb, userId: string, id: string, edi
     if (!current) throw new WalletError('not_found', 'No such wallet')
     if (patch.walletType === 'watch_only' && !current.isWatchOnly) {
       throw new WalletError('invalid_type', 'a proved wallet is not watch-only')
+    }
+    if (patch.walletType !== undefined && current.walletType === AGENTIC) {
+      throw new WalletError('invalid_type', 'an agent wallet keeps its kind')
     }
     const [row] = await tx.update(linkedWallets).set(patch).where(eq(linkedWallets.id, id)).returning(columns)
     if (!row) throw new WalletError('not_found', 'No such wallet')

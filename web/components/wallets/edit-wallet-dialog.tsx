@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button, Dialog, Input } from '@/components/ui'
 import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { EDITABLE_TYPES, WALLET_NAMES, armName, walletMark } from './naming'
+import { AGENTIC, EDITABLE_TYPES, WALLET_NAMES, armName, walletMark } from './naming'
 
 export interface WalletEdit {
   label: string | null
@@ -38,6 +38,8 @@ function Form({ arm, onClose, onSave }: { arm: Arm; onClose: () => void; onSave:
   const [error, setError] = useState<string | null>(null)
 
   const changed = (label.trim() || null) !== arm.label || walletType !== arm.walletType
+  // Linked by an agent through its vendor's CLI: the kind is a fact, not a choice.
+  const agentic = arm.walletType === AGENTIC
 
   function dismiss() {
     if (busy) return
@@ -62,7 +64,11 @@ function Form({ arm, onClose, onSave }: { arm: Arm; onClose: () => void; onSave:
       open
       onClose={dismiss}
       title={`Edit ${armName(arm)}`}
-      description="The name is yours. The kind sets the mark on every row — it does not change what the wallet can sign."
+      description={
+        agentic
+          ? 'The name is yours. The kind stays: this wallet was linked by your agent and is operated through it.'
+          : 'The name is yours. The kind sets the mark on every row — it does not change what the wallet can sign.'
+      }
       actions={
         <>
           <Button variant="ghost" onClick={dismiss} disabled={busy}>
@@ -83,12 +89,13 @@ function Form({ arm, onClose, onSave }: { arm: Arm; onClose: () => void; onSave:
             onKeyDown={(e) => {
               if (e.key === 'Enter' && changed) void save()
             }}
-            placeholder={WALLET_NAMES[walletType] ?? 'Wallet'}
+            placeholder={agentic ? armName({ ...arm, label: null }) : (WALLET_NAMES[walletType] ?? 'Wallet')}
             maxLength={60}
             autoComplete="off"
           />
         </label>
 
+        {agentic ? null : (
         <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Wallet kind">
           <span className="text-[13px] font-semibold">Kind</span>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -117,6 +124,7 @@ function Form({ arm, onClose, onSave }: { arm: Arm; onClose: () => void; onSave:
             })}
           </div>
         </div>
+        )}
 
         {error ? (
           <p role="alert" className="text-[13px] text-[var(--ot-block-text)]">
