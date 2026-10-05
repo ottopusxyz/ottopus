@@ -9,7 +9,7 @@ import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import type { ToolDeps } from '../mcp/server.js'
 import { handleMcpRequest } from '../mcp/transport.js'
 import { findClient } from '../oauth/store.js'
-import { listWallets } from '../wallets/index.js'
+import { finishAgentLink, listWallets, startAgentLink } from '../wallets/index.js'
 import { portfolioProvider } from './portfolio-provider.js'
 import { routeProvider } from './route-provider.js'
 import { stockRegistry, tokenRegistry } from './token-registry.js'
@@ -118,6 +118,8 @@ if (!config.databaseUrl) {
     recordSimulation: (input) => recordSimulation(db, input),
     findPlan: (userId, planId) => findPlan(db, userId, planId),
     transition: (input) => transition(db, input),
+    startAgentLink: (userId, input) => startAgentLink(db, userId, input),
+    finishAgentLink: (userId, input) => finishAgentLink(db, userId, input),
   }
 
   /**

@@ -9,6 +9,7 @@ import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from '.
 import { capabilitiesOf } from '../wallets/index.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
+import { type LinkDeps, finishLink, finishText, startLink, startText } from './link.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
 
@@ -49,7 +50,7 @@ export interface ToolContext {
  * rather than copied here — one list per capability, and no chance of this
  * one drifting from what the pipeline actually asks for.
  */
-export interface ToolDeps extends StatusDeps, SwapDeps, CustomDeps {
+export interface ToolDeps extends StatusDeps, SwapDeps, CustomDeps, LinkDeps {
   findUser(userId: string): Promise<SessionUser | null>
   findAgent(clientId: string): Promise<{ clientName: string } | null>
 }
@@ -98,7 +99,10 @@ function denied(scope: Scope): ToolResult {
   const copy = SCOPE_COPY.find((entry) => entry.scope === scope)
   return failure(
     `This agent's grant does not include "${copy?.title ?? scope}" (${scope}). ` +
-      'The person can change what it may do from Settings in Ottopus.',
+      (scope === 'wallets:write'
+        ? 'It is never granted by default: the agent has to ask for that scope by name when it connects, ' +
+          'and the person approves it on the consent screen.'
+        : 'The person can change what it may do from Settings in Ottopus.'),
   )
 }
 
@@ -628,6 +632,80 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       return outcome.kind === 'cancelled'
         ? text(cancelText(outcome), structured)
         : { ...text(cancelText(outcome), structured), isError: true }
+    },
+  )
+
+  /**
+   * Linking a wallet the agent operates. Two calls because the signature
+   * happens somewhere else: in the vendor's CLI, on the person's machine.
+   * Neither call signs, and the address is linked only if the signature over
+   * the challenge recovers to it.
+   */
+  server.registerTool(
+    'link_agent_wallet_start',
+    {
+      title: 'Start linking an agent wallet',
+      description:
+        'First of two steps to link a wallet this agent operates through a vendor CLI (a Binance Agentic ' +
+        'Wallet through baw) to the person’s Ottopus account. Returns an EIP-712 challenge bound to the ' +
+        'person, the address and the provider, with a short expiry, and how to sign it with that CLI. ' +
+        'Sign it with the wallet itself, then call link_agent_wallet_finish. An address already linked ' +
+        'as another kind of wallet is refused. Nothing is linked by this call.',
+      inputSchema: {
+        provider: z.string().describe('Whose agent wallet it is. "binance" for a Binance Agentic Wallet.'),
+        address: z.string().describe('The wallet’s 0x address, as its CLI reports it.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async (input) => {
+      if (!hasScope(ctx.scopes, 'wallets:write')) return denied('wallets:write')
+      const outcome = await startLink(deps, ctx.userId, input)
+      if (outcome.kind === 'refused') return failure(`Not started: ${outcome.reason}.`)
+      const { challengeId, expiresAt, typedData, provider } = outcome.value
+      return text(startText(outcome.value), {
+        challengeId,
+        expiresAt,
+        typedData,
+        provider: { id: provider.id, name: provider.name, cli: provider.cli, sign: provider.sign },
+      })
+    },
+  )
+
+  server.registerTool(
+    'link_agent_wallet_finish',
+    {
+      title: 'Finish linking an agent wallet',
+      description:
+        'Second step: hand back the signature over the challenge from link_agent_wallet_start. If it ' +
+        'recovers to the address the challenge names, the wallet is linked as an agent wallet and shows ' +
+        'in list_wallets. A challenge works once and expires after a few minutes; a wrong signer, a ' +
+        'replay or an expired challenge is refused with the reason.',
+      inputSchema: {
+        challengeId: z.string().describe('The challengeId link_agent_wallet_start returned.'),
+        signature: z
+          .string()
+          .regex(/^0x[0-9a-fA-F]+$/)
+          .describe('The 0x signature the wallet produced over the typed data.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ challengeId, signature }) => {
+      if (!hasScope(ctx.scopes, 'wallets:write')) return denied('wallets:write')
+      const outcome = await finishLink(deps, ctx.userId, { challengeId, signature, clientId: ctx.clientId })
+      if (outcome.kind === 'refused') return failure(`Not linked: ${outcome.reason}.`)
+      const arm = outcome.value
+      return text(finishText(arm), {
+        wallet: {
+          id: arm.id,
+          name: arm.label ?? null,
+          walletType: arm.walletType,
+          namespace: arm.namespace,
+          address: arm.address,
+          agentProvider: arm.agentProvider,
+          watchOnly: arm.isWatchOnly,
+          ...capabilitiesOf(arm),
+        },
+      })
     },
   )
 
