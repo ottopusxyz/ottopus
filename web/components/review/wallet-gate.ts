@@ -39,3 +39,53 @@ export function gateFor(
   }
   return { kind: 'ready', address: wanted, chain: plan.chain }
 }
+
+/** What the wallet strip under the buttons says: one shape for every gate. */
+export interface SignerStatus {
+  /** `idle` has no wallet; `ok` may sign; `warn` holds a wallet that may not yet. */
+  tone: 'idle' | 'ok' | 'warn'
+  /** What is connected, or that nothing is. */
+  title: string
+  /** Where that leaves the plan, and what to do about it. */
+  note: string
+}
+
+export interface SignerContext {
+  /** The plan's account as a person reads it: its label and short address. */
+  signerName: string
+  /** The plan's account and the connected one, already shortened. */
+  wantedShort: string
+  connectedShort: string | null
+  /** Display names of the plan's chain and the one the wallet is on. */
+  chainName: string
+  onChainName: string | null
+  /** The connected wallet, when there is one. */
+  wallet: { name: string; kind: 'installed' | 'walletconnect' | 'sdk' } | null
+}
+
+/**
+ * The words for each gate. Copy only: the gate has already decided who may
+ * sign, and nothing here is consulted for that.
+ */
+export function signerStatus(gate: Gate, ctx: SignerContext): SignerStatus {
+  const walletName = ctx.wallet?.name ?? 'Wallet'
+  if (gate.kind === 'connect') {
+    return { tone: 'idle', title: 'No wallet connected', note: `This plan signs with ${ctx.signerName}` }
+  }
+  if (gate.kind === 'ready') {
+    return { tone: 'ok', title: `${walletName} · ${ctx.wantedShort}`, note: `Right wallet, on ${ctx.chainName}` }
+  }
+  if (gate.kind === 'wrong_chain') {
+    return {
+      tone: 'warn',
+      title: `${walletName} · ${ctx.wantedShort}`,
+      note: `Right wallet, but on ${ctx.onChainName ?? 'another network'}. This plan runs on ${ctx.chainName}`,
+    }
+  }
+  // A web wallet holds one account per sign-in, so there is nothing to select inside it.
+  const fix =
+    ctx.wallet?.kind === 'sdk'
+      ? `Disconnect, then connect ${ctx.signerName}`
+      : `Select ${ctx.signerName} in ${walletName}`
+  return { tone: 'warn', title: `${walletName} · ${ctx.connectedShort ?? ''}`, note: `Not this plan's wallet. ${fix}` }
+}

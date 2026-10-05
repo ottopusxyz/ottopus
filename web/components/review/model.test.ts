@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Plan, PlanStock } from '@/lib/api'
-import { gateFor } from './wallet-gate'
+import { gateFor, signerStatus, type SignerContext } from './wallet-gate'
 import {
   approvalAmount,
   approvals,
@@ -276,6 +276,50 @@ describe('what the page says', () => {
       decodedActions: [{ ...plan.decodedActions[0]!, implementation: `${BASE}:${IMPL}` }],
     }
     expect(decodedRows(clone)[0]!.implementation).toBe(IMPL)
+  })
+})
+
+describe('the wallet strip', () => {
+  const ctx: SignerContext = {
+    signerName: 'Main (0xaaaa…aaaa)',
+    wantedShort: '0xaaaa…aaaa',
+    connectedShort: '0xbbbb…bbbb',
+    chainName: 'Base',
+    onChainName: 'Ethereum',
+    wallet: { name: 'MetaMask', kind: 'installed' },
+  }
+
+  it('names the plan\'s wallet when nothing is connected', () => {
+    expect(signerStatus({ kind: 'connect', wanted: MAIN }, { ...ctx, wallet: null })).toEqual({
+      tone: 'idle',
+      title: 'No wallet connected',
+      note: 'This plan signs with Main (0xaaaa…aaaa)',
+    })
+  })
+
+  it('is only ever ok for the ready gate', () => {
+    expect(signerStatus({ kind: 'ready', address: MAIN, chain: BASE }, ctx).tone).toBe('ok')
+    expect(signerStatus({ kind: 'wrong_chain', wanted: MAIN, chain: BASE, on: 'eip155:1' }, ctx).tone).toBe('warn')
+    expect(signerStatus({ kind: 'wrong_account', wanted: MAIN, connected: KOSHIK }, ctx).tone).toBe('warn')
+  })
+
+  it('shows the connected account, not the wanted one, when they differ', () => {
+    const status = signerStatus({ kind: 'wrong_account', wanted: MAIN, connected: KOSHIK }, ctx)
+    expect(status.title).toBe('MetaMask · 0xbbbb…bbbb')
+    expect(status.note).toBe("Not this plan's wallet. Select Main (0xaaaa…aaaa) in MetaMask")
+  })
+
+  it('sends a web wallet back through disconnect, having no account to select', () => {
+    const status = signerStatus(
+      { kind: 'wrong_account', wanted: MAIN, connected: KOSHIK },
+      { ...ctx, wallet: { name: 'Base', kind: 'sdk' } },
+    )
+    expect(status.note).toBe("Not this plan's wallet. Disconnect, then connect Main (0xaaaa…aaaa)")
+  })
+
+  it('names both chains when the right wallet is on the wrong one', () => {
+    const status = signerStatus({ kind: 'wrong_chain', wanted: MAIN, chain: BASE, on: 'eip155:1' }, ctx)
+    expect(status.note).toBe('Right wallet, but on Ethereum. This plan runs on Base')
   })
 })
 
