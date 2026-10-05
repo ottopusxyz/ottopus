@@ -40,6 +40,11 @@ describe('what we advertise is what we serve', () => {
   it('names the metadata URL in the challenge, since that is the whole way out of a 401', () => {
     expect(challenge()).toContain(`resource_metadata="${protectedResourceMetadataUrl()}"`)
   })
+
+  it('never tells a client to ask for wallets:write, though the documents list it', () => {
+    expect(challenge()).not.toContain('wallets:write')
+    expect(protectedResourceMetadata().scopes_supported).toContain('wallets:write')
+  })
 })
 
 describe('the path-insertion rule', () => {

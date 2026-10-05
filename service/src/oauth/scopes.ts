@@ -1,15 +1,20 @@
 /**
  * The scope vocabulary.
  *
- * Deliberately three, and deliberately none of them able to move anything. The
+ * Deliberately few, and deliberately none of them able to move anything. The
  * MCP surface exposes no tool that signs or broadcasts, so there is no scope
  * that could authorise one — the absence is the design, not an omission to be
  * filled in later.
  *
+ * `wallets:write` is the one an agent has to ask for by name. It allows
+ * linking a wallet the agent itself operates, proved by that wallet's own
+ * signature, and nothing else: it cannot unlink, rename or touch a wallet the
+ * person linked. See `defaultScopes`.
+ *
  * Wording matches the consent screen, because a scope a person cannot read is
  * a scope they cannot refuse.
  */
-export const SCOPES = ['wallets:read', 'plans:read', 'plans:write'] as const
+export const SCOPES = ['wallets:read', 'plans:read', 'plans:write', 'wallets:write'] as const
 
 export type Scope = (typeof SCOPES)[number]
 
@@ -35,6 +40,13 @@ export const SCOPE_COPY: readonly ScopeCopy[] = [
     scope: 'plans:read',
     title: 'Send you review links',
     detail: 'Each one opens on the review page, on any device.',
+  },
+  {
+    scope: 'wallets:write',
+    title: 'Link a wallet this agent operates',
+    detail:
+      'Adds an agent-operated wallet to your account, proved by that wallet’s own signature. ' +
+      'It cannot unlink, rename or change the wallets you linked.',
   },
 ]
 
@@ -80,9 +92,16 @@ export function parseScopes(raw: string | undefined | null): Scope[] {
   return [...seen]
 }
 
-/** Every scope, for a client that asked for none. */
+/** Scopes a grant carries only when the agent asked for them by name. */
+const OPT_IN: ReadonlySet<Scope> = new Set<Scope>(['wallets:write'])
+
+/**
+ * What a client that asked for nothing gets, and what a 401 tells it to ask
+ * for. Never `wallets:write`: adding a wallet to someone's account is not
+ * something an agent should hold because it forgot to say what it wanted.
+ */
 export function defaultScopes(): Scope[] {
-  return [...SCOPES]
+  return SCOPES.filter((scope) => !OPT_IN.has(scope))
 }
 
 export function hasScope(granted: readonly string[], required: Scope): boolean {
