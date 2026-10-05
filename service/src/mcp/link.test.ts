@@ -89,7 +89,7 @@ describe('linking an agent wallet', () => {
 
     // The words carry the vendor's command and the data to sign.
     const words = started.content[0]!.text
-    expect(words).toContain('baw sign-message preview/execute')
+    expect(words).toContain('baw sign-message preview --binanceChainId 56 --signType EIP712')
     expect(words).toContain('"primaryType":"LinkAgentWallet"')
 
     const challenge = started.structuredContent as { challengeId: string; expiresAt: string; typedData: any }
@@ -234,6 +234,60 @@ describe('linking an agent wallet', () => {
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toContain('already linked as another kind of wallet')
     expect((await listWallets(db, userId)).map((arm) => arm.walletType)).toEqual(['watch_only'])
+
+    // The refused link did not spend the challenge.
+    const { rows } = await pg.query<{ consumed_at: Date | null }>(`select consumed_at from wallet_link_challenges`)
+    expect(rows.map((row) => row.consumed_at)).toEqual([null])
+  })
+
+  it('gets an agent that was shown only the words through baw and back', async () => {
+    const client = await connected()
+    const agent = wallet()
+    const started = await call(client, 'link_agent_wallet_start', { provider: 'binance', address: agent.address })
+    const words = started.content[0]!.text
+    const challengeId = /Challenge (\S+) for/.exec(words)![1]!
+
+    // The preview command as a shell would take it: one single-quoted
+    // argument, a whole eth_signTypedData_v4 request, typed data as a string.
+    const quoted = /--message '([^']*)' --json/.exec(words)![1]!
+    const request = JSON.parse(quoted) as { method: string; params: [string, string] }
+    expect(request.method).toBe('eth_signTypedData_v4')
+    expect(request.params[0]).toBe(agent.address.toLowerCase())
+    const typedData = JSON.parse(request.params[1]) as Record<string, any>
+    expect(typedData.domain).not.toHaveProperty('chainId')
+    for (const step of ['wallet settings', 'execute --requestId', 'PENDING_CONFIRMATION', 'result --order-id']) {
+      expect(words).toContain(step)
+    }
+
+    // What the CLI prints: the signature bare, the recovery byte beside it.
+    const full = await sign(agent, typedData)
+    const fromCli = { signature: full.slice(2, 130), signatureRecovery: full.endsWith('1c') ? '01' : '00' }
+
+    // Either field alone is refused, with what is missing.
+    const half = await call(client, 'link_agent_wallet_finish', { challengeId, signature: fromCli.signature })
+    expect(half.isError).toBe(true)
+    expect(half.content[0]!.text).toContain('signatureRecovery')
+
+    const finished = await call(client, 'link_agent_wallet_finish', {
+      challengeId,
+      signature: `0x${fromCli.signature}${fromCli.signatureRecovery}`,
+    })
+    expect(finished.isError, finished.content[0]!.text).toBeFalsy()
+    expect((await listWallets(db, userId)).map((arm) => arm.address)).toEqual([agent.address.toLowerCase()])
+  })
+
+  it('links once when two finishes race on one challenge', async () => {
+    const client = await connected()
+    const agent = wallet()
+    const challenge = await start(client, agent.address)
+    const args = { challengeId: challenge.challengeId, signature: await sign(agent, challenge.typedData) }
+
+    const results = await Promise.all([
+      call(client, 'link_agent_wallet_finish', args),
+      call(client, 'link_agent_wallet_finish', args),
+    ])
+    expect(results.filter((result) => !result.isError)).toHaveLength(1)
+    expect(await listWallets(db, userId)).toHaveLength(1)
   })
 
   it('refuses a provider it has no profile for', async () => {

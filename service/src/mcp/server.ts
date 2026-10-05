@@ -684,8 +684,11 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         challengeId: z.string().describe('The challengeId link_agent_wallet_start returned.'),
         signature: z
           .string()
-          .regex(/^0x[0-9a-fA-F]+$/)
-          .describe('The 0x signature the wallet produced over the typed data.'),
+          .regex(/^(0x)?[0-9a-fA-F]+$/)
+          .describe(
+            'The 65-byte signature the wallet produced over the typed data, as hex. From baw: ' +
+              'its signature followed by its signatureRecovery.',
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },

@@ -179,6 +179,17 @@ export async function finishAgentLink(
     throw new LinkError('expired', `That challenge expired at ${challenge.expiresAt.toISOString()}; start again`)
   }
 
+  // `baw` prints the signature bare and the recovery byte beside it, so the
+  // 0x is optional here; the 65 bytes are not.
+  const bare = input.signature.trim().replace(/^0x/i, '')
+  if (!/^[0-9a-f]{130}$/i.test(bare)) {
+    throw new LinkError(
+      'bad_signature',
+      'A signature is 65 bytes of hex: r, s, then the recovery byte (the CLI’s signature followed by its signatureRecovery)',
+    )
+  }
+  const signature: Hex = `0x${bare}`
+
   const typedData = linkTypedData(challenge)
   let signer: string
   try {
@@ -187,7 +198,7 @@ export async function finishAgentLink(
       types: TYPES,
       primaryType: 'LinkAgentWallet',
       message: typedData.message,
-      signature: input.signature.trim() as Hex,
+      signature,
     })
   } catch {
     throw new LinkError('bad_signature', 'That is not a signature over the challenge')
@@ -218,7 +229,7 @@ export async function finishAgentLink(
         via: 'agent_signed_challenge',
         challengeId: challenge.id,
         typedData,
-        signature: input.signature.trim(),
+        signature,
         clientId: input.clientId,
         verifiedAt: now.toISOString(),
       },
