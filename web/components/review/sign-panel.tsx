@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Otto } from '@/components/brand'
 import { LoaderDots, TentacleRing } from '@/components/motion'
 import { Button, Dialog } from '@/components/ui'
@@ -19,6 +19,7 @@ import {
   preloadSdkWallets,
   routeFor,
   routeForSdk,
+  sdkWalletLinked,
   sdkWalletsHere,
   switchTo,
   walletConnectProjectId,
@@ -45,7 +46,8 @@ import {
   waitForReceipt,
 } from './send-calls'
 import { useSigner } from './use-signer'
-import { gateFor } from './wallet-gate'
+import { SignerChip } from './signer-chip'
+import { gateFor, signerStatus } from './wallet-gate'
 import { WalletConnecting, type ConnectingStep } from './wallet-connecting'
 import { WalletPicker } from './wallet-picker'
 
@@ -165,6 +167,26 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
     [connected, wanted],
   )
   const linked = installedFor(walletType, installed)
+  // The device is only known in the browser, so the server render offers none.
+  const linkedSdk = useSyncExternalStore(
+    noSubscription,
+    () => sdkWalletLinked(walletType, here()),
+    () => null,
+  )
+  // What the button opens with no list in between: the installed wallet the
+  // account was linked with, else the web wallet it was linked with. Still
+  // offered over another wallet a reload brought back with the wrong account;
+  // not when that wrong account is in the offered wallet itself, where asking
+  // again would only hand back the same one.
+  const offer = linked
+    ? { name: linked.name, connector: installedConnector(linked) }
+    : linkedSdk
+      ? { name: linkedSdk.name, connector: linkedSdk.connector }
+      : null
+  const first =
+    offer && (gate.kind === 'connect' || (gate.kind === 'wrong_account' && signer?.wallet.connector !== offer.connector))
+      ? offer
+      : null
   // Memoised: called bare in the body, it defeated the React Compiler's
   // memoisation of every callback below it.
   const standing = useMemo(() => standingApproval(plan), [plan])
@@ -250,7 +272,8 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
   const settle = useCallback(
     async (mine: number, face: WalletFace, provider: WalletProvider, held: Held, again: Again) => {
       if (needsSwitch(held, wanted, chain)) {
-        setAttempt({ wallet: face, step: { kind: 'switching', chain: chainName(chain) }, again })
+        // Name and icon only: `face` may be the whole wallet, and its provider must not become a prop.
+        setAttempt({ wallet: { name: face.name, icon: face.icon }, step: { kind: 'switching', chain: chainName(chain) }, again })
         setPhase({ kind: 'switching' })
         try {
           await switchTo(provider, chain)
@@ -368,6 +391,9 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
   useEffect(() => {
     if (picking) preloadSdkWallets()
   }, [picking])
+  useEffect(() => {
+    if (!linked) linkedSdk?.preload()
+  }, [linked, linkedSdk])
 
   /** Stop waiting on the wallet being opened. Its answer, if it comes, no longer moves the page. */
   const stopWaiting = useCallback(() => {
@@ -532,7 +558,6 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
   if (!open) return null
 
   const busy = phase.kind === 'signing' || phase.kind === 'switching' || phase.kind === 'connecting'
-  const needs = `${signerName} on ${chainName(chain)}`
 
   return (
     <div className="flex flex-col gap-3">
@@ -638,15 +663,19 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
             size="lg"
             fullWidth
             disabled={busy}
-            onClick={() => (linked && gate.kind === 'connect' ? void connect(linked) : setPicking(true))}
+            onClick={() => {
+              if (!first) setPicking(true)
+              else if (linked) void connect(linked)
+              else if (linkedSdk) void connectSdk(linkedSdk)
+            }}
           >
             {phase.kind === 'connecting' ? (
               <span className="inline-flex items-center gap-2">
                 <TentacleRing size={18} tone="current" />
                 Check your wallet
               </span>
-            ) : linked && gate.kind === 'connect' ? (
-              `Connect ${linked.name}`
+            ) : first ? (
+              `Connect ${first.name}`
             ) : (
               'Connect wallet'
             )}
@@ -654,50 +683,42 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
         )}
       </div>
 
-      <p className="m-0 text-center text-[12px] text-[var(--ot-text-2)]">
-        {gate.kind === 'ready' ? (
-          <>
-            Signing with <strong className="text-[var(--ot-text)]">{signerName}</strong> on {chainName(chain)}
-          </>
-        ) : gate.kind === 'wrong_chain' ? (
-          <>
-            <strong className="text-[var(--ot-text)]">{signerName}</strong> is on {chainName(gate.on)}; this plan runs on{' '}
-            {chainName(chain)}
-          </>
-        ) : gate.kind === 'wrong_account' ? (
-          <>
-            Connected as {truncateAddress(gate.connected)}. This plan needs{' '}
-            <strong className="text-[var(--ot-text)]">{signerName}</strong>
-            {signer ? `: select it in ${signer.wallet.name}.` : '.'}
-          </>
-        ) : (
-          <>
-            Connect <strong className="text-[var(--ot-text)]">{signerName}</strong> to sign
-          </>
-        )}
-      </p>
+      <SignerChip
+        status={signerStatus(gate, {
+          signerName,
+          wantedShort: truncateAddress(wanted),
+          connectedShort: gate.kind === 'wrong_account' ? truncateAddress(gate.connected) : null,
+          chainName: chainName(chain),
+          onChainName: gate.kind === 'wrong_chain' ? chainName(gate.on) : null,
+          wallet: signer ? { name: signer.wallet.name, kind: signer.wallet.connector.kind } : null,
+        })}
+        // The face alone, never the wallet: in development React reads every
+        // prop a few levels deep, and a web wallet's provider holds its
+        // cross-origin window, which throws when read.
+        wallet={signer ? { name: signer.wallet.name, icon: signer.wallet.icon } : null}
+        onDisconnect={disconnect}
+        disabled={busy}
+      />
 
-      {linked && gate.kind === 'connect' ? (
+      {first ? (
         <Button variant="link" size="sm" className="self-center" disabled={busy} onClick={() => setPicking(true)}>
           Use another wallet
-        </Button>
-      ) : null}
-
-      {signer ? (
-        <Button variant="link" size="sm" className="self-center" disabled={busy} onClick={disconnect}>
-          Disconnect {signer.wallet.name}
         </Button>
       ) : null}
 
       <WalletPicker
         open={picking}
         onClose={() => setPicking(false)}
-        needs={needs}
+        account={wanted}
+        accountLabel={plan.resolution.account.label}
+        chainName={chainName(chain)}
         installed={installed}
         linked={linked}
         onPick={(target) => void connect(target)}
         links={phoneLinks(walletType)}
+        linkedType={walletType}
         sdkWallets={typeof window === 'undefined' ? [] : sdkWalletsHere(here())}
+        linkedSdk={linkedSdk}
         onPickSdk={(target) => void connectSdk(target)}
         projectId={walletConnect ? walletConnectProjectId() : null}
         onPair={(choice) => void connectElsewhere(choice)}
@@ -853,6 +874,8 @@ function BatchMark() {
 }
 
 /** The device and page a wallet is being routed from. Only ever called in the browser. */
+const noSubscription = () => () => {}
+
 function here() {
   return { onPhone: isPhone(window.navigator.userAgent), pageUrl: window.location.href }
 }
