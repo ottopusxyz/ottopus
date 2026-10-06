@@ -31,10 +31,15 @@ import {
  * `expired` (derived, and later a job), not `superseded` (a new version does
  * that). A browser asking for any of those is a bug or an attack, and either
  * way the answer is a 400 from the schema.
+ *
+ * `approved` is the person saying yes to a plan their agent's wallet will
+ * send. It is theirs alone to write — no agent tool reaches it — and the
+ * store refuses it for a plan bound to any other kind of wallet.
  */
 const WEB_TRANSITIONS = [
   'awaiting_review',
   'awaiting_signature',
+  'approved',
   'submitted',
   'confirmed',
   'failed',
@@ -175,8 +180,8 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       return c.json({ status })
     } catch (err) {
       if (err instanceof PlanError && err.code === 'not_found') return c.json({ error: 'not_found' }, 404)
-      if (err instanceof PlanError && err.code === 'illegal_transition') {
-        return c.json({ error: 'illegal_transition', detail: err.message }, 409)
+      if (err instanceof PlanError && (err.code === 'illegal_transition' || err.code === 'not_agentic')) {
+        return c.json({ error: err.code, detail: err.message }, 409)
       }
       throw err
     }

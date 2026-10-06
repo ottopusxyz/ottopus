@@ -67,7 +67,7 @@ beforeAll(async () => {
 }, 60_000)
 
 beforeEach(async () => {
-  await pg.exec(`truncate review_tokens, simulations, plan_events, plans`)
+  await pg.exec(`truncate review_tokens, simulations, plan_events, plans, linked_wallets cascade`)
 })
 
 const link = (planId: string, version = 1) =>
@@ -180,6 +180,48 @@ describe('POST /:id/events', () => {
     const res = await post(alice, `/${plan.id}/events`, { version: 1, status: 'confirmed' })
     expect(res.status).toBe(409)
     expect(((await res.json()) as { error: string }).error).toBe('illegal_transition')
+  })
+
+  /** Approving is the person's to do, here, and only for a wallet their agent operates. */
+  it('approves a plan on an agent-operated wallet, and answers 409 for any other', async () => {
+    const [agentic] = await db
+      .insert(schema.linkedWallets)
+      .values({
+        userId: alice,
+        address: '0x0000000000000000000000000000000000000001',
+        walletType: 'agentic',
+        agentProvider: 'binance',
+        ownershipProof: { signature: '0x01' },
+        provedAt: new Date(),
+      })
+      .returning({ id: schema.linkedWallets.id })
+    const [browser] = await db
+      .insert(schema.linkedWallets)
+      .values({
+        userId: alice,
+        address: '0x00000000000000000000000000000000000000ff',
+        walletType: 'metamask',
+        ownershipProof: { signature: '0x01' },
+        provedAt: new Date(),
+      })
+      .returning({ id: schema.linkedWallets.id })
+
+    const signed = planFor(alice)
+    await createPlan(db, { plan: signed, walletId: browser!.id })
+    const refused = await post(alice, `/${signed.id}/events`, { version: 1, status: 'approved' })
+    expect(refused.status).toBe(409)
+    expect(((await refused.json()) as { error: string }).error).toBe('not_agentic')
+
+    const plan = planFor(alice)
+    await createPlan(db, { plan, walletId: agentic!.id })
+    const res = await post(alice, `/${plan.id}/events`, { version: 1, status: 'approved' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'approved' })
+
+    // The browser cannot then claim it was sent: that is the agent's report, checked against the chain.
+    const tx = `0x${'cd'.repeat(32)}`
+    const claimed = await post(alice, `/${plan.id}/events`, { version: 1, status: 'submitted', detail: { txHash: tx } })
+    expect(claimed.status).toBe(409)
   })
 
   it('requires a transaction hash to submit, and keeps it', async () => {
