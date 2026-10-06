@@ -67,7 +67,9 @@ export function AddressChip({ address, full = false, copyable = true, className 
       // The accessible name carries the full address; the visible text may be
       // truncated, and a screen reader user cannot see what was elided.
       aria-label={`Copy address ${bare}`}
-      className="cursor-pointer rounded-[var(--ot-radius-sm)] transition-opacity hover:opacity-80"
+      // Sized to the chip: as a stretched flex-column child the button would
+      // centre the chip under its label and copy on a click in the empty space.
+      className="w-fit cursor-pointer rounded-[var(--ot-radius-sm)] transition-opacity hover:opacity-80"
     >
       {body}
     </button>
