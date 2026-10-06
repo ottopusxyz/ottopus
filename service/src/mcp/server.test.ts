@@ -217,6 +217,8 @@ describe('the tool surface', () => {
     ])
     for (const tool of tools) {
       const readOnly = ![
+        // Its first read of an approved plan on an agent's own wallet hands out the calls and closes cancel.
+        'get_plan',
         'prepare_transfer',
         'prepare_trade',
         'prepare_custom',

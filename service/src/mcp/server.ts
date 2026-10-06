@@ -606,11 +606,13 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'after prepare_* to report back. It never returns the calls of a plan a person signs in their own ' +
         'wallet. For a plan on a wallet this agent operates, once the person has approved it, it returns ' +
         'the calls, the plan hash and how to send them with that wallet’s CLI; send them as given, then ' +
-        'call report_execution. Read-only as far as the plan goes: the first read that returns calls is recorded.',
+        'call report_execution. It changes nothing about a plan except that the first read to return calls is ' +
+        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them.',
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      // Not read-only: handing out the calls writes an event and closes cancel.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ planId }) => {
       if (!hasScope(ctx.scopes, 'plans:read')) return denied('plans:read')
