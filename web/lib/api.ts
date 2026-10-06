@@ -538,6 +538,7 @@ export type PlanStatusName =
   | 'draft'
   | 'awaiting_review'
   | 'awaiting_signature'
+  | 'approved'
   | 'submitted'
   | 'confirmed'
   | 'failed'

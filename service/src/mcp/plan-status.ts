@@ -96,6 +96,8 @@ export function outcomeWords(record: PlanRecord): string {
       return `Waiting for the person to open the review link and sign in their wallet. The plan expires at ${plan.expiresAt}.`
     case 'awaiting_signature':
       return 'The person has the review open with the right wallet connected, and has not signed yet.'
+    case 'approved':
+      return `Approved, and waiting for the agent's own wallet to send it. The plan expires at ${plan.expiresAt}.`
     case 'submitted':
       return `Signed and sent to ${chain}; waiting for the chain to confirm it.${txWords}`
     case 'confirmed':

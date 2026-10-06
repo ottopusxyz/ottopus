@@ -10,8 +10,10 @@ describe('status vocabulary', () => {
    * rather than trusted.
    */
   it('matches the database check constraint exactly', async () => {
-    const sql = await readFile(new URL('../../drizzle/0000_base_schema.sql', import.meta.url), 'utf8')
-    const clause = /plan_events_status[^(]*\(([^)]*)\)/s.exec(sql)
+    // The newest migration to define the constraint: 0000 froze the first
+    // ten, and 0015 replaced it to let `approved` in.
+    const sql = await readFile(new URL('../../drizzle/0015_approved_status.sql', import.meta.url), 'utf8')
+    const clause = /ADD CONSTRAINT "plan_events_status"[^(]*\([^(]*\(([^)]*)\)/s.exec(sql)
     expect(clause, 'plan_events_status constraint not found in the migration').toBeTruthy()
     const inDb = [...clause![1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!).sort()
     expect(inDb).toEqual([...PLAN_STATUSES].sort())
@@ -40,7 +42,7 @@ describe('terminal states', () => {
   })
 
   it('treats states a plan can still leave as non-terminal', () => {
-    for (const s of ['draft', 'awaiting_review', 'awaiting_signature', 'submitted'] as const) {
+    for (const s of ['draft', 'awaiting_review', 'awaiting_signature', 'approved', 'submitted'] as const) {
       expect(isTerminal(s)).toBe(false)
     }
   })

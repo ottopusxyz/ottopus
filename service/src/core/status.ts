@@ -10,10 +10,16 @@ import { type PlanStatus, isTerminal } from './plan.js'
  *
  * `submitted` can only end in `confirmed` or `failed`: the transaction is on
  * chain, and no amount of expiring or cancelling on our side changes that.
+ *
+ * `approved` is the agentic arm's road: the person approves on the review
+ * page instead of signing, and the agent's own wallet sends. It is reached
+ * from `awaiting_review` alone, and the store refuses it for any arm a
+ * browser signs with. From there the plan is submitted when the agent reports
+ * the transaction, or it expires like any plan nobody acted on.
  */
 export const PLAN_TRANSITIONS: Readonly<Record<PlanStatus, readonly PlanStatus[]>> = {
   draft: ['awaiting_review', 'blocked', 'cancelled', 'expired', 'superseded'],
-  awaiting_review: ['awaiting_signature', 'blocked', 'cancelled', 'expired', 'superseded'],
+  awaiting_review: ['awaiting_signature', 'approved', 'blocked', 'cancelled', 'expired', 'superseded'],
   // Back to awaiting_review when the wallet disconnects or switches account.
   awaiting_signature: [
     'awaiting_review',
@@ -23,6 +29,7 @@ export const PLAN_TRANSITIONS: Readonly<Record<PlanStatus, readonly PlanStatus[]
     'expired',
     'superseded',
   ],
+  approved: ['submitted', 'cancelled', 'expired', 'superseded'],
   submitted: ['confirmed', 'failed'],
   confirmed: [],
   failed: [],
@@ -39,7 +46,8 @@ export function canTransition(from: PlanStatus, to: PlanStatus): boolean {
 /**
  * Waiting on a person. What the Requests page lists and the nav badge counts.
  * `draft` is not here — nobody has been asked anything yet — and neither is
- * `submitted`, which is waiting on a chain, not a person.
+ * `submitted`, which is waiting on a chain, not a person, nor `approved`,
+ * which is waiting on their agent.
  */
 export const PENDING_STATUSES = ['awaiting_review', 'awaiting_signature'] as const satisfies readonly PlanStatus[]
 
