@@ -92,6 +92,20 @@
       "when": 1790921985725,
       "tag": "0012_agentic_wallets",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791220052229,
+      "tag": "0013_wallet_link_challenges",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791220053447,
+      "tag": "0014_lock_down_wallet_link_challenges",
+      "breakpoints": true
     }
   ]
 }

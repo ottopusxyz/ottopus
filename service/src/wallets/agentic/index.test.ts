@@ -15,9 +15,25 @@ describe('provider profiles', () => {
       name: 'Binance Agentic Wallet',
       cli: 'baw',
       chains: ['eip155:56', 'eip155:1', 'eip155:8453'],
-      sign: { command: 'sign-message preview/execute', typedData: true },
+      sign: {
+        command: 'sign-message preview/execute',
+        typedData: true,
+        handBack: 'its signature followed by its signatureRecovery',
+      },
       execute: { command: 'contract-call preview/execute', requiresDevMode: true },
     })
+  })
+
+  /** Nothing outside a profile knows a vendor's CLI, so a profile that says nothing leaves the agent with nothing. */
+  it('has every profile spell out its own signing, with the challenge in the commands', () => {
+    const request = { address: '0x00000000000000000000000000000000000000aa', typedData: { primaryType: 'LinkAgentWallet' } }
+    for (const profile of Object.values(AGENT_PROVIDERS)) {
+      const steps = profile.signSteps(request).join('\n')
+      expect(steps).toContain(profile.cli)
+      expect(steps).toContain(request.address)
+      expect(steps).toContain('LinkAgentWallet')
+      expect(profile.sign.handBack).not.toBe('')
+    }
   })
 
   it('is keyed by the id each profile carries', () => {

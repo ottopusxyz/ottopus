@@ -461,6 +461,11 @@ export interface ConsentGrant {
   client: { name: string; uri: string | null; redirectHost: string }
   resource: string
   granted: { scope: string; title: string; detail: string }[]
+  /**
+   * Optional permissions, each a switch the person may move. `requested` is
+   * where it starts: on when the agent asked for it, off otherwise.
+   */
+  offered: { scope: string; title: string; detail: string; requested: boolean }[]
   neverGranted: { title: string; detail: string }
 }
 
@@ -471,16 +476,21 @@ export function readConsent(credentials: Credentials, id: string): Promise<Conse
 /**
  * Answer it. Both answers return somewhere to go — a denial has to reach the
  * agent's callback too, or the agent waits on a flow that already ended.
+ *
+ * `optIns` is the offered scopes whose switches were on. One left out is not
+ * granted, even if the agent asked for it. The service keeps only the ones it
+ * offered, so this is a request rather than the last word.
  */
 export function decideConsent(
   credentials: Credentials,
   id: string,
   approved: boolean,
+  optIns: string[] = [],
 ): Promise<{ redirectTo: string }> {
   return call<{ redirectTo: string }>(`/oauth/consent/${encodeURIComponent(id)}`, credentials, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ approved }),
+    body: JSON.stringify({ approved, optIns }),
   })
 }
 

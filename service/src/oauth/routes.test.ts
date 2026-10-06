@@ -348,6 +348,33 @@ describe('the token endpoint', () => {
     expect((await token.json()).scope).toBe('plans:read')
   })
 
+  /**
+   * Linking a wallet is the one permission that changes an account, so it is
+   * the one an agent has to name. A request with no scope gets the others.
+   */
+  it('leaves wallets:write out of a grant that asked for nothing', async () => {
+    const { clientId } = await client()
+    const token = await app.request(
+      form({ grant_type: 'authorization_code', code: await codeFor(clientId), code_verifier: VERIFIER }),
+    )
+    expect((await token.json()).scope.split(' ').sort()).toEqual(['plans:read', 'plans:write', 'wallets:read'])
+  })
+
+  it('grants wallets:write when the agent asks for it by name', async () => {
+    const { clientId } = await client()
+    const response = await app.request(
+      authorizeUrl({ ...validParams(clientId), scope: 'wallets:read wallets:write' }),
+    )
+    const requestId = new URL(response.headers.get('location')!).searchParams.get('request')!
+    const decided = await decideAuthRequest(db, { id: requestId, userId, approved: true })
+    const code = await mintAuthCode(db, decided!)
+
+    const token = await app.request(
+      form({ grant_type: 'authorization_code', code, code_verifier: VERIFIER }),
+    )
+    expect((await token.json()).scope).toBe('wallets:read wallets:write')
+  })
+
   it('refuses a grant type we do not support', async () => {
     const response = await app.request(form({ grant_type: 'client_credentials' }))
     expect((await response.json()).error).toBe('unsupported_grant_type')

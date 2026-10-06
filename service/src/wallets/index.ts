@@ -25,3 +25,13 @@ export {
   type AgentProviderProfile,
   type ArmCapabilities,
 } from './agentic/index.js'
+export {
+  CHALLENGE_TTL_MS,
+  LinkError,
+  finishAgentLink,
+  linkTypedData,
+  startAgentLink,
+  type AgentLinkChallenge,
+  type FinishLinkInput,
+  type StartLinkInput,
+} from './agentic/link.js'

@@ -281,6 +281,30 @@ export interface AgenticInput {
   proof: AgenticProof
 }
 
+function refuseAgenticLink(existing: readonly Row[], address: string): void {
+  const same = existing.find((w) => w.address === address)
+  if (same) {
+    throw new WalletError(
+      'already_linked',
+      same.walletType === AGENTIC
+        ? 'That address is already linked as an agent wallet'
+        : 'That address is already linked as another kind of wallet; unlink it first',
+    )
+  }
+  if (existing.length >= MAX_ARMS) {
+    throw new WalletError('too_many_wallets', `Otto has ${MAX_ARMS} arms and they are all full`)
+  }
+}
+
+/**
+ * Whether `addAgenticWallet` would take this address, asked before anyone is
+ * sent off to sign for it. The answer can change by the time they come back,
+ * so the insert checks again under the lock.
+ */
+export async function assertAgenticLinkable(db: WalletDb, userId: string, address: string): Promise<void> {
+  refuseAgenticLink(await activeRows(db, userId), address)
+}
+
 /**
  * An arm an agent operates through its vendor's CLI.
  *
@@ -299,19 +323,7 @@ export async function addAgenticWallet(db: WalletDb, userId: string, input: Agen
 
   return db.transaction(async (tx) => {
     await lockUser(tx as WalletDb, userId)
-    const existing = await activeRows(tx as WalletDb, userId)
-    const same = existing.find((w) => w.address === address)
-    if (same) {
-      throw new WalletError(
-        'already_linked',
-        same.walletType === AGENTIC
-          ? 'That address is already linked as an agent wallet'
-          : 'That address is already linked as another kind of wallet; unlink it first',
-      )
-    }
-    if (existing.length >= MAX_ARMS) {
-      throw new WalletError('too_many_wallets', `Otto has ${MAX_ARMS} arms and they are all full`)
-    }
+    refuseAgenticLink(await activeRows(tx as WalletDb, userId), address)
 
     const [row] = await tx
       .insert(linkedWallets)

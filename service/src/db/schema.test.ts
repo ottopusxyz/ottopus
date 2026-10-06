@@ -234,4 +234,15 @@ describe('RLS denies client roles', () => {
     await expect(db.query(`select * from linked_wallets`)).rejects.toThrow(/permission denied/i)
     await db.exec(`reset role`)
   })
+
+  it('gives authenticated no way to mint a wallet link challenge', async () => {
+    await db.exec(`set role authenticated`)
+    await expect(
+      db.query(
+        `insert into wallet_link_challenges (user_id, provider, address, nonce, expires_at)
+         values ('${USER}', 'binance', '0x${'ab'.repeat(20)}', '0x00', now())`,
+      ),
+    ).rejects.toThrow(/permission denied/i)
+    await db.exec(`reset role`)
+  })
 })

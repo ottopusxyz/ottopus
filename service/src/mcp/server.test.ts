@@ -133,6 +133,13 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   }),
   findPlan: async () => null,
   transition: async (input) => input.to,
+  // Linking is tested against a real database, in link.test.ts.
+  startAgentLink: async () => {
+    throw new Error('not under test here')
+  },
+  finishAgentLink: async () => {
+    throw new Error('not under test here')
+  },
   ...over,
 })
 
@@ -184,7 +191,7 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers six read tools and four that write, and says which is which', async () => {
+  it('offers six read tools and six that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -193,6 +200,8 @@ describe('the tool surface', () => {
       'find_stock',
       'get_plan',
       'get_portfolio',
+      'link_agent_wallet_finish',
+      'link_agent_wallet_start',
       'list_wallets',
       'prepare_custom',
       'prepare_trade',
@@ -200,7 +209,14 @@ describe('the tool surface', () => {
       'whoami',
     ])
     for (const tool of tools) {
-      const readOnly = !['prepare_transfer', 'prepare_trade', 'prepare_custom', 'cancel_plan'].includes(tool.name)
+      const readOnly = ![
+        'prepare_transfer',
+        'prepare_trade',
+        'prepare_custom',
+        'cancel_plan',
+        'link_agent_wallet_start',
+        'link_agent_wallet_finish',
+      ].includes(tool.name)
       expect(tool.annotations?.readOnlyHint, `${tool.name} read-only=${readOnly}`).toBe(readOnly)
       expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }

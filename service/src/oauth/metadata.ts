@@ -1,5 +1,5 @@
 import { config } from '../config.js'
-import { SCOPES } from './scopes.js'
+import { SCOPES, defaultScopes } from './scopes.js'
 
 /**
  * Discovery documents.
@@ -119,9 +119,10 @@ export function authorizationServerMetadata() {
  * `resource_metadata` is what turns a 401 into a discoverable flow — without it
  * a client has a rejection and nowhere to go. `scope` follows the spec's advice
  * to state what the operation needs, so a client asks for the right grant the
- * first time instead of guessing and coming back.
+ * first time instead of guessing and coming back. The default is the default
+ * grant, so a client that copies it never asks for an opt-in scope by accident.
  */
-export function challenge(scope: readonly string[] = SCOPES, error?: string): string {
+export function challenge(scope: readonly string[] = defaultScopes(), error?: string): string {
   const parts = [`Bearer resource_metadata="${protectedResourceMetadataUrl()}"`]
   if (error) parts.push(`error="${error}"`)
   if (scope.length) parts.push(`scope="${scope.join(' ')}"`)

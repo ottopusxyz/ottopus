@@ -8,6 +8,7 @@ import { OttoBadge } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
 import { Button, Callout } from '@/components/ui'
 import { ApiError, decideConsent, readConsent, type ConsentGrant } from '@/lib/api'
+import { chosenScopes, isOn, move, type Moves } from './choices'
 
 /**
  * The consent screen, per P3.
@@ -33,8 +34,17 @@ export function ConsentView() {
 
 type Decision = 'idle' | 'deciding' | 'leaving'
 
+/**
+ * Keyed by the request id, so everything decided on one request — above all the
+ * optional permissions switched on — is dropped when the id in the address
+ * changes, and the next request starts from nothing.
+ */
 function Consent() {
   const requestId = useSearchParams().get('request')
+  return <ConsentRequest key={requestId ?? ''} requestId={requestId} />
+}
+
+function ConsentRequest({ requestId }: { requestId: string | null }) {
   const { getAccessToken } = usePrivy()
   const { identityToken } = useIdentityToken()
   const session = useSession()
@@ -42,6 +52,10 @@ function Consent() {
   const [grant, setGrant] = useState<ConsentGrant | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [decision, setDecision] = useState<Decision>('idle')
+  // The optional switches the person has moved. Where each one starts comes
+  // off the request, never from here — the request is read again whenever the
+  // credentials change, and that read must not undo an untick.
+  const [moves, setMoves] = useState<Moves>({})
 
   // A link with no request id is wrong on arrival, not something that goes
   // wrong later — so it is derived here rather than set from an effect.
@@ -61,7 +75,8 @@ function Consent() {
     void (async () => {
       try {
         const read = await readConsent(await credentials(), requestId)
-        if (!cancelled) setGrant(read)
+        if (cancelled) return
+        setGrant(read)
       } catch (err) {
         if (cancelled) return
         setFailure(problemText(err))
@@ -74,11 +89,16 @@ function Consent() {
 
   const decide = useCallback(
     async (approved: boolean) => {
-      if (!requestId) return
+      if (!requestId || !grant) return
       setDecision('deciding')
       setFailure(null)
       try {
-        const { redirectTo } = await decideConsent(await credentials(), requestId, approved)
+        const { redirectTo } = await decideConsent(
+          await credentials(),
+          requestId,
+          approved,
+          chosenScopes(grant.offered, moves),
+        )
         // Leaving for the agent's own callback, which is off this origin —
         // assign rather than the router, and hold the buttons disabled so a
         // second click cannot land while the navigation is in flight.
@@ -89,7 +109,7 @@ function Consent() {
         setFailure(problemText(err))
       }
     },
-    [requestId, credentials],
+    [requestId, credentials, grant, moves],
   )
 
   if (problem && !grant) {
@@ -167,6 +187,41 @@ function Consent() {
               </div>
             </li>
           </ul>
+
+          {grant.offered.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-semibold text-[var(--ot-text-3)]">
+                Optional — granted only if ticked
+              </span>
+              {grant.offered.map((entry) => (
+                <label
+                  key={entry.scope}
+                  className="flex cursor-pointer gap-[11px] rounded-[12px] border border-[var(--ot-border-strong)] px-[15px] py-[13px]"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-[3px] h-4 w-4 flex-none accent-[var(--ot-plan)]"
+                    checked={isOn(entry, moves)}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setMoves((current) => move(current, entry.scope, event.target.checked))
+                    }
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[14px] font-semibold">{entry.title}</span>
+                    <span className="text-[13px] leading-[1.45] text-[var(--ot-text-2)]">
+                      {entry.detail}
+                    </span>
+                    {entry.requested ? (
+                      <span className="text-[12px] leading-[1.45] text-[var(--ot-text-3)]">
+                        {grant.client.name} asked for this. Untick to leave it out.
+                      </span>
+                    ) : null}
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3 rounded-[10px] border border-dashed border-[var(--ot-border-strong)] px-[15px] py-3 text-[13px]">
             <span className="text-[var(--ot-text-2)]">Grant expires</span>

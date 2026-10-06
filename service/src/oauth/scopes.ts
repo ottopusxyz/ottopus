@@ -1,15 +1,23 @@
 /**
  * The scope vocabulary.
  *
- * Deliberately three, and deliberately none of them able to move anything. The
+ * Deliberately few, and deliberately none of them able to move anything. The
  * MCP surface exposes no tool that signs or broadcasts, so there is no scope
  * that could authorise one — the absence is the design, not an omission to be
  * filled in later.
  *
+ * `wallets:write` is the one nobody gets by default. A grant carries it only
+ * when its switch on the consent screen was on as the person allowed access:
+ * it starts on if the agent asked for it by name, off otherwise, and is theirs
+ * to change either way. It allows linking a wallet the agent itself operates,
+ * proved by that wallet's own signature, and nothing else: it cannot unlink,
+ * rename or touch a wallet the person linked. See `defaultScopes` and
+ * `optInScopes`.
+ *
  * Wording matches the consent screen, because a scope a person cannot read is
  * a scope they cannot refuse.
  */
-export const SCOPES = ['wallets:read', 'plans:read', 'plans:write'] as const
+export const SCOPES = ['wallets:read', 'plans:read', 'plans:write', 'wallets:write'] as const
 
 export type Scope = (typeof SCOPES)[number]
 
@@ -35,6 +43,13 @@ export const SCOPE_COPY: readonly ScopeCopy[] = [
     scope: 'plans:read',
     title: 'Send you review links',
     detail: 'Each one opens on the review page, on any device.',
+  },
+  {
+    scope: 'wallets:write',
+    title: 'Link a wallet this agent operates',
+    detail:
+      'Adds an agent-operated wallet to your account, proved by that wallet’s own signature. ' +
+      'It cannot unlink, rename or change the wallets you linked.',
   },
 ]
 
@@ -80,9 +95,50 @@ export function parseScopes(raw: string | undefined | null): Scope[] {
   return [...seen]
 }
 
-/** Every scope, for a client that asked for none. */
+/**
+ * Scopes a grant carries only when the person chose them at the consent
+ * screen. An agent naming one in its request sets where the switch starts,
+ * not whether it is granted.
+ */
+const OPT_IN: ReadonlySet<Scope> = new Set<Scope>(['wallets:write'])
+
+/**
+ * What a client that asked for nothing gets, and what a 401 tells it to ask
+ * for. Never `wallets:write`: adding a wallet to someone's account is not
+ * something an agent should hold because it forgot to say what it wanted.
+ */
 export function defaultScopes(): Scope[] {
-  return [...SCOPES]
+  return SCOPES.filter((scope) => !OPT_IN.has(scope))
+}
+
+/**
+ * What the consent screen shows as a switch rather than a row: every opt-in
+ * scope, whether or not the agent asked for it. Hosts differ in what they ask
+ * for — some copy the scopes from our 401, some take everything the metadata
+ * lists — and the person's choice should not depend on which one they use.
+ */
+export function optInScopes(): Scope[] {
+  return SCOPES.filter((scope) => OPT_IN.has(scope))
+}
+
+/**
+ * The grant after the person's switches: the ordinary scopes the agent asked
+ * for, plus the opt-in scopes left on. An opt-in scope the agent asked for is
+ * dropped when its switch is off, and anything else in `chosen` is ignored, so
+ * the consent screen decides the opt-in scopes and nothing more.
+ */
+export function withOptIns(requested: readonly Scope[], chosen: readonly unknown[]): Scope[] {
+  const ordinary = requested.filter((scope) => !OPT_IN.has(scope))
+  return [...ordinary, ...optInScopes().filter((scope) => chosen.includes(scope))]
+}
+
+/**
+ * What the local stdio server runs with: the defaults, plus whatever its
+ * launcher named. There is no consent screen there, so the environment is the
+ * only place an opt-in scope can be asked for by name.
+ */
+export function localScopes(extra: string | undefined | null): Scope[] {
+  return [...new Set([...defaultScopes(), ...parseScopes(extra)])]
 }
 
 export function hasScope(granted: readonly string[], required: Scope): boolean {
