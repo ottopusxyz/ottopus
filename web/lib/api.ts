@@ -461,6 +461,8 @@ export interface ConsentGrant {
   client: { name: string; uri: string | null; redirectHost: string }
   resource: string
   granted: { scope: string; title: string; detail: string }[]
+  /** Not asked for by the agent; the person may switch each one on. */
+  offered: { scope: string; title: string; detail: string }[]
   neverGranted: { title: string; detail: string }
 }
 
@@ -471,16 +473,20 @@ export function readConsent(credentials: Credentials, id: string): Promise<Conse
 /**
  * Answer it. Both answers return somewhere to go — a denial has to reach the
  * agent's callback too, or the agent waits on a flow that already ended.
+ *
+ * `add` is the offered scopes the person switched on. The service keeps only
+ * the ones it offered, so this is a request rather than the last word.
  */
 export function decideConsent(
   credentials: Credentials,
   id: string,
   approved: boolean,
+  add: string[] = [],
 ): Promise<{ redirectTo: string }> {
   return call<{ redirectTo: string }>(`/oauth/consent/${encodeURIComponent(id)}`, credentials, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ approved }),
+    body: JSON.stringify({ approved, add }),
   })
 }
 

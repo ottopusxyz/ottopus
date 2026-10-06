@@ -42,6 +42,9 @@ function Consent() {
   const [grant, setGrant] = useState<ConsentGrant | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [decision, setDecision] = useState<Decision>('idle')
+  // The offered permissions the person switched on. Empty on arrival: an
+  // opt-in that starts checked is a default with an extra step.
+  const [added, setAdded] = useState<string[]>([])
 
   // A link with no request id is wrong on arrival, not something that goes
   // wrong later — so it is derived here rather than set from an effect.
@@ -78,7 +81,7 @@ function Consent() {
       setDecision('deciding')
       setFailure(null)
       try {
-        const { redirectTo } = await decideConsent(await credentials(), requestId, approved)
+        const { redirectTo } = await decideConsent(await credentials(), requestId, approved, added)
         // Leaving for the agent's own callback, which is off this origin —
         // assign rather than the router, and hold the buttons disabled so a
         // second click cannot land while the navigation is in flight.
@@ -89,8 +92,11 @@ function Consent() {
         setFailure(problemText(err))
       }
     },
-    [requestId, credentials],
+    [requestId, credentials, added],
   )
+
+  const toggle = (scope: string, on: boolean) =>
+    setAdded((current) => (on ? [...current, scope] : current.filter((entry) => entry !== scope)))
 
   if (problem && !grant) {
     return (
@@ -167,6 +173,34 @@ function Consent() {
               </div>
             </li>
           </ul>
+
+          {grant.offered.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-semibold text-[var(--ot-text-3)]">
+                Optional — off unless you turn it on
+              </span>
+              {grant.offered.map((entry) => (
+                <label
+                  key={entry.scope}
+                  className="flex cursor-pointer gap-[11px] rounded-[12px] border border-[var(--ot-border-strong)] px-[15px] py-[13px]"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-[3px] h-4 w-4 flex-none accent-[var(--ot-plan)]"
+                    checked={added.includes(entry.scope)}
+                    disabled={busy}
+                    onChange={(event) => toggle(entry.scope, event.target.checked)}
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[14px] font-semibold">{entry.title}</span>
+                    <span className="text-[13px] leading-[1.45] text-[var(--ot-text-2)]">
+                      {entry.detail}
+                    </span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3 rounded-[10px] border border-dashed border-[var(--ot-border-strong)] px-[15px] py-3 text-[13px]">
             <span className="text-[var(--ot-text-2)]">Grant expires</span>
