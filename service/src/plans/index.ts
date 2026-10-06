@@ -19,6 +19,7 @@ export {
   summarise,
   transition,
 } from './store.js'
+export { type ExecutionReport, type Handoff, type PlanRef, handOff, recordExecution } from './handoff.js'
 export { type RecordSimulationInput, latestSimulation, recordSimulation } from './simulations.js'
 export {
   type IssueInput,
