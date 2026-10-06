@@ -33,8 +33,17 @@ export function ConsentView() {
 
 type Decision = 'idle' | 'deciding' | 'leaving'
 
+/**
+ * Keyed by the request id, so everything decided on one request — above all the
+ * optional permissions switched on — is dropped when the id in the address
+ * changes, and the next request starts from nothing.
+ */
 function Consent() {
   const requestId = useSearchParams().get('request')
+  return <ConsentRequest key={requestId ?? ''} requestId={requestId} />
+}
+
+function ConsentRequest({ requestId }: { requestId: string | null }) {
   const { getAccessToken } = usePrivy()
   const { identityToken } = useIdentityToken()
   const session = useSession()
