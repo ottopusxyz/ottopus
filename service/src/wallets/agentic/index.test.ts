@@ -36,6 +36,51 @@ describe('provider profiles', () => {
     }
   })
 
+  /** The calls an agent sends are the ones that were approved, so the commands carry them whole and in order. */
+  it('has every profile spell out an execution: one command per call, in order, with nothing left to fill in', () => {
+    const request = {
+      address: '0x00000000000000000000000000000000000000aa',
+      calls: [
+        { to: '0x55d398326f99059ff775485246999027b3197955', value: '0', data: '0x095ea7b3', chainReference: '56' },
+        { to: '0x1111111254eeb25477b68fb85ed929f73a960582', value: '25', data: '0x', chainReference: '56' },
+      ],
+    }
+    for (const profile of Object.values(AGENT_PROVIDERS)) {
+      const steps = profile.executeSteps(request)
+      const words = steps.join('\n')
+      expect(words).toContain(profile.cli)
+      const first = steps.findIndex((line) => line.includes(request.calls[0]!.to))
+      const second = steps.findIndex((line) => line.includes(request.calls[1]!.to))
+      expect(first).toBeGreaterThan(-1)
+      expect(second).toBeGreaterThan(first)
+      expect(steps[first]).toContain(request.address)
+      expect(steps[first]).toContain(request.calls[0]!.data)
+      expect(steps[second]).toContain(request.calls[1]!.value)
+    }
+  })
+
+  it('writes the Binance commands as baw takes them, leaving off a value or input data a call does not have', () => {
+    const steps = agentProvider('binance')!.executeSteps({
+      address: '0x00000000000000000000000000000000000000aa',
+      calls: [
+        { to: '0x55d398326f99059ff775485246999027b3197955', value: '0', data: '0x095ea7b3', chainReference: '56' },
+        { to: '0x1111111254eeb25477b68fb85ed929f73a960582', value: '25', data: '0x', chainReference: '56' },
+      ],
+    })
+    expect(steps).toContain(
+      'Call 1 of 2: baw contract-call preview --binanceChainId 56 --from 0x00000000000000000000000000000000000000aa ' +
+        '--to 0x55d398326f99059ff775485246999027b3197955 --inputData 0x095ea7b3 --json',
+    )
+    expect(steps).toContain(
+      'Call 2 of 2: baw contract-call preview --binanceChainId 56 --from 0x00000000000000000000000000000000000000aa ' +
+        '--to 0x1111111254eeb25477b68fb85ed929f73a960582 --value 25 --json',
+    )
+    const words = steps.join('\n')
+    expect(words).toContain('baw contract-call execute --requestId <requestId> --json')
+    expect(words).toContain('do not start a call until the one before it has confirmed')
+    expect(words).toContain('Developer Mode')
+  })
+
   it('is keyed by the id each profile carries', () => {
     for (const [id, profile] of Object.entries(AGENT_PROVIDERS)) expect(profile.id).toBe(id)
   })
