@@ -7,7 +7,7 @@ import {
   findAuthRequest,
   findClient,
   mintAuthCode,
-  offeredScopes,
+  optInScopes,
   resourceUrl,
   withOptIns,
 } from '../oauth/index.js'
@@ -45,6 +45,7 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
     const client = await findClient(db, request.clientId)
     if (!client) return c.json({ error: 'not_found' }, 404)
 
+    const optIns = optInScopes()
     return c.json({
       request: {
         id: request.id,
@@ -58,10 +59,16 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
         redirectHost: hostOf(request.redirectUri),
       },
       resource: resourceUrl(),
-      // Only the scopes this request actually asked for, in the design's order.
-      granted: SCOPE_COPY.filter((entry) => request.scopes.includes(entry.scope)),
-      // What the person may switch on themselves. Off unless they say so.
-      offered: SCOPE_COPY.filter((entry) => offeredScopes(request.scopes).includes(entry.scope)),
+      // The ordinary scopes this request asked for, in the design's order.
+      granted: SCOPE_COPY.filter(
+        (entry) => request.scopes.includes(entry.scope) && !optIns.includes(entry.scope),
+      ),
+      // The opt-in scopes, each a switch. `requested` is where the switch
+      // starts — on if the agent asked for it — and the person may move it.
+      offered: SCOPE_COPY.filter((entry) => optIns.includes(entry.scope)).map((entry) => ({
+        ...entry,
+        requested: request.scopes.includes(entry.scope),
+      })),
       neverGranted: NEVER_GRANTED,
     })
   })
@@ -73,15 +80,17 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
    * agent's callback too, or the agent sits waiting on a flow the person
    * already ended. Both end in a redirect URL for the browser to follow.
    *
-   * `add` is the one thing the page contributes beyond yes or no: the opt-in
-   * scopes the person switched on. It comes from their session, not from the
-   * agent, and `withOptIns` keeps it to scopes the screen actually offered.
+   * `optIns` is the one thing the page contributes beyond yes or no: the
+   * opt-in scopes whose switches were on. It comes from the person's session,
+   * not from the agent, and it is the whole answer for those scopes — one the
+   * agent asked for is granted only if it is listed here. `withOptIns` keeps
+   * it to opt-in scopes, so nothing else can be added this way.
    */
   app.post('/:id', async (c) => {
     const body = await c.req.json().catch(() => null)
-    const answer = body as { approved?: unknown; add?: unknown } | null
+    const answer = body as { approved?: unknown; optIns?: unknown } | null
     const approved = answer?.approved === true
-    const added = Array.isArray(answer?.add) ? answer.add : []
+    const chosen = Array.isArray(answer?.optIns) ? answer.optIns : []
 
     const decided = await decideAuthRequest(db, {
       id: c.req.param('id'),
@@ -102,7 +111,7 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
       return c.json({ redirectTo: redirect.toString() })
     }
 
-    const scopes = withOptIns(decided.scopes, added)
+    const scopes = withOptIns(decided.scopes, chosen)
     redirect.searchParams.set('code', await mintAuthCode(db, { ...decided, scopes }))
     return c.json({ redirectTo: redirect.toString() })
   })

@@ -7,10 +7,12 @@
  * filled in later.
  *
  * `wallets:write` is the one nobody gets by default. A grant carries it only
- * when the agent asked for it by name or the person switched it on at the
- * consent screen. It allows linking a wallet the agent itself operates, proved
- * by that wallet's own signature, and nothing else: it cannot unlink, rename
- * or touch a wallet the person linked. See `defaultScopes` and `offeredScopes`.
+ * when its switch on the consent screen was on as the person allowed access:
+ * it starts on if the agent asked for it by name, off otherwise, and is theirs
+ * to change either way. It allows linking a wallet the agent itself operates,
+ * proved by that wallet's own signature, and nothing else: it cannot unlink,
+ * rename or touch a wallet the person linked. See `defaultScopes` and
+ * `optInScopes`.
  *
  * Wording matches the consent screen, because a scope a person cannot read is
  * a scope they cannot refuse.
@@ -94,8 +96,9 @@ export function parseScopes(raw: string | undefined | null): Scope[] {
 }
 
 /**
- * Scopes a grant carries only when somebody chose them: the agent by naming
- * one in its request, or the person by switching it on at the consent screen.
+ * Scopes a grant carries only when the person chose them at the consent
+ * screen. An agent naming one in its request sets where the switch starts,
+ * not whether it is granted.
  */
 const OPT_IN: ReadonlySet<Scope> = new Set<Scope>(['wallets:write'])
 
@@ -109,22 +112,24 @@ export function defaultScopes(): Scope[] {
 }
 
 /**
- * What the consent screen offers as a switch: every opt-in scope the agent did
- * not ask for itself. Most hosts copy the scopes from our 401 and cannot be
- * told to ask for more, so without this the person has no way to say yes.
+ * What the consent screen shows as a switch rather than a row: every opt-in
+ * scope, whether or not the agent asked for it. Hosts differ in what they ask
+ * for — some copy the scopes from our 401, some take everything the metadata
+ * lists — and the person's choice should not depend on which one they use.
  */
-export function offeredScopes(requested: readonly Scope[]): Scope[] {
-  return SCOPES.filter((scope) => OPT_IN.has(scope) && !requested.includes(scope))
+export function optInScopes(): Scope[] {
+  return SCOPES.filter((scope) => OPT_IN.has(scope))
 }
 
 /**
- * The grant after the person's switches: what the agent asked for, plus the
- * opt-in scopes they turned on. Anything else in `added` is dropped, so the
- * consent screen can widen a grant by an opt-in scope and by nothing more.
+ * The grant after the person's switches: the ordinary scopes the agent asked
+ * for, plus the opt-in scopes left on. An opt-in scope the agent asked for is
+ * dropped when its switch is off, and anything else in `chosen` is ignored, so
+ * the consent screen decides the opt-in scopes and nothing more.
  */
-export function withOptIns(requested: readonly Scope[], added: readonly unknown[]): Scope[] {
-  const chosen = offeredScopes(requested).filter((scope) => added.includes(scope))
-  return [...requested, ...chosen]
+export function withOptIns(requested: readonly Scope[], chosen: readonly unknown[]): Scope[] {
+  const ordinary = requested.filter((scope) => !OPT_IN.has(scope))
+  return [...ordinary, ...optInScopes().filter((scope) => chosen.includes(scope))]
 }
 
 /**

@@ -18,7 +18,7 @@ export {
   defaultScopes,
   hasScope,
   isScope,
-  offeredScopes,
+  optInScopes,
   parseScopes,
   withOptIns,
   type Scope,

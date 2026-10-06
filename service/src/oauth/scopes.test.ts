@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultScopes, localScopes, offeredScopes, withOptIns } from './scopes.js'
+import { defaultScopes, localScopes, optInScopes, withOptIns } from './scopes.js'
 
 describe('localScopes', () => {
   it('is the defaults when the launcher named nothing, so never wallets:write', () => {
@@ -16,13 +16,10 @@ describe('localScopes', () => {
   })
 })
 
-describe('offeredScopes', () => {
-  it('offers wallets:write to a grant that did not ask for it', () => {
-    expect(offeredScopes(defaultScopes())).toEqual(['wallets:write'])
-  })
-
-  it('offers nothing the agent already asked for', () => {
-    expect(offeredScopes(['wallets:read', 'wallets:write'])).toEqual([])
+describe('optInScopes', () => {
+  it('is wallets:write and nothing a client gets by default', () => {
+    expect(optInScopes()).toEqual(['wallets:write'])
+    expect(defaultScopes()).not.toContain('wallets:write')
   })
 })
 
@@ -35,15 +32,20 @@ describe('withOptIns', () => {
     expect(withOptIns(['wallets:read'], ['wallets:write'])).toEqual(['wallets:read', 'wallets:write'])
   })
 
-  /** The screen can widen a grant by an opt-in scope and by nothing else. */
+  /** The screen decides the opt-in scopes and nothing else. */
   it('will not add a default scope the agent left out, or anything unknown', () => {
     expect(withOptIns(['wallets:read'], ['plans:write', 'wallets:sign', 7, null])).toEqual(['wallets:read'])
   })
 
-  it('does not repeat a scope the agent already asked for', () => {
+  it('keeps an opt-in scope the agent asked for when its switch stayed on', () => {
     expect(withOptIns(['wallets:read', 'wallets:write'], ['wallets:write'])).toEqual([
       'wallets:read',
       'wallets:write',
     ])
+  })
+
+  /** Asking by name sets where the switch starts. It does not grant. */
+  it('drops an opt-in scope the agent asked for when its switch is off', () => {
+    expect(withOptIns(['wallets:write', 'wallets:read'], [])).toEqual(['wallets:read'])
   })
 })

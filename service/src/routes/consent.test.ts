@@ -11,9 +11,10 @@ import { consentRoutes } from './consent.js'
 /**
  * What the consent screen may add to a grant, and what it may not.
  *
- * The page is the one place a grant can come out wider than the agent asked
- * for, so the tests are about the edge of that: an opt-in scope is added only
- * when the person switched it on, and nothing else can be added at all.
+ * The page is the one place a grant can come out different from what the agent
+ * asked for, so the tests are about the edge of that: an opt-in scope is
+ * granted only when its switch was on, whoever asked for it, and nothing else
+ * can be added or removed at all.
  */
 let db: ReturnType<typeof drizzle<typeof schema>>
 let userId: string
@@ -67,19 +68,26 @@ async function scopesAfter(id: string, body: unknown): Promise<Scope[]> {
   return (await consumeAuthCode(db, code))!.scopes
 }
 
+type Shown = { granted: { scope: string }[]; offered: { scope: string; requested: boolean }[] }
+
 describe('GET /:id', () => {
-  it('offers wallets:write as a switch when the agent did not ask for it', async () => {
+  it('offers wallets:write as a switch that starts off when the agent did not ask for it', async () => {
     const response = await app().request(`/${await parked()}`)
-    const body = (await response.json()) as { granted: { scope: string }[]; offered: { scope: string }[] }
+    const body = (await response.json()) as Shown
     expect(body.granted.map((entry) => entry.scope)).not.toContain('wallets:write')
-    expect(body.offered.map((entry) => entry.scope)).toEqual(['wallets:write'])
+    expect(body.offered.map(({ scope, requested }) => ({ scope, requested }))).toEqual([
+      { scope: 'wallets:write', requested: false },
+    ])
   })
 
-  it('lists it as asked for, not offered, when the agent named it', async () => {
+  /** Still a switch, never a plain row: asking only moves where it starts. */
+  it('offers it as a switch that starts on when the agent named it', async () => {
     const response = await app().request(`/${await parked(['wallets:read', 'wallets:write'])}`)
-    const body = (await response.json()) as { granted: { scope: string }[]; offered: { scope: string }[] }
-    expect(body.granted.map((entry) => entry.scope)).toContain('wallets:write')
-    expect(body.offered).toEqual([])
+    const body = (await response.json()) as Shown
+    expect(body.granted.map((entry) => entry.scope)).toEqual(['wallets:read'])
+    expect(body.offered.map(({ scope, requested }) => ({ scope, requested }))).toEqual([
+      { scope: 'wallets:write', requested: true },
+    ])
   })
 })
 
@@ -89,29 +97,48 @@ describe('POST /:id', () => {
   })
 
   it('adds wallets:write when the person switched it on', async () => {
-    expect(await scopesAfter(await parked(), { approved: true, add: ['wallets:write'] })).toEqual([
+    expect(await scopesAfter(await parked(), { approved: true, optIns: ['wallets:write'] })).toEqual([
       ...DEFAULTS,
       'wallets:write',
     ])
   })
 
+  it('keeps wallets:write the agent asked for when the switch stayed on', async () => {
+    const id = await parked([...DEFAULTS, 'wallets:write'])
+    expect(await scopesAfter(id, { approved: true, optIns: ['wallets:write'] })).toEqual([
+      ...DEFAULTS,
+      'wallets:write',
+    ])
+  })
+
+  it('drops wallets:write the agent asked for when the person switched it off', async () => {
+    const id = await parked([...DEFAULTS, 'wallets:write'])
+    expect(await scopesAfter(id, { approved: true, optIns: [] })).toEqual(DEFAULTS)
+  })
+
+  /** A page that says nothing about the switches has not switched one on. */
+  it('drops wallets:write the agent asked for when the answer names no switches', async () => {
+    const id = await parked([...DEFAULTS, 'wallets:write'])
+    expect(await scopesAfter(id, { approved: true })).toEqual(DEFAULTS)
+  })
+
   /** A default scope the agent left out stays out: the switch is for opt-ins only. */
   it('adds nothing that is not an opt-in scope', async () => {
     const id = await parked(['wallets:read'])
-    expect(await scopesAfter(id, { approved: true, add: ['plans:write', 'wallets:sign'] })).toEqual([
+    expect(await scopesAfter(id, { approved: true, optIns: ['plans:write', 'wallets:sign'] })).toEqual([
       'wallets:read',
     ])
   })
 
-  it('ignores an add that is not a list', async () => {
-    expect(await scopesAfter(await parked(), { approved: true, add: 'wallets:write' })).toEqual(DEFAULTS)
+  it('ignores a choice that is not a list', async () => {
+    expect(await scopesAfter(await parked(), { approved: true, optIns: 'wallets:write' })).toEqual(DEFAULTS)
   })
 
   it('mints no code for a denial, whatever was switched on', async () => {
     const response = await app().request(`/${await parked()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved: false, add: ['wallets:write'] }),
+      body: JSON.stringify({ approved: false, optIns: ['wallets:write'] }),
     })
     const redirect = new URL(((await response.json()) as { redirectTo: string }).redirectTo)
     expect(redirect.searchParams.get('error')).toBe('access_denied')
