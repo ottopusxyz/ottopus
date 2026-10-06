@@ -14,6 +14,7 @@ export const PENDING: ReadonlySet<PlanStatusName> = new Set(['awaiting_review', 
 export const STATUS_ORDER: readonly PlanStatusName[] = [
   'awaiting_review',
   'awaiting_signature',
+  'approved',
   'submitted',
   'confirmed',
   'blocked',

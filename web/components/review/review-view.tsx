@@ -275,6 +275,11 @@ function Blocked({ plan }: { plan: Plan }) {
 }
 
 const ENDED_COPY: Partial<Record<PlanStatusName, { title: string; body: string }>> = {
+  // Not an ending, but nothing here is the person's to do: the agent's wallet sends it.
+  approved: {
+    title: 'Waiting for your agent to execute',
+    body: 'You approved this. Your agent sends it from its own wallet; Ottopus does not.',
+  },
   confirmed: { title: 'Signed and settled', body: 'This one is done.' },
   failed: { title: 'It did not go through', body: 'The transaction failed on chain. Nothing else was sent.' },
   expired: { title: 'This request expired', body: 'Ask the agent again and it will prepare a fresh one.' },
