@@ -191,6 +191,22 @@ export function handedOffAt(detail: unknown): string | null {
 }
 
 /**
+ * What a caller's detail may not say. `handedOffAt` is the proof that the
+ * calls left, and `reportedBy` that an agent's wallet sent them; both are
+ * written by the hand-off alone (handoff.ts), under the plan's lock. Taken
+ * from a caller, the first would lock cancel and open an execution report
+ * for a plan whose calls nobody was ever given.
+ */
+const STORE_MARKS = ['handedOffAt', 'reportedBy'] as const
+
+function withoutStoreMarks(detail: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!detail || !STORE_MARKS.some((key) => key in detail)) return detail
+  const own = { ...detail }
+  for (const key of STORE_MARKS) delete own[key]
+  return own
+}
+
+/**
  * The arm a plan is bound to, if an agent operates it: still linked, proved,
  * and with a provider this build knows. Null for a wallet a person signs
  * with, which is every other arm — and the answer that keeps `approved`, and
@@ -326,7 +342,8 @@ export async function transition(
     // must not make the plan forget which transaction it became.
     const carried = from === 'submitted' && (to === 'confirmed' || to === 'failed') ? latest.detail : null
     const hash = (carried as Record<string, unknown> | null)?.txHash
-    const written = detail?.txHash === undefined && typeof hash === 'string' ? { ...detail, txHash: hash } : detail
+    const own = withoutStoreMarks(detail)
+    const written = own?.txHash === undefined && typeof hash === 'string' ? { ...own, txHash: hash } : own
     await tx.insert(planEvents).values({ planId, planVersion: version, status: to, detail: written ?? null })
     return to
   })

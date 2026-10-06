@@ -119,6 +119,24 @@ describe('approving', () => {
     await expect(transition(db, { ...ref(plan.id), to: 'approved' })).rejects.toMatchObject({ code: 'not_agentic' })
   })
 
+  /** The mark is the store's own. A caller's word for it would lock cancel and open the report with nothing released. */
+  it('does not take the hand-off mark from whoever approves', async () => {
+    const plan = planFor(alice)
+    await createPlan(db, { plan, walletId: agentArm })
+    await transition(db, { ...ref(plan.id), to: 'approved', detail: { handedOffAt: '2026-01-01T00:00:00.000Z', via: 'review' } })
+    expect((await findPlan(db, alice, plan.id))?.statusDetail).toEqual({ via: 'review' })
+
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
+      code: 'illegal_transition',
+    })
+    expect((await handOff(db, ref(plan.id)))?.first).toBe(true)
+
+    const withdrawn = planFor(alice)
+    await createPlan(db, { plan: withdrawn, walletId: agentArm })
+    await transition(db, { ...ref(withdrawn.id), to: 'approved', detail: { handedOffAt: '2026-01-01T00:00:00.000Z' } })
+    expect(await transition(db, { ...ref(withdrawn.id), to: 'cancelled' })).toBe('cancelled')
+  })
+
   it('only from review: a plan cannot start approved', async () => {
     await expect(createPlan(db, { plan: planFor(alice, { status: 'approved' }), walletId: agentArm })).rejects.toMatchObject({
       code: 'illegal_initial_status',
