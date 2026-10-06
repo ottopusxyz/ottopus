@@ -9,7 +9,7 @@ import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from '.
 import { capabilitiesOf } from '../wallets/index.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
-import { type LinkDeps, finishLink, finishText, startLink, startText } from './link.js'
+import { type LinkDeps, finishLink, finishText, linkToolWords, startLink, startText } from './link.js'
 import { type SwapDeps, prepareTrade, tradeText } from './trade.js'
 import { prepareText, prepareTransfer } from './transfer.js'
 
@@ -641,18 +641,19 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
    * Neither call signs, and the address is linked only if the signature over
    * the challenge recovers to it.
    */
+  const linkWords = linkToolWords()
   server.registerTool(
     'link_agent_wallet_start',
     {
       title: 'Start linking an agent wallet',
       description:
-        'First of two steps to link a wallet this agent operates through a vendor CLI (a Binance Agentic ' +
-        'Wallet through baw) to the person’s Ottopus account. Returns an EIP-712 challenge bound to the ' +
+        `First of two steps to link a wallet this agent operates through a vendor CLI (${linkWords.vendors}) ` +
+        'to the person’s Ottopus account. Returns an EIP-712 challenge bound to the ' +
         'person, the address and the provider, with a short expiry, and how to sign it with that CLI. ' +
         'Sign it with the wallet itself, then call link_agent_wallet_finish. An address already linked ' +
         'as another kind of wallet is refused. Nothing is linked by this call.',
       inputSchema: {
-        provider: z.string().describe('Whose agent wallet it is. "binance" for a Binance Agentic Wallet.'),
+        provider: z.string().describe(linkWords.provider),
         address: z.string().describe('The wallet’s 0x address, as its CLI reports it.'),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -685,10 +686,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         signature: z
           .string()
           .regex(/^(0x)?[0-9a-fA-F]+$/)
-          .describe(
-            'The 65-byte signature the wallet produced over the typed data, as hex. From baw: ' +
-              'its signature followed by its signatureRecovery.',
-          ),
+          .describe(linkWords.signature),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },

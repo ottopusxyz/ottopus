@@ -2,6 +2,8 @@ import {
   type AgentLinkChallenge,
   type Arm,
   type FinishLinkInput,
+  AGENT_PROVIDERS,
+  type AgentProviderProfile,
   LinkError,
   type StartLinkInput,
   WalletError,
@@ -42,29 +44,22 @@ export const finishLink = (deps: LinkDeps, userId: string, input: FinishLinkInpu
   attempt(() => deps.finishAgentLink(userId, input))
 
 /**
- * How `baw` signs typed data, spelled out, because the CLI takes none of it
- * the obvious way: the message is a whole `eth_signTypedData_v4` request with
- * the typed data as a string inside it, signing is a preview and then an
- * execute, and the signature comes back in two fields without a 0x.
+ * What the two tools say about vendors before either is called, read off the
+ * registry: an agent learns a provider exists from these and from nowhere
+ * else, so a profile added there is named here without another edit.
  */
-function binanceSteps(challenge: AgentLinkChallenge): string[] {
-  const { provider, typedData } = challenge
-  const chainId = provider.chains[0]!.split(':')[1]
-  const request = JSON.stringify({
-    method: 'eth_signTypedData_v4',
-    params: [typedData.message.wallet, JSON.stringify(typedData)],
-  })
-  return [
-    'To sign it with baw (Developer Mode must be on in the Binance App; `baw wallet settings --json` shows devMode.enabled):',
-    `1. Preview: baw sign-message preview --binanceChainId ${chainId} --signType EIP712 --message '${request}' --json`,
-    '2. Show the person the parsed message and any risks from the preview, and ask before going on.',
-    '3. Execute with the requestId the preview returned: baw sign-message execute --requestId <requestId> --json',
-    '4. If the status is PENDING_CONFIRMATION, the person confirms in the Binance App; then fetch it with ' +
-      'baw sign-message result --order-id <orderId> --json',
-    '5. The result has `signature` and `signatureRecovery`. The signature to hand back is 0x, then `signature`, ' +
-      'then `signatureRecovery`, as one hex string.',
-    `The chain id only tells the CLI which network the wallet is on; do not add it to the typed data.`,
-  ]
+export function linkToolWords(providers: readonly AgentProviderProfile[] = Object.values(AGENT_PROVIDERS)) {
+  return {
+    /** "Binance Agentic Wallet through baw", for the middle of a sentence. */
+    vendors: providers.map((provider) => `${provider.name} through ${provider.cli}`).join(', or '),
+    provider:
+      'Whose agent wallet it is: ' +
+      providers.map((provider) => `"${provider.id}" for ${provider.name}`).join(', ') +
+      '.',
+    signature:
+      'The 65-byte signature the wallet produced over the typed data, as hex. ' +
+      providers.map((provider) => `From ${provider.cli}: ${provider.sign.handBack}.`).join(' '),
+  }
 }
 
 /**
@@ -78,7 +73,7 @@ export function startText(challenge: AgentLinkChallenge): string {
     'Sign the EIP-712 typed data below with that wallet. It only proves the wallet is yours to operate; ' +
       'it moves nothing and approves nothing.',
     JSON.stringify(typedData),
-    ...(provider.id === 'binance' ? binanceSteps(challenge) : [`Sign it through \`${provider.cli} ${provider.sign.command}\`.`]),
+    ...provider.signSteps({ address: typedData.message.wallet, typedData }),
     'Then call link_agent_wallet_finish with the challengeId and the signature.',
   ].join('\n')
 }

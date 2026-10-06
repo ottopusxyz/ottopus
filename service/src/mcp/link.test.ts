@@ -7,7 +7,17 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
-import { CHALLENGE_TTL_MS, addWatchOnlyWallet, finishAgentLink, listWallets, startAgentLink } from '../wallets/index.js'
+import {
+  AGENT_PROVIDERS,
+  type AgentLinkChallenge,
+  type AgentProviderProfile,
+  CHALLENGE_TTL_MS,
+  addWatchOnlyWallet,
+  finishAgentLink,
+  listWallets,
+  startAgentLink,
+} from '../wallets/index.js'
+import { linkToolWords, startText } from './link.js'
 import { buildServer, type ToolDeps } from './server.js'
 
 /**
@@ -317,5 +327,50 @@ describe('linking an agent wallet', () => {
     expect(finished.isError).toBe(true)
     expect(finished.content[0]!.text).toContain('wallets:write')
     expect(await listWallets(db, userId)).toEqual([])
+  })
+})
+
+/**
+ * A vendor is its profile and nothing else: what the tools say about it, and
+ * how its challenge is signed, are read off the profile. `abacus` is in no
+ * registry; it is handed in to show that nothing here asks which vendor it is.
+ */
+describe('a provider the tools were not written for', () => {
+  const abacus: AgentProviderProfile = {
+    id: 'abacus',
+    name: 'Abacus Agent Wallet',
+    cli: 'abc',
+    chains: ['eip155:56'],
+    sign: { command: 'sign typed', typedData: true, handBack: 'the sig field as it is' },
+    signSteps: ({ address }) => [`Run: abc sign typed --account ${address} --stdin`],
+    execute: { command: 'send', requiresDevMode: false },
+  }
+
+  it('is named in both tools’ descriptions beside the ones already there', () => {
+    const words = linkToolWords([...Object.values(AGENT_PROVIDERS), abacus])
+    expect(words.vendors).toBe('Binance Agentic Wallet through baw, or Abacus Agent Wallet through abc')
+    expect(words.provider).toContain('"binance" for Binance Agentic Wallet, "abacus" for Abacus Agent Wallet')
+    expect(words.signature).toContain('From baw: its signature followed by its signatureRecovery.')
+    expect(words.signature).toContain('From abc: the sig field as it is.')
+  })
+
+  it('is told its own signing steps, and none of another vendor’s', async () => {
+    const client = await connected()
+    const started = await call(client, 'link_agent_wallet_start', { provider: 'binance', address: wallet().address })
+    const challenge = { ...(started.structuredContent as unknown as AgentLinkChallenge), provider: abacus }
+
+    const words = startText(challenge)
+    expect(words).toContain(`Run: abc sign typed --account ${challenge.typedData.message.wallet} --stdin`)
+    expect(words).toContain('"primaryType":"LinkAgentWallet"')
+    expect(words).not.toContain('baw')
+  })
+
+  it('what an agent reads before calling either tool comes from the registry', async () => {
+    const tools = (await (await connected()).listTools()).tools
+    const described = (name: string) => JSON.stringify(tools.find((tool) => tool.name === name))
+    const words = linkToolWords()
+    expect(described('link_agent_wallet_start')).toContain(words.vendors)
+    expect(described('link_agent_wallet_start')).toContain(JSON.stringify(words.provider).slice(1, -1))
+    expect(described('link_agent_wallet_finish')).toContain(words.signature)
   })
 })
