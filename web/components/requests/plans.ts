@@ -33,9 +33,12 @@ export function addressOfAccount(caip10: string): string {
   return (caip10.split(':')[2] ?? caip10).toLowerCase()
 }
 
-/** Expired is derived on the page too, so a row flips without a reload. */
+/**
+ * Expired is derived on the page too, so a row flips without a reload.
+ * `approved` is waiting on the agent rather than the person, and runs out the same way.
+ */
 export function effectiveStatus(row: Pick<PlanSummary, 'status' | 'expiresAt'>, now = Date.now()): PlanStatusName {
-  const terminal = !PENDING.has(row.status) && row.status !== 'draft'
+  const terminal = !PENDING.has(row.status) && row.status !== 'draft' && row.status !== 'approved'
   if (terminal || row.status === 'submitted') return row.status
   return Date.parse(row.expiresAt) <= now ? 'expired' : row.status
 }
