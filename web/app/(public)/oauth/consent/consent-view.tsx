@@ -8,6 +8,7 @@ import { OttoBadge } from '@/components/brand'
 import { BubbleField } from '@/components/motion'
 import { Button, Callout } from '@/components/ui'
 import { ApiError, decideConsent, readConsent, type ConsentGrant } from '@/lib/api'
+import { chosenScopes, isOn, move, type Moves } from './choices'
 
 /**
  * The consent screen, per P3.
@@ -51,10 +52,10 @@ function ConsentRequest({ requestId }: { requestId: string | null }) {
   const [grant, setGrant] = useState<ConsentGrant | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [decision, setDecision] = useState<Decision>('idle')
-  // The optional permissions switched on. Set once when the request is read:
-  // on for the ones the agent asked for, off for the rest. After that only the
-  // person moves them.
-  const [chosen, setChosen] = useState<string[]>([])
+  // The optional switches the person has moved. Where each one starts comes
+  // off the request, never from here — the request is read again whenever the
+  // credentials change, and that read must not undo an untick.
+  const [moves, setMoves] = useState<Moves>({})
 
   // A link with no request id is wrong on arrival, not something that goes
   // wrong later — so it is derived here rather than set from an effect.
@@ -76,7 +77,6 @@ function ConsentRequest({ requestId }: { requestId: string | null }) {
         const read = await readConsent(await credentials(), requestId)
         if (cancelled) return
         setGrant(read)
-        setChosen(read.offered.filter((entry) => entry.requested).map((entry) => entry.scope))
       } catch (err) {
         if (cancelled) return
         setFailure(problemText(err))
@@ -89,11 +89,16 @@ function ConsentRequest({ requestId }: { requestId: string | null }) {
 
   const decide = useCallback(
     async (approved: boolean) => {
-      if (!requestId) return
+      if (!requestId || !grant) return
       setDecision('deciding')
       setFailure(null)
       try {
-        const { redirectTo } = await decideConsent(await credentials(), requestId, approved, chosen)
+        const { redirectTo } = await decideConsent(
+          await credentials(),
+          requestId,
+          approved,
+          chosenScopes(grant.offered, moves),
+        )
         // Leaving for the agent's own callback, which is off this origin —
         // assign rather than the router, and hold the buttons disabled so a
         // second click cannot land while the navigation is in flight.
@@ -104,11 +109,8 @@ function ConsentRequest({ requestId }: { requestId: string | null }) {
         setFailure(problemText(err))
       }
     },
-    [requestId, credentials, chosen],
+    [requestId, credentials, grant, moves],
   )
-
-  const toggle = (scope: string, on: boolean) =>
-    setChosen((current) => (on ? [...current, scope] : current.filter((entry) => entry !== scope)))
 
   if (problem && !grant) {
     return (
@@ -199,9 +201,11 @@ function ConsentRequest({ requestId }: { requestId: string | null }) {
                   <input
                     type="checkbox"
                     className="mt-[3px] h-4 w-4 flex-none accent-[var(--ot-plan)]"
-                    checked={chosen.includes(entry.scope)}
+                    checked={isOn(entry, moves)}
                     disabled={busy}
-                    onChange={(event) => toggle(entry.scope, event.target.checked)}
+                    onChange={(event) =>
+                      setMoves((current) => move(current, entry.scope, event.target.checked))
+                    }
                   />
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[14px] font-semibold">{entry.title}</span>
