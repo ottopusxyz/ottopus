@@ -179,13 +179,16 @@ export async function finishAgentLink(
     throw new LinkError('expired', `That challenge expired at ${challenge.expiresAt.toISOString()}; start again`)
   }
 
-  // `baw` prints the signature bare and the recovery byte beside it, so the
-  // 0x is optional here; the 65 bytes are not.
+  // A CLI may print the signature bare and the recovery byte beside it, so
+  // the 0x is optional here; the 65 bytes are not. The profile knows which
+  // of its CLI's fields make them up.
   const bare = input.signature.trim().replace(/^0x/i, '')
   if (!/^[0-9a-f]{130}$/i.test(bare)) {
+    const profile = agentProvider(challenge.provider)
     throw new LinkError(
       'bad_signature',
-      'A signature is 65 bytes of hex: r, s, then the recovery byte (the CLI’s signature followed by its signatureRecovery)',
+      'A signature is 65 bytes of hex: r, s, then the recovery byte' +
+        (profile ? ` (from ${profile.cli}: ${profile.sign.handBack})` : ''),
     )
   }
   const signature: Hex = `0x${bare}`

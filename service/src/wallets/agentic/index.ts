@@ -2,7 +2,7 @@ import type { Arm } from '../store.js'
 import { binance } from './binance.js'
 import type { AgentProviderProfile } from './types.js'
 
-export type { AgentProviderProfile } from './types.js'
+export type { AgentProviderProfile, SignRequest } from './types.js'
 
 /** The kind every agent-operated arm carries; the vendor is `agentProvider`. */
 export const AGENTIC = 'agentic'
