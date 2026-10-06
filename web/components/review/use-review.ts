@@ -44,7 +44,10 @@ export function useReview(token: string): UseReview {
         if (!cancelled) setState({ status: 'ready', read })
       } catch (err) {
         if (cancelled) return
-        setState(err instanceof ApiError && err.status === 404 ? { status: 'gone' } : { status: 'unreachable' })
+        const gone = err instanceof ApiError && err.status === 404
+        // A re-read that fails leaves the page on what it last knew; only a
+        // first read has nothing to show. A dead link is dead either way.
+        setState((held) => (gone ? { status: 'gone' } : held.status === 'ready' ? held : { status: 'unreachable' }))
       }
     })()
     return () => {

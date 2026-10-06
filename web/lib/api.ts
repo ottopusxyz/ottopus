@@ -783,8 +783,11 @@ export interface ReviewRead {
   plan: Plan
   walletId: string | null
   statusAt: string
-  /** What the latest event carried: the tx hash once submitted, a reason once failed. */
-  statusDetail: { txHash?: string; reason?: string } | null
+  /**
+   * What the latest event carried: the tx hash once submitted, a reason once
+   * failed, and `reportedBy: 'agent'` when an agent's own wallet sent it.
+   */
+  statusDetail: { txHash?: string; reason?: string; reportedBy?: string } | null
   link: { expiresAt: string }
   visuals?: Visuals
 }
