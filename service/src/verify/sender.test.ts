@@ -3,8 +3,8 @@ import { RpcReadError } from '../core/index.js'
 import { httpSenderReader } from './sender.js'
 
 /**
- * Who the chain says sent a hash, with the node answered from memory. The
- * three answers an execution report turns on: an address, "never heard of
+ * What the chain says a hash is, with the node answered from memory. The
+ * three answers an execution report turns on: a transaction, "never heard of
  * it", and "could not ask".
  */
 const CHAIN = 'eip155:56'
@@ -41,17 +41,27 @@ const transaction = {
   s: `0x${'33'.repeat(32)}`,
 }
 
-describe('reading who sent a transaction', () => {
-  it('answers with the sender, lowercased, from the hash alone', async () => {
-    const { doFetch, asked } = node(transaction)
+describe('reading a sent transaction', () => {
+  it('answers with who sent it, to where and with what, from the hash alone', async () => {
+    const { doFetch, asked } = node({ ...transaction, to: '0xD8dA6BF26964aF9D7eEd9e03E53415D37aA96045', value: '0x3e8', input: '0xA9059CBB' })
     const reader = httpSenderReader({ fetch: doFetch })
-    expect(await reader.sender(CHAIN, TX)).toBe(FROM.toLowerCase())
+    expect(await reader.sent(CHAIN, TX)).toEqual({
+      from: FROM.toLowerCase(),
+      to: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+      value: '1000',
+      input: '0xa9059cbb',
+    })
     expect(asked).toEqual([{ method: 'eth_getTransactionByHash', params: [TX] }])
+  })
+
+  it('answers a contract creation with no destination', async () => {
+    const { doFetch } = node({ ...transaction, to: null })
+    expect((await httpSenderReader({ fetch: doFetch }).sent(CHAIN, TX))?.to).toBeNull()
   })
 
   it('answers null for a hash the chain has not seen', async () => {
     const { doFetch } = node(null)
-    expect(await httpSenderReader({ fetch: doFetch }).sender(CHAIN, TX)).toBeNull()
+    expect(await httpSenderReader({ fetch: doFetch }).sent(CHAIN, TX)).toBeNull()
   })
 
   /** An unreadable chain is not "not sent": the caller must be able to tell them apart. */
@@ -62,7 +72,7 @@ describe('reading who sent a transaction', () => {
       rpcUrlTemplate: 'https://{network}.g.alchemy.com/v2/SECRET-KEY-VALUE',
       timeoutMs: 2_000,
     })
-    const attempt = reader.sender(CHAIN, TX)
+    const attempt = reader.sent(CHAIN, TX)
     await expect(attempt).rejects.toBeInstanceOf(RpcReadError)
     const message = await attempt.catch((e: Error) => e.message)
     expect(message).not.toContain('SECRET-KEY-VALUE')
@@ -71,7 +81,7 @@ describe('reading who sent a transaction', () => {
 
   it('refuses a chain it does not know rather than asking another', async () => {
     const { doFetch, asked } = node(transaction)
-    await expect(httpSenderReader({ fetch: doFetch }).sender('eip155:999999', TX)).rejects.toThrow()
+    await expect(httpSenderReader({ fetch: doFetch }).sent('eip155:999999', TX)).rejects.toThrow()
     expect(asked).toEqual([])
   })
 })

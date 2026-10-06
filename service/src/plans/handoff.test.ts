@@ -4,7 +4,8 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { userIdForDid } from '../auth/session.js'
 import { migrationFiles, statementsIn } from '../db/migrate.js'
 import * as schema from '../db/schema.js'
-import { ACCOUNT, inMinutes, planFor } from './fixtures.js'
+import type { SentTransaction } from '../verify/index.js'
+import { ACCOUNT, RECIPIENT, inMinutes, planFor } from './fixtures.js'
 import { handOff, recordExecution } from './handoff.js'
 import { supersedePlan } from './review-link.js'
 import { createPlan, findPlan, listSubmitted, transition } from './store.js'
@@ -24,6 +25,16 @@ let browserArm: string
 const ARM_ADDRESS = ACCOUNT.split(':')[2]!
 const OTHER_ADDRESS = '0x00000000000000000000000000000000000000ff'
 const TX = `0x${'ab'.repeat(32)}`
+const OTHER_TX = `0x${'cd'.repeat(32)}`
+
+/** The fixture plan's one call, as the chain reports it once `from` has sent it. */
+const sentBy = (from: string, over: Partial<SentTransaction> = {}): SentTransaction => ({
+  from,
+  to: RECIPIENT.split(':')[2]!,
+  value: '1000',
+  input: '0x',
+  ...over,
+})
 
 const arm = async (userId: string, over: Partial<typeof schema.linkedWallets.$inferInsert> = {}) => {
   const [row] = await db
@@ -210,7 +221,7 @@ describe('handing the calls to the agent', () => {
   it('stops repeating once the plan is no longer approved', async () => {
     const plan = await approvedPlan()
     await handOff(db, ref(plan.id))
-    await recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS })
+    await recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })
     expect(await handOff(db, ref(plan.id))).toBeNull()
   })
 })
@@ -235,7 +246,7 @@ describe('reporting an execution', () => {
   it('moves the plan to submitted with the hash, where the receipts job finds it', async () => {
     const plan = await approvedPlan()
     const { handedOffAt } = (await handOff(db, ref(plan.id)))!
-    expect(await recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS.toUpperCase().replace('0X', '0x') })).toBe(
+    expect(await recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS.toUpperCase().replace('0X', '0x')) })).toBe(
       'submitted',
     )
 
@@ -252,15 +263,73 @@ describe('reporting an execution', () => {
   it('refuses a transaction the arm did not send', async () => {
     const plan = await approvedPlan()
     await handOff(db, ref(plan.id))
-    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sender: OTHER_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(OTHER_ADDRESS) })).rejects.toMatchObject({
       code: 'wrong_sender',
     })
     expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('approved')
   })
 
+  /** The arm's own transaction, but an older or unrelated one: sent by the right wallet is not sent for this plan. */
+  it('refuses a transaction of the arm that is not the plan’s call', async () => {
+    const plan = await approvedPlan()
+    await handOff(db, ref(plan.id))
+    const others: Partial<SentTransaction>[] = [
+      { to: OTHER_ADDRESS },
+      { to: null },
+      { value: '999' },
+      { input: '0xa9059cbb' },
+    ]
+    for (const over of others) {
+      await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS, over) })).rejects.toMatchObject({
+        code: 'wrong_call',
+      })
+    }
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('approved')
+  })
+
+  it('holds a plan with several calls to its last one, whatever case the chain spells it in', async () => {
+    const token = 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const data = '0xa9059cbb000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045'
+    const plan = await approvedPlan({
+      outcome: {
+        type: 'calls',
+        calls: [
+          { to: RECIPIENT, value: '1000', data: '0x', chainId: 'eip155:8453' },
+          { to: token, value: '0', data, chainId: 'eip155:8453' },
+        ],
+      },
+    })
+    await handOff(db, ref(plan.id))
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
+      code: 'wrong_call',
+    })
+    const last = sentBy(ARM_ADDRESS, { to: token.split(':')[2]!.toUpperCase().replace('0X', '0x'), value: '0', input: data.toUpperCase().replace('0X', '0x') })
+    expect(await recordExecution(db, { ...ref(plan.id), txHash: TX, sent: last })).toBe('submitted')
+  })
+
+  /** Two plans with the same call, a repeat payment, and one transaction: it settles one of them. */
+  it('refuses a transaction another plan was already settled with', async () => {
+    const first = await approvedPlan()
+    const second = await approvedPlan()
+    await handOff(db, ref(first.id))
+    await handOff(db, ref(second.id))
+    await recordExecution(db, { ...ref(first.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })
+
+    const again = TX.toUpperCase().replace('0X', '0x')
+    await expect(recordExecution(db, { ...ref(second.id), txHash: again, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
+      code: 'hash_taken',
+    })
+    // Still so once the first has settled, and the second takes its own transaction.
+    await transition(db, { ...ref(first.id), to: 'confirmed' })
+    await expect(recordExecution(db, { ...ref(second.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
+      code: 'hash_taken',
+    })
+    expect(await recordExecution(db, { ...ref(second.id), txHash: OTHER_TX, sent: sentBy(ARM_ADDRESS) })).toBe('submitted')
+  })
+
   it('refuses a plan whose calls were never handed out', async () => {
     const plan = await approvedPlan()
-    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
       code: 'illegal_transition',
     })
   })
@@ -268,15 +337,15 @@ describe('reporting an execution', () => {
   it('refuses anything that is not approved, and a second report', async () => {
     const waiting = planFor(alice)
     await createPlan(db, { plan: waiting, walletId: agentArm })
-    await expect(recordExecution(db, { ...ref(waiting.id), txHash: TX, sender: ARM_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(waiting.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
       code: 'illegal_transition',
     })
 
     const plan = await approvedPlan()
     await handOff(db, ref(plan.id))
-    await recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS })
+    await recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })
     // Reported once; a second report has nothing to move.
-    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
       code: 'illegal_transition',
     })
   })
@@ -285,7 +354,7 @@ describe('reporting an execution', () => {
     const plan = await approvedPlan({ expiresAt: inMinutes(5) })
     await handOff(db, ref(plan.id))
     const late = new Date(Date.now() + 6 * 60_000)
-    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sender: ARM_ADDRESS }, late)).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: TX, sent: sentBy(ARM_ADDRESS) }, late)).rejects.toMatchObject({
       code: 'illegal_transition',
     })
     expect((await events()).map((e) => e.status)).toEqual(['awaiting_review', 'approved', 'approved'])
@@ -294,10 +363,10 @@ describe('reporting an execution', () => {
   it('refuses a malformed hash, another user, and a plan that does not exist', async () => {
     const plan = await approvedPlan()
     await handOff(db, ref(plan.id))
-    await expect(recordExecution(db, { ...ref(plan.id), txHash: '0xabc', sender: ARM_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id), txHash: '0xabc', sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
       code: 'missing_tx_hash',
     })
-    await expect(recordExecution(db, { ...ref(plan.id, bob), txHash: TX, sender: ARM_ADDRESS })).rejects.toMatchObject({
+    await expect(recordExecution(db, { ...ref(plan.id, bob), txHash: TX, sent: sentBy(ARM_ADDRESS) })).rejects.toMatchObject({
       code: 'not_found',
     })
   })

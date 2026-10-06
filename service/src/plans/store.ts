@@ -37,7 +37,11 @@ export class PlanError extends Error {
       /** `approved` asked of a plan whose arm no agent operates. */
       | 'not_agentic'
       /** An execution reported with a transaction the plan's arm did not send. */
-      | 'wrong_sender',
+      | 'wrong_sender'
+      /** An execution reported with a transaction that is not the plan's call. */
+      | 'wrong_call'
+      /** An execution reported with a transaction another plan was already settled with. */
+      | 'hash_taken',
     message: string,
   ) {
     super(message)
