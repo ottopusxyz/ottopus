@@ -7,7 +7,9 @@ import {
   findAuthRequest,
   findClient,
   mintAuthCode,
+  offeredScopes,
   resourceUrl,
+  withOptIns,
 } from '../oauth/index.js'
 
 /**
@@ -58,6 +60,8 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
       resource: resourceUrl(),
       // Only the scopes this request actually asked for, in the design's order.
       granted: SCOPE_COPY.filter((entry) => request.scopes.includes(entry.scope)),
+      // What the person may switch on themselves. Off unless they say so.
+      offered: SCOPE_COPY.filter((entry) => offeredScopes(request.scopes).includes(entry.scope)),
       neverGranted: NEVER_GRANTED,
     })
   })
@@ -68,10 +72,16 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
    * Approve and deny take the same path deliberately: a denial has to reach the
    * agent's callback too, or the agent sits waiting on a flow the person
    * already ended. Both end in a redirect URL for the browser to follow.
+   *
+   * `add` is the one thing the page contributes beyond yes or no: the opt-in
+   * scopes the person switched on. It comes from their session, not from the
+   * agent, and `withOptIns` keeps it to scopes the screen actually offered.
    */
   app.post('/:id', async (c) => {
     const body = await c.req.json().catch(() => null)
-    const approved = (body as { approved?: unknown } | null)?.approved === true
+    const answer = body as { approved?: unknown; add?: unknown } | null
+    const approved = answer?.approved === true
+    const added = Array.isArray(answer?.add) ? answer.add : []
 
     const decided = await decideAuthRequest(db, {
       id: c.req.param('id'),
@@ -92,7 +102,8 @@ export function consentRoutes(db: Db, session: MiddlewareHandler): Hono {
       return c.json({ redirectTo: redirect.toString() })
     }
 
-    redirect.searchParams.set('code', await mintAuthCode(db, decided))
+    const scopes = withOptIns(decided.scopes, added)
+    redirect.searchParams.set('code', await mintAuthCode(db, { ...decided, scopes }))
     return c.json({ redirectTo: redirect.toString() })
   })
 

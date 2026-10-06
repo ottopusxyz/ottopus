@@ -18,7 +18,9 @@ export {
   defaultScopes,
   hasScope,
   isScope,
+  offeredScopes,
   parseScopes,
+  withOptIns,
   type Scope,
   type ScopeCopy,
 } from './scopes.js'

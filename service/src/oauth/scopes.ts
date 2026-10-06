@@ -6,10 +6,11 @@
  * that could authorise one — the absence is the design, not an omission to be
  * filled in later.
  *
- * `wallets:write` is the one an agent has to ask for by name. It allows
- * linking a wallet the agent itself operates, proved by that wallet's own
- * signature, and nothing else: it cannot unlink, rename or touch a wallet the
- * person linked. See `defaultScopes`.
+ * `wallets:write` is the one nobody gets by default. A grant carries it only
+ * when the agent asked for it by name or the person switched it on at the
+ * consent screen. It allows linking a wallet the agent itself operates, proved
+ * by that wallet's own signature, and nothing else: it cannot unlink, rename
+ * or touch a wallet the person linked. See `defaultScopes` and `offeredScopes`.
  *
  * Wording matches the consent screen, because a scope a person cannot read is
  * a scope they cannot refuse.
@@ -92,7 +93,10 @@ export function parseScopes(raw: string | undefined | null): Scope[] {
   return [...seen]
 }
 
-/** Scopes a grant carries only when the agent asked for them by name. */
+/**
+ * Scopes a grant carries only when somebody chose them: the agent by naming
+ * one in its request, or the person by switching it on at the consent screen.
+ */
 const OPT_IN: ReadonlySet<Scope> = new Set<Scope>(['wallets:write'])
 
 /**
@@ -102,6 +106,25 @@ const OPT_IN: ReadonlySet<Scope> = new Set<Scope>(['wallets:write'])
  */
 export function defaultScopes(): Scope[] {
   return SCOPES.filter((scope) => !OPT_IN.has(scope))
+}
+
+/**
+ * What the consent screen offers as a switch: every opt-in scope the agent did
+ * not ask for itself. Most hosts copy the scopes from our 401 and cannot be
+ * told to ask for more, so without this the person has no way to say yes.
+ */
+export function offeredScopes(requested: readonly Scope[]): Scope[] {
+  return SCOPES.filter((scope) => OPT_IN.has(scope) && !requested.includes(scope))
+}
+
+/**
+ * The grant after the person's switches: what the agent asked for, plus the
+ * opt-in scopes they turned on. Anything else in `added` is dropped, so the
+ * consent screen can widen a grant by an opt-in scope and by nothing more.
+ */
+export function withOptIns(requested: readonly Scope[], added: readonly unknown[]): Scope[] {
+  const chosen = offeredScopes(requested).filter((scope) => added.includes(scope))
+  return [...requested, ...chosen]
 }
 
 /**

@@ -100,8 +100,8 @@ function denied(scope: Scope): ToolResult {
   return failure(
     `This agent's grant does not include "${copy?.title ?? scope}" (${scope}). ` +
       (scope === 'wallets:write'
-        ? 'It is never granted by default: the agent has to ask for that scope by name when it connects, ' +
-          'and the person approves it on the consent screen.'
+        ? 'It is never granted by default: the person switches it on at the consent screen when the ' +
+          'agent connects. Reconnect this agent to Ottopus and turn that permission on before allowing access.'
         : 'The person can change what it may do from Settings in Ottopus.'),
   )
 }
