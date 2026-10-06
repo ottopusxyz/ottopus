@@ -412,7 +412,7 @@ export const planEvents = pgTable(
       // simulations table, not a state. 'inked' is mascot copy for 'cancelled'
       // and never reaches the database.
       sql`${t.status} in (
-        'draft', 'awaiting_review', 'awaiting_signature', 'submitted',
+        'draft', 'awaiting_review', 'awaiting_signature', 'approved', 'submitted',
         'confirmed', 'failed', 'expired', 'blocked', 'superseded', 'cancelled'
       )`,
     ),
