@@ -5,11 +5,19 @@ import { readPortfolio } from '../connectors/portfolio/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import { getDb } from '../db/client.js'
 import { localScopes } from '../oauth/scopes.js'
-import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
+import {
+  createPlan,
+  findPlan,
+  handOff,
+  issueReviewLink,
+  recordExecution,
+  recordSimulation,
+  transition,
+} from '../plans/index.js'
 import { portfolioProvider } from '../routes/portfolio-provider.js'
 import { routeProvider } from '../routes/route-provider.js'
 import { stockRegistry, tokenRegistry } from '../routes/token-registry.js'
-import { httpLookups } from '../verify/index.js'
+import { httpLookups, httpSenderReader } from '../verify/index.js'
 import { finishAgentLink, listWallets, startAgentLink } from '../wallets/index.js'
 import { buildServer, type ToolDeps } from './server.js'
 
@@ -84,6 +92,9 @@ async function main(): Promise<void> {
     recordSimulation: (input) => recordSimulation(db, input),
     findPlan: (userId, planId) => findPlan(db, userId, planId),
     transition: (input) => transition(db, input),
+    handOff: (ref) => handOff(db, ref),
+    recordExecution: (report) => recordExecution(db, report),
+    readSender: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sender,
     startAgentLink: (id, input) => startAgentLink(db, id, input),
     finishAgentLink: (id, input) => finishAgentLink(db, id, input),
   }
