@@ -20,6 +20,7 @@ import {
   TX_HASH,
   type TransitionInput,
 } from '../plans/index.js'
+import type { SentTransaction } from '../verify/index.js'
 
 /**
  * get_plan, cancel_plan and report_execution: the agent's window onto a plan
@@ -46,10 +47,10 @@ export interface StatusDeps {
   transition(input: TransitionInput): Promise<PlanStatus>
   /** The calls of an approved plan on an agent-operated arm, or null for anything else. */
   handOff(ref: PlanRef): Promise<Handoff | null>
-  /** `approved -> submitted`, refused unless the arm sent the transaction. */
+  /** `approved -> submitted`, refused unless the arm sent the transaction and it is the plan's own call. */
   recordExecution(report: ExecutionReport): Promise<PlanStatus>
-  /** Who sent a hash, lowercased; null while the chain has not seen it. Throws when it cannot be read. */
-  readSender(chainId: string, txHash: string): Promise<string | null>
+  /** What a hash is on chain; null while the chain has not seen it. Throws when it cannot be read. */
+  readSent(chainId: string, txHash: string): Promise<SentTransaction | null>
 }
 
 export interface StatusContext {
@@ -107,6 +108,10 @@ export type ReportOutcome =
   /** The chain has not seen the hash yet, or could not be read. Worth another try. */
   | { kind: 'unseen'; view: PlanView; txHash: string; unreadable: boolean }
   | { kind: 'wrong_sender'; view: PlanView; txHash: string; sender: string }
+  /** The arm sent it, but it is not the call this plan approved. */
+  | { kind: 'wrong_call'; view: PlanView; txHash: string }
+  /** Another plan was already settled with this transaction. */
+  | { kind: 'hash_taken'; view: PlanView; txHash: string }
 
 export type CancelOutcome =
   | { kind: 'not_found'; planId: string }
@@ -278,8 +283,9 @@ export async function getPlan(ctx: StatusContext, deps: StatusDeps, planId: stri
 /**
  * The agent says it sent the plan, and with which transaction. Believed only
  * as far as the chain agrees: the hash has to be a transaction the plan's own
- * arm sent, on the plan's chain. Then the plan is submitted and the receipts
- * job takes it from there.
+ * arm sent, on the plan's chain, carrying the plan's call as it was approved,
+ * and not one another plan was settled with. Then the plan is submitted and
+ * the receipts job takes it from there.
  */
 export async function reportExecution(
   ctx: StatusContext,
@@ -298,14 +304,14 @@ export async function reportExecution(
   }
 
   const chain = sourceChainOf(record.plan.intent)
-  let sender: string | null
+  let sent: SentTransaction | null
   try {
-    sender = await deps.readSender(`${chain.namespace}:${chain.reference}`, hash)
+    sent = await deps.readSent(`${chain.namespace}:${chain.reference}`, hash)
   } catch (err) {
     if (!(err instanceof RpcReadError)) throw err
     return { kind: 'unseen', view: viewOf(record), txHash: hash, unreadable: true }
   }
-  if (sender === null) return { kind: 'unseen', view: viewOf(record), txHash: hash, unreadable: false }
+  if (sent === null) return { kind: 'unseen', view: viewOf(record), txHash: hash, unreadable: false }
 
   try {
     await deps.recordExecution({
@@ -313,12 +319,13 @@ export async function reportExecution(
       planId: record.plan.id,
       version: record.plan.version,
       txHash: hash,
-      sender,
+      sent,
     })
   } catch (err) {
     if (!(err instanceof PlanError)) throw err
     const now = (await deps.findPlan(ctx.userId, record.plan.id)) ?? record
-    if (err.code === 'wrong_sender') return { kind: 'wrong_sender', view: viewOf(now), txHash: hash, sender }
+    if (err.code === 'wrong_sender') return { kind: 'wrong_sender', view: viewOf(now), txHash: hash, sender: sent.from }
+    if (err.code === 'wrong_call' || err.code === 'hash_taken') return { kind: err.code, view: viewOf(now), txHash: hash }
     if (err.code === 'illegal_transition' || err.code === 'not_agentic') return { kind: 'not_expected', view: viewOf(now) }
     throw err
   }
@@ -411,6 +418,17 @@ export function reportText(outcome: ReportOutcome): string {
       return (
         `Refused: ${outcome.txHash} was sent by ${outcome.sender}, not by the wallet this plan is bound to ` +
         `(${outcome.view.account.caip10.split(':')[2]}). Only a transaction from that wallet can be reported for it.`
+      )
+    case 'wrong_call':
+      return (
+        `Refused: ${outcome.txHash} is from this plan’s wallet, but it is not this plan’s call: its destination, value ` +
+        `or data differ from what was approved. Report the hash of the transaction that sent ${outcome.view.summary}; ` +
+        'for a plan with several calls, the last one’s.'
+      )
+    case 'hash_taken':
+      return (
+        `Refused: ${outcome.txHash} is already on record as the execution of another plan. One transaction settles ` +
+        'one plan; report the hash of the transaction sent for this one.'
       )
   }
 }

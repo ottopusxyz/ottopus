@@ -628,10 +628,11 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       title: 'Report an execution',
       description:
         'Tell Ottopus that this agent’s own wallet sent an approved plan, and with which transaction. ' +
-        'Only for a plan whose calls get_plan handed out. The hash must be a transaction from that ' +
-        'wallet’s address on the plan’s chain; anything else is refused. For a plan with several calls, ' +
-        'report the last one’s hash. This sends nothing: it records what was already sent, and get_plan ' +
-        'then says whether it confirmed.',
+        'Only for a plan whose calls get_plan handed out. The hash must be the transaction that wallet ' +
+        'sent for this plan: from its address, on the plan’s chain, with the call’s destination, value ' +
+        'and data unchanged, and not already reported for another plan; anything else is refused. For a ' +
+        'plan with several calls, report the last one’s hash. This sends nothing: it records what was ' +
+        'already sent, and get_plan then says whether it confirmed.',
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
         txHash: z.string().describe('The transaction hash the wallet’s CLI returned: 0x and 64 hex characters.'),

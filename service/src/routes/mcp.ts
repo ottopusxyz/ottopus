@@ -128,7 +128,7 @@ if (!config.databaseUrl) {
     transition: (input) => transition(db, input),
     handOff: (ref) => handOff(db, ref),
     recordExecution: (report) => recordExecution(db, report),
-    readSender: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sender,
+    readSent: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sent,
     startAgentLink: (userId, input) => startAgentLink(db, userId, input),
     finishAgentLink: (userId, input) => finishAgentLink(db, userId, input),
   }

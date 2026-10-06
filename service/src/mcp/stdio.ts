@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     transition: (input) => transition(db, input),
     handOff: (ref) => handOff(db, ref),
     recordExecution: (report) => recordExecution(db, report),
-    readSender: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sender,
+    readSent: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sent,
     startAgentLink: (id, input) => startAgentLink(db, id, input),
     finishAgentLink: (id, input) => finishAgentLink(db, id, input),
   }
