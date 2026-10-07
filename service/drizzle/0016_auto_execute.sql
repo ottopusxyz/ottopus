@@ -1,0 +1,2 @@
+ALTER TABLE "linked_wallets" ADD COLUMN "auto_execute" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "linked_wallets" ADD CONSTRAINT "linked_wallets_auto_execute_agentic_only" CHECK (not "linked_wallets"."auto_execute" or "linked_wallets"."wallet_type" = 'agentic');

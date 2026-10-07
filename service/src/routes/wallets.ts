@@ -33,6 +33,7 @@ const STATUS: Record<WalletError['code'], 400 | 404 | 409 | 422> = {
   invalid_address: 400,
   invalid_type: 400,
   invalid_provider: 400,
+  not_agentic: 400,
   already_linked: 409,
   too_many_wallets: 422,
   not_found: 404,
@@ -42,8 +43,11 @@ const editSchema = z
   .object({
     label: z.string().max(60).nullable().optional(),
     walletType: z.enum(WALLET_TYPES as [string, ...string[]]).optional(),
+    autoExecute: z.boolean().optional(),
   })
-  .refine((v) => v.label !== undefined || v.walletType !== undefined, { message: 'nothing to change' })
+  .refine((v) => v.label !== undefined || v.walletType !== undefined || v.autoExecute !== undefined, {
+    message: 'nothing to change',
+  })
 
 export function walletRoutes(db: WalletDb, session: MiddlewareHandler): Hono {
   const app = new Hono()

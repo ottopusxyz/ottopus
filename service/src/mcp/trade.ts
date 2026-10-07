@@ -37,7 +37,8 @@ import {
 } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { canSign, humanAmount, resolveWallet, truncateAddress, usd } from './readable.js'
-import type { PrepareContext, PrepareDeps } from './transfer.js'
+import { type RuleOutcome, approvedLines, armRule, ruleLine, ruleOutcome, ruleVerdict, simulatorFor } from './rule.js'
+import { type PrepareContext, type PrepareDeps, runSimulation } from './transfer.js'
 
 /**
  * prepare_trade, end to end: intent, wallet, route, decode, verify, hash,
@@ -100,12 +101,15 @@ export type TradeOutcome =
   | {
       kind: 'ready'
       planId: string
-      status: 'awaiting_review'
+      /** `approved` only under the arm's rule; see `rule`. */
+      status: 'awaiting_review' | 'approved'
       /** Which shape it turned out to be, since the caller did not have to say. */
       trade: 'swap' | 'bridge'
       summary: string
       recommendedAccount: string
       reason: string
+      /** The arm's auto-execute rule and what it decided; null when the arm has none. */
+      rule: RuleOutcome | null
       route: string
       /** The provider's estimate of how long it takes, in seconds. */
       etaSeconds: number | null
@@ -410,10 +414,21 @@ export async function prepareTrade(
   })
 
   const decodedActions = await decodeCalls(quote.calls, deps.lookups)
+  // A trade is normally not simulated here; the review page runs its own.
+  // An arm under a rule is the exception, because no page will.
+  const rule = armRule(arms, chosen.walletId)
+  const simulation = await runSimulation(simulatorFor(deps, rule), {
+    chainId,
+    account: chosen.resolution.account.caip10,
+    calls: quote.calls,
+    gasAsset,
+    portfolio,
+  })
   const verdict = verifyPlan({
     intent,
     calls: quote.calls,
     decodedActions,
+    simulation,
     // Only the spenders the route asked for: the contract being called, and
     // the allowance contract it draws through when there is one. The policy
     // blocks any other, and checks each is the contract the next call goes to.
@@ -427,24 +442,38 @@ export async function prepareTrade(
   const warnings = blockWarnings(verdict)
   const plan = assemblePlan(
     { ...draft, status: verdict.ok ? 'awaiting_review' : 'blocked', humanPlan: { ...draft.humanPlan, warnings } },
-    { decodedActions },
+    { decodedActions, simulation },
   )
-  const record = await deps.createPlan({ plan, walletId: chosen.walletId, grantId: ctx.grantId })
+  const byRule = ruleVerdict(rule, verdict.ok, simulation)
+  const record = await deps.createPlan({
+    plan,
+    walletId: chosen.walletId,
+    grantId: ctx.grantId,
+    approveByRule: byRule?.approve ?? false,
+  })
+  if (simulation && deps.recordSimulation) {
+    await deps
+      .recordSimulation({ planId: record.plan.id, planVersion: record.plan.version, simulation })
+      .catch(() => {})
+  }
 
   if (!verdict.ok) {
     return { kind: 'blocked', planId: record.plan.id, summary, reasons: verdict.reasons, warnings }
   }
+  // An approved plan keeps its link: it is how the person withdraws it.
   const link = await deps.issueReviewLink(record.plan.id, record.plan.version, record.plan.expiresAt)
+  const recommendedAccount = chosen.resolution.account.label
+    ? `${chosen.resolution.account.label} (${truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)})`
+    : truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)
   return {
     kind: 'ready',
     planId: record.plan.id,
-    status: 'awaiting_review',
+    status: record.plan.status === 'approved' ? 'approved' : 'awaiting_review',
     trade: crossing ? 'bridge' : 'swap',
     summary,
-    recommendedAccount: chosen.resolution.account.label
-      ? `${chosen.resolution.account.label} (${truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)})`
-      : truncateAddress(parseAccountId(chosen.resolution.account.caip10).address),
+    recommendedAccount,
     reason: chosen.resolution.reason,
+    rule: ruleOutcome(byRule, recommendedAccount, record.plan.status),
     route: quote.steps.join(' → '),
     etaSeconds: quote.etaSeconds,
     expectedOut: quote.expectedOut,
@@ -567,17 +596,25 @@ export function tradeText(outcome: TradeOutcome): string {
         ...outcome.reasons.map((r) => `- ${r}`),
         'The refusal is recorded in Activity. Nothing was traded.',
       ].join('\n')
-    case 'ready':
-      return [
-        `Plan ready: ${outcome.summary}.`,
+    case 'ready': {
+      const shape = [
         outcome.reason,
         `Route: ${outcome.route}.`,
         ...(outcome.trade === 'bridge'
           ? ['This crosses chains: the source transaction confirms first and the funds arrive after that.']
           : []),
         ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
+      ]
+      if (outcome.status === 'approved' && outcome.rule) {
+        return [`Plan approved: ${outcome.summary}.`, ...shape, ...approvedLines(outcome.rule, outcome.expiresAt, outcome.reviewUrl)].join('\n')
+      }
+      return [
+        `Plan ready: ${outcome.summary}.`,
+        ...ruleLine(outcome.rule),
+        ...shape,
         `Review and sign: ${outcome.reviewUrl}`,
         `The quote holds until ${outcome.expiresAt}. Nothing moves until the person signs in their own wallet.`,
       ].join('\n')
+    }
   }
 }

@@ -5,6 +5,7 @@ const arm = (over: Partial<Parameters<typeof capabilitiesOf>[0]> = {}) => ({
   walletType: 'agentic',
   agentProvider: 'binance',
   isWatchOnly: false,
+  autoExecute: false,
   provedAt: '2026-10-01T00:00:00Z',
   ...over,
 })

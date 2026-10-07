@@ -105,6 +105,12 @@ export interface Arm {
   agentProvider?: string | null
   /** No proof, so it can never sign. Pasted addresses and Safes. */
   isWatchOnly: boolean
+  /**
+   * The one rule an `agentic` arm can carry: a plan it executes is approved
+   * at prepare when it verified and the service's own simulation passed, with
+   * no review. Never true on any other kind; the service refuses to set it.
+   */
+  autoExecute: boolean
   provedAt: string | null
   createdAt: string
 }
@@ -154,11 +160,15 @@ export function unlinkWallet(credentials: Credentials, id: string): Promise<void
   return call(`/wallets/${id}`, credentials, { method: 'DELETE' })
 }
 
-/** The name and the kind, which are the person's to set. Null clears the label. */
+/**
+ * The name and the kind, which are the person's to set, and for an agent
+ * wallet the rule. Null clears the label. The service answers `not_agentic`
+ * to a rule on any other kind.
+ */
 export function updateWallet(
   credentials: Credentials,
   id: string,
-  edit: { label?: string | null; walletType?: string },
+  edit: { label?: string | null; walletType?: string; autoExecute?: boolean },
 ): Promise<{ wallet: Arm }> {
   return call(`/wallets/${id}`, credentials, {
     method: 'PATCH',

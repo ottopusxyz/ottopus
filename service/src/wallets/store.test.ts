@@ -225,6 +225,20 @@ describe('agentic wallets', () => {
     await expect(updateWallet(db, userId, wallets[0]!.id, { walletType: 'agentic' })).rejects.toMatchObject({ code: 'invalid_type' })
   })
 
+  it('is linked without a rule, and takes one through an edit', async () => {
+    const arm = await addAgenticWallet(db, userId, { provider: 'binance', address: address(7), proof })
+    expect(arm.autoExecute).toBe(false)
+    expect(await updateWallet(db, userId, arm.id, { autoExecute: true })).toMatchObject({ autoExecute: true })
+    expect((await listWallets(db, userId))[0]?.autoExecute).toBe(true)
+    expect(await updateWallet(db, userId, arm.id, { autoExecute: false })).toMatchObject({ autoExecute: false })
+  })
+
+  it('is the only kind that takes a rule', async () => {
+    const { wallets } = await syncWallets(db, userId, [attested(1)])
+    await expect(updateWallet(db, userId, wallets[0]!.id, { autoExecute: true })).rejects.toMatchObject({ code: 'not_agentic' })
+    expect((await listWallets(db, userId))[0]?.autoExecute).toBe(false)
+  })
+
   describe('the database agrees', () => {
     it('refuses an agentic arm with no provider', async () => {
       await expect(insert(`'agentic', null, false, '{}'::jsonb`)).rejects.toThrow(/linked_wallets_agent_provider_iff_agentic/)
@@ -240,6 +254,13 @@ describe('agentic wallets', () => {
 
     it('refuses an agentic arm with no proof', async () => {
       await expect(insert(`'agentic', 'binance', false, null`)).rejects.toThrow(/linked_wallets_proof_required/)
+    })
+
+    it('refuses a rule on any other kind', async () => {
+      await syncWallets(db, userId, [attested(1)])
+      await expect(
+        pg.exec(`update linked_wallets set auto_execute = true where user_id = '${userId}'`),
+      ).rejects.toThrow(/linked_wallets_auto_execute_agentic_only/)
     })
   })
 })

@@ -11,6 +11,7 @@ import {
   type Arm,
   type Credentials,
 } from '@/lib/api'
+import type { WalletEdit } from './edit-wallet-dialog'
 import { AGENTIC } from './naming'
 
 /**
@@ -61,8 +62,8 @@ export interface UseWallets {
   linkError: string | null
   addWatchOnly: (input: { address: string; label?: string }) => Promise<void>
   unlink: (arm: Arm) => Promise<void>
-  /** Rename an arm or change its kind. The list re-reads afterwards. */
-  update: (arm: Arm, edit: { label: string | null; walletType: string }) => Promise<void>
+  /** Rename an arm, change its kind, or move an agent wallet's rule. The list re-reads afterwards. */
+  update: (arm: Arm, edit: WalletEdit) => Promise<void>
   refresh: () => void
 }
 
@@ -178,11 +179,18 @@ export function useWallets(): UseWallets {
   )
 
   const update = useCallback(
-    async (arm: Arm, edit: { label: string | null; walletType: string }) => {
+    async (arm: Arm, edit: WalletEdit) => {
       const creds = await credentials()
       if (!creds) throw new Error('Not signed in')
-      // An agent wallet keeps its kind; the service refuses any attempt to set one.
-      await updateOnServer(creds, arm.id, arm.walletType === AGENTIC ? { label: edit.label } : edit)
+      // An agent wallet keeps its kind; the service refuses any attempt to set
+      // one. It is also the only kind with a rule to move.
+      await updateOnServer(
+        creds,
+        arm.id,
+        arm.walletType === AGENTIC
+          ? { label: edit.label, ...(edit.autoExecute === undefined ? {} : { autoExecute: edit.autoExecute }) }
+          : { label: edit.label, walletType: edit.walletType },
+      )
       setNonce((n) => n + 1)
     },
     [credentials],

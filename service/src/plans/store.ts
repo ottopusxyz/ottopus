@@ -216,38 +216,58 @@ export async function executingArm(
   db: PlanDb,
   userId: string,
   walletId: string | null,
-): Promise<{ address: string; profile: AgentProviderProfile } | null> {
+  { lock = false }: { lock?: boolean } = {},
+): Promise<{ address: string; profile: AgentProviderProfile; autoExecute: boolean } | null> {
   if (!walletId) return null
-  const [arm] = await db
+  const query = db
     .select({
       address: linkedWallets.address,
       walletType: linkedWallets.walletType,
       agentProvider: linkedWallets.agentProvider,
       isWatchOnly: linkedWallets.isWatchOnly,
+      autoExecute: linkedWallets.autoExecute,
       provedAt: linkedWallets.provedAt,
     })
     .from(linkedWallets)
     .where(and(eq(linkedWallets.id, walletId), eq(linkedWallets.userId, userId), isNull(linkedWallets.unlinkedAt)))
+  // `lock` holds the arm's row to the end of the caller's transaction, so a
+  // switch flipped at the same moment lands before this read or after the
+  // caller commits — never in between.
+  const [arm] = await (lock ? query.for('update') : query)
   if (!arm) return null
   const profile = profileOf(arm)
   if (!profile || !capabilitiesOf({ ...arm, provedAt: arm.provedAt?.toISOString() ?? null }).agentExecutes) return null
-  return { address: arm.address.toLowerCase(), profile }
+  return { address: arm.address.toLowerCase(), profile, autoExecute: arm.autoExecute }
 }
+
+/** What the `approved` event of a plan a rule approved carries. */
+export const APPROVED_BY_RULE = { approvedBy: 'rule' } as const
 
 export interface CreatePlanInput {
   plan: Plan
   walletId?: string | null
   grantId?: string | null
+  /**
+   * The caller found the person's rule for this arm satisfied: the plan
+   * verified, an independent simulation passed, and the arm is one an agent
+   * executes. The store checks the arm again under the transaction and
+   * writes `approved` straight after `awaiting_review` — or, if the rule was
+   * switched off in between, leaves the plan waiting for review.
+   */
+  approveByRule?: boolean | undefined
 }
 
 /**
  * The plan row and its first event, in one transaction. A plan with no event
  * has no status, and a status with no plan is an orphan; neither should be
  * observable, even briefly.
+ *
+ * A plan a rule approves gets its second event in the same transaction, so
+ * it is never seen waiting for a review nobody will give it.
  */
 export async function createPlan(
   db: PlanDb,
-  { plan, walletId = null, grantId = null }: CreatePlanInput,
+  { plan, walletId = null, grantId = null, approveByRule = false }: CreatePlanInput,
 ): Promise<PlanRecord> {
   if (!INITIAL_STATUSES.includes(plan.status)) {
     throw new PlanError('illegal_initial_status', `a plan cannot start as ${plan.status}`)
@@ -268,11 +288,30 @@ export async function createPlan(
         expiresAt: new Date(plan.expiresAt),
       })
       .returning()
-    const [event] = await tx
+    const returning = { status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail }
+    const [first] = await tx
       .insert(planEvents)
       .values({ planId: plan.id, planVersion: plan.version, status: plan.status })
-      .returning({ status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail })
-    return toRecord(row!, event!)
+      .returning(returning)
+    if (!approveByRule || plan.status !== 'awaiting_review') return toRecord(row!, first!)
+    // A plan already past its expiry reads as expired, and the state machine
+    // has no step from there. Writing `approved` after it would be an event
+    // nobody could have caused.
+    if (effectiveStatus(plan.status, plan.expiresAt) !== 'awaiting_review') return toRecord(row!, first!)
+
+    // The rule is the arm's, read now rather than trusted from the caller:
+    // a browser-signed arm never reaches `approved`, and a rule switched off
+    // since the caller looked no longer applies. The row is locked until the
+    // approval commits, so a switch-off racing this read waits behind it and
+    // finds a plan already approved — the documented behaviour — rather
+    // than slipping in between the read and the write.
+    const arm = await executingArm(tx, plan.userId, walletId, { lock: true })
+    if (!arm?.autoExecute) return toRecord(row!, first!)
+    const [approved] = await tx
+      .insert(planEvents)
+      .values({ planId: plan.id, planVersion: plan.version, status: 'approved', detail: APPROVED_BY_RULE })
+      .returning(returning)
+    return toRecord(row!, approved!)
   })
 }
 

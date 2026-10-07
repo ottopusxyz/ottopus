@@ -86,6 +86,7 @@ export function ArmCard({ arm, value = null, share = null, onUnlink }: ArmCardPr
             {client ? <Chip className="text-[11px]">{client}</Chip> : null}
             {arm.isWatchOnly ? <Chip className="text-[11px]">Watch only</Chip> : null}
             {arm.walletType === AGENTIC ? <Chip className="text-[11px]">Agent-operated</Chip> : null}
+            {arm.autoExecute ? <Chip className="text-[11px]">Acts without review</Chip> : null}
           </div>
           <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
         </div>

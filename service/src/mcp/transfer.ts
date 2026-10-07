@@ -27,6 +27,7 @@ import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
 import { KNOWN_ABI, type Lookups, blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
 import { canSign, humanAmount, resolveWallet, truncateAddress } from './readable.js'
+import { type RuleOutcome, approvedLines, armRule, ruleLine, ruleOutcome, ruleVerdict, simulatorFor } from './rule.js'
 
 /**
  * prepare_transfer, end to end: intent, wallet, one call, decode, verify,
@@ -48,6 +49,12 @@ export interface PrepareDeps {
   lookups: Lookups
   /** Null on a deployment with no simulator; the plan is then reviewed on its decoding alone. */
   simulator: Simulator | null
+  /**
+   * Runs for an arm whose auto-execute rule is on, and only then: a plan the
+   * rule approves is never reviewed, so it is read here or not approved.
+   * Null leaves every such plan waiting for review, and says so.
+   */
+  ruleSimulator: Simulator | null
   createPlan(input: CreatePlanInput): Promise<PlanRecord>
   issueReviewLink(planId: string, version: number, planExpiresAt: string): Promise<ReviewLink>
   /** Keeps the run beside the plan. Optional: the tools work without the log. */
@@ -74,10 +81,13 @@ export type PrepareOutcome =
   | {
       kind: 'ready'
       planId: string
-      status: 'awaiting_review'
+      /** `approved` only under the arm's rule; see `rule`. */
+      status: 'awaiting_review' | 'approved'
       summary: string
       recommendedAccount: string
       reason: string
+      /** The arm's auto-execute rule and what it decided; null when the arm has none. */
+      rule: RuleOutcome | null
       warnings: Warning[]
       expiresAt: string
       reviewUrl: string
@@ -258,13 +268,14 @@ export async function prepareTransfer(
   const call = buildTransferCall(intent)
   const expiresAt = new Date(now.getTime() + PLAN_TTL_MS).toISOString()
   const summary = transferSummary(intent, asset, chosen.resolution.account)
+  const rule = armRule(arms, chosen.walletId)
 
   // Decode, then simulate, then hash. The fee estimate the simulation
   // produces goes into the human plan, which is hashed — the number a person
   // agreed to has to be bound to the plan they agreed to, like every other
   // sentence on the page.
   const decodedActions = await decodeCalls([call], deps.lookups)
-  const simulation = await simulate(deps, {
+  const simulation = await runSimulation(simulatorFor(deps, rule), {
     chainId,
     account: chosen.resolution.account.caip10,
     calls: [call],
@@ -299,7 +310,13 @@ export async function prepareTransfer(
     { ...draft, status: verdict.ok ? 'awaiting_review' : 'blocked', humanPlan: { ...draft.humanPlan, warnings } },
     { decodedActions, simulation },
   )
-  const record = await deps.createPlan({ plan, walletId: chosen.walletId, grantId: ctx.grantId })
+  const byRule = ruleVerdict(rule, verdict.ok, simulation)
+  const record = await deps.createPlan({
+    plan,
+    walletId: chosen.walletId,
+    grantId: ctx.grantId,
+    approveByRule: byRule?.approve ?? false,
+  })
   if (simulation && deps.recordSimulation) {
     // The log is a nicety; a plan that exists must not be lost to it.
     await deps
@@ -310,16 +327,19 @@ export async function prepareTransfer(
   if (!verdict.ok) {
     return { kind: 'blocked', planId: record.plan.id, summary, reasons: verdict.reasons, warnings }
   }
+  // An approved plan keeps its link: it is how the person withdraws it.
   const link = await deps.issueReviewLink(record.plan.id, record.plan.version, record.plan.expiresAt)
+  const recommendedAccount = chosen.resolution.account.label
+    ? `${chosen.resolution.account.label} (${truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)})`
+    : truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)
   return {
     kind: 'ready',
     planId: record.plan.id,
-    status: 'awaiting_review',
+    status: record.plan.status === 'approved' ? 'approved' : 'awaiting_review',
     summary,
-    recommendedAccount: chosen.resolution.account.label
-      ? `${chosen.resolution.account.label} (${truncateAddress(parseAccountId(chosen.resolution.account.caip10).address)})`
-      : truncateAddress(parseAccountId(chosen.resolution.account.caip10).address),
+    recommendedAccount,
     reason: chosen.resolution.reason,
+    rule: ruleOutcome(byRule, recommendedAccount, record.plan.status),
     warnings,
     expiresAt: record.plan.expiresAt,
     reviewUrl: link.url,
@@ -327,7 +347,7 @@ export async function prepareTransfer(
   }
 }
 
-interface SimulateArgs {
+export interface SimulateArgs {
   chainId: string
   account: string
   calls: Call[]
@@ -347,10 +367,10 @@ interface SimulateArgs {
  * reports units and the block's base fee, the portfolio knows what the
  * chain's currency is worth, and neither has any business knowing the other.
  */
-async function simulate(deps: PrepareDeps, args: SimulateArgs): Promise<Simulation | null> {
-  if (!deps.simulator || !deps.simulator.serves(args.chainId)) return null
+export async function runSimulation(simulator: Simulator | null, args: SimulateArgs): Promise<Simulation | null> {
+  if (!simulator || !simulator.serves(args.chainId)) return null
   try {
-    const run = await deps.simulator.simulate({
+    const run = await simulator.simulate({
       chainId: args.chainId,
       account: args.account,
       calls: args.calls,
@@ -383,9 +403,18 @@ export function prepareText(outcome: PrepareOutcome): string {
         'The refusal is recorded in Activity. Nothing was sent.',
       ].join('\n')
     case 'ready':
+      if (outcome.status === 'approved' && outcome.rule) {
+        return [
+          `Plan approved: ${outcome.summary}.`,
+          outcome.reason,
+          ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
+          ...approvedLines(outcome.rule, outcome.expiresAt, outcome.reviewUrl),
+        ].join('\n')
+      }
       return [
         `Plan ready: ${outcome.summary}.`,
         outcome.reason,
+        ...ruleLine(outcome.rule),
         ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
         `Review and sign: ${outcome.reviewUrl}`,
         `The link is good for a few minutes and the plan expires at ${outcome.expiresAt}. Nothing moves until the person signs in their own wallet.`,

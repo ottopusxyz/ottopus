@@ -87,6 +87,8 @@ if (!config.databaseUrl) {
    * two adapters over one core, and neither with logic of its own.
    */
   const provider = portfolioProvider
+  /** The one simulator the service runs at prepare: the chain's own RPC, independent of any router. */
+  const prepareSimulator = composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })])
   const deps: ToolDeps = {
     findUser: (userId) => findUserById(db, userId),
     findAgent: (clientId) => findClient(db, clientId),
@@ -116,7 +118,14 @@ if (!config.databaseUrl) {
      * against a block it recorded, before a link is minted. The other tools
      * never read this field, so the decision above stands for them.
      */
-    customSimulator: composite([baselineSimulator({ rpcUrlTemplate: config.rpcUrlTemplate })]),
+    customSimulator: prepareSimulator,
+    /**
+     * Wired, for an arm whose auto-execute rule is on. The same reasoning:
+     * a plan the rule approves is never reviewed, so the run that grants it
+     * has to be the service's own. The same adapter, and the routing vendor
+     * is not it.
+     */
+    ruleSimulator: prepareSimulator,
     tokens: tokenRegistry,
     stocks: stockRegistry,
     router: routeProvider,
