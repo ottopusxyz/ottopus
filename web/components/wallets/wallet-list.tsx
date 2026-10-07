@@ -39,8 +39,9 @@ export function WalletList({ wallets, onUnlink, onUpdate }: WalletListProps) {
                   <span className="truncate">{armName(arm)}</span>
                   <ProofMark isWatchOnly={arm.isWatchOnly} />
                   <span className="font-normal text-[var(--ot-text-3)]">
-                    {[client, arm.isWatchOnly ? 'watch only' : null].filter(Boolean).join(', ') ||
-                      null}
+                    {[client, arm.isWatchOnly ? 'watch only' : null, arm.autoExecute ? 'acts without review' : null]
+                      .filter(Boolean)
+                      .join(', ') || null}
                   </span>
                 </span>
                 <AddressChip address={arm.address} className="w-fit px-2 py-0.5 text-[12px] text-[var(--ot-text-3)]" />
