@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite'
+import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/pglite'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { userIdForDid } from '../auth/session.js'
@@ -141,6 +142,56 @@ describe('approving', () => {
     await expect(createPlan(db, { plan: planFor(alice, { status: 'approved' }), walletId: agentArm })).rejects.toMatchObject({
       code: 'illegal_initial_status',
     })
+  })
+})
+
+describe('approving by the arm’s rule', () => {
+  const switchOn = (walletId: string) =>
+    db.update(schema.linkedWallets).set({ autoExecute: true }).where(eq(schema.linkedWallets.id, walletId))
+
+  it('writes review and approval together, marked as the rule’s, and the calls are released', async () => {
+    await switchOn(agentArm)
+    const plan = planFor(alice)
+    const record = await createPlan(db, { plan, walletId: agentArm, approveByRule: true })
+    expect(record.plan.status).toBe('approved')
+    expect(record.statusDetail).toEqual({ approvedBy: 'rule' })
+    expect((await events()).map((e) => [e.status, e.detail])).toEqual([
+      ['awaiting_review', null],
+      ['approved', { approvedBy: 'rule' }],
+    ])
+    expect(await handOff(db, ref(plan.id))).toMatchObject({ planHash: plan.planHash, address: ARM_ADDRESS, first: true })
+  })
+
+  it('leaves the plan waiting for review when the switch is off, whatever the caller found', async () => {
+    const plan = planFor(alice)
+    const record = await createPlan(db, { plan, walletId: agentArm, approveByRule: true })
+    expect(record.plan.status).toBe('awaiting_review')
+    expect((await events()).map((e) => e.status)).toEqual(['awaiting_review'])
+  })
+
+  it('never approves a plan on a browser-signed arm, or one bound to no arm', async () => {
+    for (const walletId of [browserArm, null]) {
+      const plan = planFor(alice)
+      const record = await createPlan(db, { plan, walletId, approveByRule: true })
+      expect(record.plan.status).toBe('awaiting_review')
+      expect(await handOff(db, ref(plan.id))).toBeNull()
+    }
+  })
+
+  it('never approves a blocked plan', async () => {
+    await switchOn(agentArm)
+    const record = await createPlan(db, { plan: planFor(alice, { status: 'blocked' }), walletId: agentArm, approveByRule: true })
+    expect(record.plan.status).toBe('blocked')
+    expect((await events()).map((e) => e.status)).toEqual(['blocked'])
+  })
+
+  it('switching the rule off afterwards leaves an approved plan approved', async () => {
+    await switchOn(agentArm)
+    const plan = planFor(alice)
+    await createPlan(db, { plan, walletId: agentArm, approveByRule: true })
+    await db.update(schema.linkedWallets).set({ autoExecute: false }).where(eq(schema.linkedWallets.id, agentArm))
+    expect((await findPlan(db, alice, plan.id))?.plan.status).toBe('approved')
+    expect(await handOff(db, ref(plan.id))).toMatchObject({ first: true })
   })
 })
 

@@ -216,7 +216,7 @@ export async function executingArm(
   db: PlanDb,
   userId: string,
   walletId: string | null,
-): Promise<{ address: string; profile: AgentProviderProfile } | null> {
+): Promise<{ address: string; profile: AgentProviderProfile; autoExecute: boolean } | null> {
   if (!walletId) return null
   const [arm] = await db
     .select({
@@ -224,6 +224,7 @@ export async function executingArm(
       walletType: linkedWallets.walletType,
       agentProvider: linkedWallets.agentProvider,
       isWatchOnly: linkedWallets.isWatchOnly,
+      autoExecute: linkedWallets.autoExecute,
       provedAt: linkedWallets.provedAt,
     })
     .from(linkedWallets)
@@ -231,23 +232,37 @@ export async function executingArm(
   if (!arm) return null
   const profile = profileOf(arm)
   if (!profile || !capabilitiesOf({ ...arm, provedAt: arm.provedAt?.toISOString() ?? null }).agentExecutes) return null
-  return { address: arm.address.toLowerCase(), profile }
+  return { address: arm.address.toLowerCase(), profile, autoExecute: arm.autoExecute }
 }
+
+/** What the `approved` event of a plan a rule approved carries. */
+export const APPROVED_BY_RULE = { approvedBy: 'rule' } as const
 
 export interface CreatePlanInput {
   plan: Plan
   walletId?: string | null
   grantId?: string | null
+  /**
+   * The caller found the person's rule for this arm satisfied: the plan
+   * verified, an independent simulation passed, and the arm is one an agent
+   * executes. The store checks the arm again under the transaction and
+   * writes `approved` straight after `awaiting_review` — or, if the rule was
+   * switched off in between, leaves the plan waiting for review.
+   */
+  approveByRule?: boolean | undefined
 }
 
 /**
  * The plan row and its first event, in one transaction. A plan with no event
  * has no status, and a status with no plan is an orphan; neither should be
  * observable, even briefly.
+ *
+ * A plan a rule approves gets its second event in the same transaction, so
+ * it is never seen waiting for a review nobody will give it.
  */
 export async function createPlan(
   db: PlanDb,
-  { plan, walletId = null, grantId = null }: CreatePlanInput,
+  { plan, walletId = null, grantId = null, approveByRule = false }: CreatePlanInput,
 ): Promise<PlanRecord> {
   if (!INITIAL_STATUSES.includes(plan.status)) {
     throw new PlanError('illegal_initial_status', `a plan cannot start as ${plan.status}`)
@@ -268,11 +283,23 @@ export async function createPlan(
         expiresAt: new Date(plan.expiresAt),
       })
       .returning()
-    const [event] = await tx
+    const returning = { status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail }
+    const [first] = await tx
       .insert(planEvents)
       .values({ planId: plan.id, planVersion: plan.version, status: plan.status })
-      .returning({ status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail })
-    return toRecord(row!, event!)
+      .returning(returning)
+    if (!approveByRule || plan.status !== 'awaiting_review') return toRecord(row!, first!)
+
+    // The rule is the arm's, read now rather than trusted from the caller:
+    // a browser-signed arm never reaches `approved`, and a rule switched off
+    // since the caller looked no longer applies.
+    const arm = await executingArm(tx, plan.userId, walletId)
+    if (!arm?.autoExecute) return toRecord(row!, first!)
+    const [approved] = await tx
+      .insert(planEvents)
+      .values({ planId: plan.id, planVersion: plan.version, status: 'approved', detail: APPROVED_BY_RULE })
+      .returning(returning)
+    return toRecord(row!, approved!)
   })
 }
 
