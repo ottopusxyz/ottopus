@@ -19,6 +19,8 @@ export interface Arm {
   /** The vendor of an agentic arm; null for every other kind. */
   agentProvider: string | null
   isWatchOnly: boolean
+  /** The person's rule: an agentic arm may act on a verified, simulated plan without review. */
+  autoExecute: boolean
   provedAt: string | null
   createdAt: string
 }
@@ -31,7 +33,8 @@ export class WalletError extends Error {
       | 'too_many_wallets'
       | 'not_found'
       | 'invalid_type'
-      | 'invalid_provider',
+      | 'invalid_provider'
+      | 'not_agentic',
     message: string,
   ) {
     super(message)
@@ -55,6 +58,8 @@ export interface WalletEdit {
   /** Null clears the label; absent leaves it. */
   label?: string | null | undefined
   walletType?: string | undefined
+  /** Only an agentic arm takes it; see `updateWallet`. */
+  autoExecute?: boolean | undefined
 }
 
 const columns = {
@@ -65,6 +70,7 @@ const columns = {
   walletType: linkedWallets.walletType,
   agentProvider: linkedWallets.agentProvider,
   isWatchOnly: linkedWallets.isWatchOnly,
+  autoExecute: linkedWallets.autoExecute,
   provedAt: linkedWallets.provedAt,
   createdAt: linkedWallets.createdAt,
 }
@@ -77,6 +83,7 @@ interface Row {
   walletType: string
   agentProvider: string | null
   isWatchOnly: boolean
+  autoExecute: boolean
   provedAt: Date | null
   createdAt: Date
 }
@@ -344,18 +351,22 @@ export async function addAgenticWallet(db: WalletDb, userId: string, input: Agen
 }
 
 /**
- * The name and the kind, which are the person's to set. Everything else on
- * the row — the address, the proof, whether it can sign — is not, and a
- * proved wallet cannot be relabelled watch-only: the kind is what the mark
+ * The name, the kind and the rule, which are the person's to set. Everything
+ * else on the row — the address, the proof, whether it can sign — is not, and
+ * a proved wallet cannot be relabelled watch-only: the kind is what the mark
  * says, the proof is what the scorer trusts.
+ *
+ * The rule is only ever an agentic arm's. Turning it off changes nothing
+ * about plans already approved under it; a plan's status is its own record.
  */
 export async function updateWallet(db: WalletDb, userId: string, id: string, edit: WalletEdit): Promise<Arm> {
-  const patch: Partial<{ label: string | null; walletType: string }> = {}
+  const patch: Partial<{ label: string | null; walletType: string; autoExecute: boolean }> = {}
   if (edit.label !== undefined) patch.label = edit.label?.trim() || null
   if (edit.walletType !== undefined) {
     if (!WALLET_TYPES.includes(edit.walletType)) throw new WalletError('invalid_type', `${edit.walletType} is not a wallet kind`)
     patch.walletType = edit.walletType
   }
+  if (edit.autoExecute !== undefined) patch.autoExecute = edit.autoExecute
   if (Object.keys(patch).length === 0) throw new WalletError('invalid_type', 'nothing to change')
 
   return db.transaction(async (tx) => {
@@ -369,6 +380,9 @@ export async function updateWallet(db: WalletDb, userId: string, id: string, edi
     }
     if (patch.walletType !== undefined && current.walletType === AGENTIC) {
       throw new WalletError('invalid_type', 'an agent wallet keeps its kind')
+    }
+    if (patch.autoExecute !== undefined && current.walletType !== AGENTIC) {
+      throw new WalletError('not_agentic', 'only an agent wallet can act without review')
     }
     const [row] = await tx.update(linkedWallets).set(patch).where(eq(linkedWallets.id, id)).returning(columns)
     if (!row) throw new WalletError('not_found', 'No such wallet')

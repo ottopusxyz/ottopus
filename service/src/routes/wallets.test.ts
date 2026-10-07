@@ -163,6 +163,15 @@ describe('PATCH /:id', () => {
     expect((await res.json()) as unknown).toMatchObject({ wallet: { label: null, walletType: 'safe' } })
   })
 
+  it('refuses a rule on an arm no agent operates', async () => {
+    const created = await post(undefined, '/watch', { address: address(7) })
+    const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
+    const res = await patch(arm.id, { autoExecute: true })
+    expect(res.status).toBe(400)
+    expect((await res.json()) as unknown).toMatchObject({ error: 'not_agentic' })
+    expect((await patch(arm.id, { autoExecute: 'yes' })).status).toBe(400)
+  })
+
   it('refuses a kind it has no word for, an empty edit, and a bad body', async () => {
     const created = await post(undefined, '/watch', { address: address(8) })
     const { wallet: arm } = (await created.json()) as { wallet: { id: string } }
