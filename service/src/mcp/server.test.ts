@@ -37,6 +37,7 @@ const WALLETS: Arm[] = [
     walletType: 'rabby',
     agentProvider: null,
     isWatchOnly: false,
+    autoExecute: false,
     provedAt: '2026-09-05T00:00:00Z',
     createdAt: '2026-09-05T00:00:00Z',
   },
@@ -48,6 +49,7 @@ const WALLETS: Arm[] = [
     walletType: 'watch_only',
     agentProvider: null,
     isWatchOnly: true,
+    autoExecute: false,
     provedAt: null,
     createdAt: '2026-09-06T00:00:00Z',
   },
@@ -105,13 +107,24 @@ const lookups: Lookups = {
 }
 
 /** A store in memory: keeps what createPlan was handed, hands back a record. */
-function planSink() {
+function planSink(honoursRule = false) {
   const created: CreatePlanInput[] = []
   return {
     created,
     createPlan: async (input: CreatePlanInput): Promise<PlanRecord> => {
       created.push(input)
-      return { plan: input.plan, walletId: input.walletId ?? null, grantId: input.grantId ?? null, createdAt: 'now', statusAt: 'now', statusDetail: null }
+      // The store writes `approved` after review when the caller found the
+      // rule satisfied and the arm still carries it; this sink does the same
+      // when told the arm does.
+      const byRule = honoursRule && input.approveByRule && input.plan.status === 'awaiting_review'
+      return {
+        plan: byRule ? { ...input.plan, status: 'approved' } : input.plan,
+        walletId: input.walletId ?? null,
+        grantId: input.grantId ?? null,
+        createdAt: 'now',
+        statusAt: 'now',
+        statusDetail: byRule ? { approvedBy: 'rule' } : null,
+      }
     },
   }
 }
@@ -124,6 +137,7 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   lookups,
   simulator: null,
   customSimulator: null,
+  ruleSimulator: null,
   router: null,
   tokens: null,
   stocks: null,
@@ -2397,6 +2411,19 @@ describe('prepare_custom', () => {
     expect(tooMuch.content[0]!.text).toMatch(/short of 50 USDC/)
   })
 
+  /** The rule is for plans Ottopus built. Calls an agent wrote are reviewed, whatever the switch says. */
+  it('is never approved by the arm’s auto-execute rule', async () => {
+    const sink = planSink(true)
+    const agentArm: Arm = { ...WALLETS[0]!, walletType: 'agentic', agentProvider: 'binance', autoExecute: true }
+    const { client } = await ready({ createPlan: sink.createPlan, listWallets: async () => [agentArm] })
+    const result = await call(client, 'prepare_custom', honest)
+
+    expect(result.isError).toBeFalsy()
+    expect(result.structuredContent).toMatchObject({ status: 'awaiting_review' })
+    expect(sink.created[0]!.approveByRule).toBeFalsy()
+    expect(sink.created[0]!.plan.status).toBe('awaiting_review')
+  })
+
   it('cannot be prepared on a deployment with no simulator', async () => {
     const { client } = await ready({ customSimulator: null })
     const result = await call(client, 'prepare_custom', honest)
@@ -2419,5 +2446,238 @@ describe('prepare_custom', () => {
     const result = await call(client, 'prepare_custom', honest)
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toMatch(/plans:write/)
+  })
+})
+
+/**
+ * The auto-execute rule: one switch on an agent-operated arm. On, a plan the
+ * arm executes is approved at prepare when verification and the service's
+ * own simulation pass; everything else goes to review, and says why.
+ */
+describe('the auto-execute rule', () => {
+  const AGENT = '0x0000000000000000000000000000000000000a11'
+  const agentArm = (over: Partial<Arm> = {}): Arm => ({
+    id: 'w3',
+    namespace: 'eip155',
+    address: AGENT,
+    label: 'Agent',
+    walletType: 'agentic',
+    agentProvider: 'binance',
+    isWatchOnly: false,
+    autoExecute: true,
+    provedAt: '2026-10-01T00:00:00Z',
+    createdAt: '2026-10-01T00:00:00Z',
+    ...over,
+  })
+  /** Only the agent arm holds anything on Base, so it is the one chosen. */
+  const holdings: Portfolio = {
+    ...PORTFOLIO,
+    chains: [{ chainId: BASE, name: 'Base', value: 1500, share: 1 }],
+    arms: [{ walletId: 'w3', address: AGENT, status: 'ok', total: 1500, change1d: 0, positionCount: 2 }],
+    assets: [
+      {
+        assetId: `${BASE}/erc20:${USDC}`,
+        chainId: BASE,
+        asset: { symbol: 'USDC', name: 'USD Coin', decimals: 6, iconUrl: null, verified: true },
+        amount: '1000000000',
+        value: 1000,
+        price: 1,
+        change1d: 0,
+        share: 0.7,
+        holdings: [{ walletId: 'w3', amount: '1000000000', value: 1000 }],
+      },
+      {
+        assetId: `${BASE}/slip44:60`,
+        chainId: BASE,
+        asset: { symbol: 'ETH', name: 'Ether', decimals: 18, iconUrl: null, verified: true },
+        amount: '300000000000000000',
+        value: 500,
+        price: 4000,
+        change1d: 0,
+        share: 0.3,
+        holdings: [{ walletId: 'w3', amount: '300000000000000000', value: 500 }],
+      },
+    ],
+  }
+  const neverAsked: Simulator = {
+    name: 'stub',
+    serves: () => {
+      throw new Error('the rule simulator was asked for an arm with no rule')
+    },
+    simulate: async () => {
+      throw new Error('never')
+    },
+  }
+  const ready = (over: Partial<ToolDeps> = {}) =>
+    connected(undefined, { listWallets: async () => [...WALLETS, agentArm()], readPortfolio: async () => holdings, ...over }, { grantId: 'grant-1' })
+  const transfer = (client: Client) =>
+    call(client, 'prepare_transfer', {
+      asset: `${BASE}/erc20:${USDC}`,
+      amount: '500000000',
+      to: `${BASE}:0x1111111111111111111111111111111111111111`,
+      fromAccount: 'Agent',
+    })
+  const trade = (client: Client) =>
+    call(client, 'prepare_trade', { from: `${BASE}/erc20:${USDC}`, to: `${BASE}/slip44:60`, amountIn: '500000000', fromAccount: 'Agent' })
+
+  it('approves a transfer the simulation passed, and still mints the link to withdraw it', async () => {
+    const sink = planSink(true)
+    const logged: unknown[] = []
+    const { client } = await ready({
+      ruleSimulator: stubSimulator(),
+      createPlan: sink.createPlan,
+      recordSimulation: async (input) => {
+        logged.push(input)
+      },
+    })
+    const res = await transfer(client)
+
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/^Plan approved: Send 500 USDC/)
+    expect(res.content[0]!.text).toContain('Approved by the rule for Agent (0x0000…0a11): the plan verified and the simulation passed.')
+    expect(res.content[0]!.text).toContain('Call get_plan to receive the calls')
+    expect(res.content[0]!.text).toContain('withdraw it until the calls are handed out: https://ottopus.test/review/')
+    expect(res.structuredContent).toMatchObject({
+      status: 'approved',
+      rule: { arm: 'Agent (0x0000…0a11)', applied: true },
+    })
+    expect(sink.created[0]).toMatchObject({ walletId: 'w3', approveByRule: true })
+    expect(sink.created[0]!.plan.simulation).toMatchObject({ provider: 'stub', success: true })
+    expect(logged).toHaveLength(1)
+    // Approval is not a hand-off: the calls still come only through get_plan.
+    expect(JSON.stringify(res)).not.toContain('"calls"')
+    expect(JSON.stringify(res)).not.toContain('assetChanges')
+  })
+
+  it('no simulation, no auto: without a simulator the plan waits for review, and the agent is told why', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({ ruleSimulator: null, createPlan: sink.createPlan })
+    const res = await transfer(client)
+
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/^Plan ready:/)
+    expect(res.content[0]!.text).toContain('The rule for Agent (0x0000…0a11) did not apply: no simulation ran, and the rule needs one. This plan needs a review.')
+    expect(res.content[0]!.text).toContain('Review and sign: https://ottopus.test/review/')
+    expect(res.structuredContent).toMatchObject({ status: 'awaiting_review', rule: { applied: false } })
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  it('a simulator that cannot serve the chain is no simulation either', async () => {
+    const sink = planSink(true)
+    const silent: Simulator = { name: 'stub', serves: () => false, simulate: async () => { throw new Error('never asked') } }
+    const { client } = await ready({ ruleSimulator: silent, createPlan: sink.createPlan })
+    const res = await transfer(client)
+    expect(res.structuredContent).toMatchObject({ status: 'awaiting_review', rule: { applied: false } })
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  it('blocks, rather than approves, a transfer the simulation says reverts', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      ruleSimulator: stubSimulator({ success: false, assetChanges: [], revertReason: 'ERC20: transfer amount exceeds balance', failedCall: 1 }),
+      createPlan: sink.createPlan,
+    })
+    const res = await transfer(client)
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('the simulation failed on call 1')
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  it('never runs the rule simulator, and reports no rule, for an arm whose switch is off', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      listWallets: async () => [...WALLETS, agentArm({ autoExecute: false })],
+      ruleSimulator: neverAsked,
+      createPlan: sink.createPlan,
+    })
+    const res = await transfer(client)
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.structuredContent).toMatchObject({ status: 'awaiting_review', rule: null })
+    expect(res.content[0]!.text).not.toContain('rule')
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  /** The column cannot be set for such an arm; the tool still refuses on its own. */
+  it('never approves for an arm a person signs with, even with the switch on', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      listWallets: async () => [...WALLETS, agentArm({ walletType: 'rabby', agentProvider: null })],
+      ruleSimulator: neverAsked,
+      createPlan: sink.createPlan,
+    })
+    const res = await transfer(client)
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.structuredContent).toMatchObject({
+      status: 'awaiting_review',
+      rule: { applied: false, reason: expect.stringContaining('a person signs with') },
+    })
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  it('reports a review when the store declined: the switch went off before the plan was stored', async () => {
+    const sink = planSink(false)
+    const { client } = await ready({ ruleSimulator: stubSimulator(), createPlan: sink.createPlan })
+    const res = await transfer(client)
+    expect(res.structuredContent).toMatchObject({
+      status: 'awaiting_review',
+      rule: { applied: false, reason: 'the rule was switched off before the plan was stored' },
+    })
+    expect(sink.created[0]!.approveByRule).toBe(true)
+  })
+
+  it('approves a trade the same way, with the run on the plan', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      router: stubRouter(),
+      ruleSimulator: stubSimulator({
+        assetChanges: [
+          { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+          { assetId: `${BASE}/slip44:60`, symbol: 'ETH', decimals: 18, diff: '120000000000000000', pre: '300000000000000000', post: '420000000000000000' },
+        ],
+      }),
+      createPlan: sink.createPlan,
+    })
+    const res = await trade(client)
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.content[0]!.text).toMatch(/^Plan approved: Swap 500 USDC/)
+    expect(res.content[0]!.text).toContain('Route: Swap on Aerodrome.')
+    expect(res.content[0]!.text).toContain('Approved by the rule for Agent (0x0000…0a11)')
+    expect(res.structuredContent).toMatchObject({ status: 'approved', rule: { applied: true }, minOut: '119400000000000000' })
+    expect(sink.created[0]!.plan.simulation).toMatchObject({ provider: 'stub', success: true })
+    expect(JSON.stringify(res)).not.toContain('0xdeadbeef')
+  })
+
+  it('blocks a trade whose run received less than the floor, rule or no rule', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      router: stubRouter(),
+      ruleSimulator: stubSimulator({
+        assetChanges: [
+          { assetId: `${BASE}/erc20:${USDC}`, symbol: 'USDC', decimals: 6, diff: '-500000000', pre: '1000000000', post: '500000000' },
+          { assetId: `${BASE}/slip44:60`, symbol: 'ETH', decimals: 18, diff: '100000000000000000', pre: '300000000000000000', post: '400000000000000000' },
+        ],
+      }),
+      createPlan: sink.createPlan,
+    })
+    const res = await trade(client)
+    expect(res.isError).toBe(true)
+    expect(res.content[0]!.text).toContain('below the 119400000000000000 the quote promised')
+    expect(sink.created[0]!.plan.status).toBe('blocked')
+    expect(sink.created[0]!.approveByRule).toBe(false)
+  })
+
+  it('leaves a trade on an arm with no rule unsimulated, as before', async () => {
+    const sink = planSink(true)
+    const { client } = await ready({
+      listWallets: async () => [...WALLETS, agentArm({ autoExecute: false })],
+      router: stubRouter(),
+      ruleSimulator: neverAsked,
+      createPlan: sink.createPlan,
+    })
+    const res = await trade(client)
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.structuredContent).toMatchObject({ status: 'awaiting_review', rule: null })
+    expect(sink.created[0]!.plan.simulation).toBeNull()
   })
 })

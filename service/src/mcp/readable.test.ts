@@ -20,6 +20,7 @@ const arm = (over: Partial<Arm> = {}): Arm => ({
   walletType: 'rabby',
   agentProvider: null,
   isWatchOnly: false,
+  autoExecute: false,
   provedAt: '2026-09-05T00:00:00Z',
   createdAt: '2026-09-05T00:00:00Z',
   ...over,
