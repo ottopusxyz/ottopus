@@ -63,13 +63,15 @@ export function useReview(token: string): UseReview {
       try {
         ;({ status } = await movePlan(await credentials(), plan.id, plan.version, transition))
       } catch (err) {
-        // The service's receipt job races this page to confirmed and failed,
-        // and whichever lands second is refused. For an outcome the chain has
-        // already decided, a refusal means the service knows it too; re-read
-        // rather than tell the person something went wrong.
-        const decided = transition.status === 'confirmed' || transition.status === 'failed'
-        if (!(decided && err instanceof ApiError && err.status === 409)) throw err
+        // A 409 is the machine saying the plan is not where this page thinks
+        // it is, so what the page holds is stale and a re-read follows. For
+        // an outcome the chain has already decided — the receipt job races
+        // this page to confirmed and failed — the refusal means the service
+        // knows it too, and the person is told nothing went wrong.
+        if (!(err instanceof ApiError && err.status === 409)) throw err
         setTick((t) => t + 1)
+        const decided = transition.status === 'confirmed' || transition.status === 'failed'
+        if (!decided) throw err
         return transition.status
       }
       // What this transition carried is now the latest detail — the hash on

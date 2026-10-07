@@ -70,8 +70,8 @@ export function ReviewCard({
   const chain = chainOfPlan(plan)
   const chainVisual = visuals.chains[chain] ?? null
   const signer = visuals.wallets[plan.resolution.account.caip10] ?? null
-  const signerClient = signer ? walletClientName({ label: signer.label, walletType: signer.walletType }) : null
-  const signerMark = signer ? walletMark(signer.walletType) : null
+  const signerClient = signer ? walletClientName({ label: signer.label, walletType: signer.walletType, agentProvider: signer.agentProvider }) : null
+  const signerMark = signer ? walletMark(signer.walletType, signer.agentProvider) : null
   const signerName =
     signer?.label ?? signerClient ?? truncateAddress(addressOf(plan.resolution.account.caip10))
   const liveRun = live?.run ?? null
