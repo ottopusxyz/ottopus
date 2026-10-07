@@ -12,7 +12,8 @@ import { explorerName, explorerTxUrl } from '@/lib/chains'
 import { decoderUrl } from '@/lib/simulators'
 import { AdvancedPanel } from './advanced-panel'
 import { HeadsUpPanel } from './heads-up-panel'
-import { canSign, chainOfPlan, countdown, effectiveStatus, followsAgent, sentByAgent } from './model'
+import { ApprovePanel } from './approve-panel'
+import { canSign, chainOfPlan, countdown, effectiveStatus, followsAgent, panelMode } from './model'
 import { ReviewCard } from './review-card'
 import { AdvancedSkeleton, ReviewSkeleton } from './review-skeleton'
 import { Settled, SignPanel } from './sign-panel'
@@ -122,6 +123,9 @@ function Review({ token }: { token: string }) {
   const clock = canSign(status) ? (countdown(plan.expiresAt, now) || 'now') : <StatusChip status={status} />
   const live = { kind: simulation.state.kind, run: simulation.run, again: () => void simulation.again() }
   const panelProps = { plan, live, binance, decoderUrl: decoderUrl(plan) }
+  // Sign or approve is the arm's kind, not the person's choice; the service
+  // refuses an approval on a wallet a person signs with regardless.
+  const mode = panelMode(plan, status, visuals, statusDetail)
 
   return (
     <Ground wide>
@@ -148,7 +152,7 @@ function Review({ token }: { token: string }) {
               </details>
             }
           >
-            {canSign(status) ? (
+            {mode.kind === 'sign' ? (
               <SignPanel
                 plan={plan}
                 move={move}
@@ -156,13 +160,17 @@ function Review({ token }: { token: string }) {
                 recheck={simulation.recheck}
                 walletType={visuals?.wallets[plan.resolution.account.caip10]?.walletType}
               />
-            ) : status === 'submitted' ? (
+            ) : mode.kind === 'approve' ? (
+              <ApprovePanel plan={plan} move={move} executor={mode.executor} recheck={simulation.recheck} />
+            ) : mode.kind === 'waiting' ? (
+              <ApprovePanel plan={plan} move={move} executor={mode.executor} waiting={mode} />
+            ) : mode.kind === 'submitted' ? (
               <SignPanel
                 plan={plan}
                 move={move}
                 open={false}
                 txHash={statusDetail?.txHash ?? null}
-                sentByAgent={sentByAgent(statusDetail)}
+                sentByAgent={mode.sentByAgent}
               />
             ) : (
               <Ended status={status} chain={chainId} txHash={statusDetail?.txHash ?? null} />
@@ -292,11 +300,6 @@ function Blocked({ plan }: { plan: Plan }) {
 }
 
 const ENDED_COPY: Partial<Record<PlanStatusName, { title: string; body: string }>> = {
-  // Not an ending, but nothing here is the person's to do: the agent's wallet sends it.
-  approved: {
-    title: 'Waiting for your agent to execute',
-    body: 'You approved this. Your agent sends it from its own wallet; Ottopus does not.',
-  },
   confirmed: { title: 'Signed and settled', body: 'This one is done.' },
   failed: { title: 'It did not go through', body: 'The transaction failed on chain. Nothing else was sent.' },
   expired: { title: 'This request expired', body: 'Ask the agent again and it will prepare a fresh one.' },
