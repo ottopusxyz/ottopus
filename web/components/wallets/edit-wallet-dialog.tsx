@@ -141,8 +141,8 @@ function Form({ arm, onClose, onSave }: { arm: Arm; onClose: () => void; onSave:
             </button>
             <p id="auto-execute-help" className="text-[13px] leading-[1.45] text-[var(--ot-text-2)]">
               {autoExecute
-                ? 'On: a plan your agent prepares for this wallet is approved the moment it verifies and Ottopus’s own simulation passes. You still get a link, and can withdraw the plan until the agent takes the calls. A plan that fails either check waits for you as before.'
-                : 'Off: every plan for this wallet waits for your approval.'}
+                ? 'On: a plan your agent prepares for this wallet is approved the moment it verifies and Ottopus’s own simulation passes. You still get a link, and can withdraw the plan until the agent takes the calls. A plan that fails either check is blocked, as it would be anyway.'
+                : 'Off: every new plan for this wallet waits for your approval. Plans the rule already approved stay approved.'}
             </p>
           </div>
         ) : (
