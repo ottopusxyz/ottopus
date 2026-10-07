@@ -62,6 +62,13 @@ export const linkedWallets = pgTable(
      */
     agentProvider: text('agent_provider'),
     isWatchOnly: boolean('is_watch_only').notNull().default(false),
+    /**
+     * The person's standing rule for an agentic arm: a plan this arm will
+     * execute is approved at prepare time, without review, when verification
+     * and an independent simulation both pass. False for every other kind,
+     * and the database holds it there.
+     */
+    autoExecute: boolean('auto_execute').notNull().default(false),
     /** Signed challenge proving control. Null only for watch-only. */
     ownershipProof: jsonb('ownership_proof'),
     provedAt: timestamp('proved_at', { withTimezone: true }),
@@ -92,6 +99,8 @@ export const linkedWallets = pgTable(
     ),
     // An agentic arm is proved by its agent or it is not linked at all.
     check('linked_wallets_agentic_is_proved', sql`${t.walletType} <> 'agentic' or not ${t.isWatchOnly}`),
+    // Only an arm an agent operates can be told to act without review.
+    check('linked_wallets_auto_execute_agentic_only', sql`not ${t.autoExecute} or ${t.walletType} = 'agentic'`),
   ],
 )
 
