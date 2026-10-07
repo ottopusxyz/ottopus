@@ -1,5 +1,6 @@
 import type { Tone } from '@/components/ui'
-import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StockMarketState } from '@/lib/api'
+import { AGENTIC, AGENT_PROVIDERS } from '@/components/wallets/naming'
+import type { AssetDelta, DecodedAction, Plan, PlanStatusName, PlanStock, PlanWarning, Simulation, StatusDetail, StockMarketState, Visuals } from '@/lib/api'
 import { chainName } from '@/lib/chains'
 import { addressOf, formatAmount, formatMoneyFlat, truncateAddress } from '@/lib/format'
 
@@ -48,6 +49,48 @@ export function sentByAgent(detail: { reportedBy?: string } | null): boolean {
 }
 
 /** Only these may reach the sign button. */
+/**
+ * What the bottom of the card is for.
+ *
+ * Decided from the arm the plan is bound to and the status the page reads.
+ * A wallet a person signs with gets the sign flow; a wallet an agent operates
+ * gets approve mode, then the wait while the agent executes. The arm's kind
+ * is read from the visuals beside the plan, never from the plan, which does
+ * not know who holds the key — and without them a plan reads as signable,
+ * which the service refuses to approve anyway.
+ */
+export type PanelMode =
+  | { kind: 'sign' }
+  | { kind: 'approve'; executor: string }
+  | { kind: 'waiting'; executor: string; approvedBy: 'you' | 'rule'; handedOff: boolean }
+  | { kind: 'submitted'; sentByAgent: boolean }
+  | { kind: 'ended' }
+
+export function panelMode(plan: Plan, status: PlanStatusName, visuals: Visuals | undefined, detail: StatusDetail | null): PanelMode {
+  const executor = executorOf(plan, visuals)
+  if (canSign(status)) return executor ? { kind: 'approve', executor } : { kind: 'sign' }
+  if (status === 'approved') {
+    return {
+      kind: 'waiting',
+      executor: executor ?? AGENT_WALLET,
+      approvedBy: detail?.approvedBy === 'rule' ? 'rule' : 'you',
+      handedOff: typeof detail?.handedOffAt === 'string',
+    }
+  }
+  if (status === 'submitted') return { kind: 'submitted', sentByAgent: sentByAgent(detail) }
+  return { kind: 'ended' }
+}
+
+/** What an agent wallet is called when its vendor is not known here. */
+const AGENT_WALLET = 'your agent’s wallet'
+
+/** The agent wallet that sends this plan, by its vendor's name, or null when a person signs it. */
+export function executorOf(plan: Plan, visuals: Visuals | undefined): string | null {
+  const arm = visuals?.wallets[plan.resolution.account.caip10]
+  if (!arm || arm.walletType !== AGENTIC) return null
+  return (arm.agentProvider && AGENT_PROVIDERS[arm.agentProvider]?.name) || AGENT_WALLET
+}
+
 export function canSign(status: PlanStatusName): boolean {
   return status === 'awaiting_review' || status === 'awaiting_signature'
 }

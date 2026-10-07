@@ -12,6 +12,8 @@ import {
   effectiveStatus,
   followsAgent,
   sentByAgent,
+  panelMode,
+  executorOf,
   changeSource,
   keyFacts,
   planSteps,
@@ -109,6 +111,66 @@ describe('status on the page', () => {
     }
     expect(sentByAgent({ reportedBy: 'agent' })).toBe(true)
     expect(sentByAgent(null)).toBe(false)
+  })
+
+  describe('what the bottom of the card is for', () => {
+    const account = plan.resolution.account.caip10
+    const signed = { assets: {}, chains: {}, wallets: { [account]: { walletType: 'rabby', agentProvider: null, label: 'Main' } } }
+    const agentic = { assets: {}, chains: {}, wallets: { [account]: { walletType: 'agentic', agentProvider: 'binance', label: null } } }
+
+    it('offers a signature on a wallet a person signs with', () => {
+      expect(panelMode(plan, 'awaiting_review', signed, null)).toEqual({ kind: 'sign' })
+      expect(panelMode(plan, 'awaiting_signature', signed, null)).toEqual({ kind: 'sign' })
+      expect(executorOf(plan, signed)).toBeNull()
+    })
+
+    it('offers approval on a wallet an agent operates, named by its vendor', () => {
+      expect(panelMode(plan, 'awaiting_review', agentic, null)).toEqual({ kind: 'approve', executor: 'Binance Agentic Wallet' })
+      expect(executorOf(plan, agentic)).toBe('Binance Agentic Wallet')
+    })
+
+    it('still names the wallet when the vendor is unknown here', () => {
+      const other = { ...agentic, wallets: { [account]: { walletType: 'agentic', agentProvider: 'acme', label: null } } }
+      expect(panelMode(plan, 'awaiting_review', other, null)).toEqual({ kind: 'approve', executor: 'your agent’s wallet' })
+    })
+
+    // Nothing beside the plan says who holds the key, so the page offers what
+    // the service will refuse for an agentic arm — and never an approval it
+    // cannot know is right.
+    it('falls back to the signature without the visuals', () => {
+      expect(panelMode(plan, 'awaiting_review', undefined, null)).toEqual({ kind: 'sign' })
+      expect(panelMode(plan, 'awaiting_review', { assets: {}, chains: {}, wallets: {} }, null)).toEqual({ kind: 'sign' })
+    })
+
+    it('waits for the agent once approved, and says who approved and whether the agent has the calls', () => {
+      expect(panelMode(plan, 'approved', agentic, null)).toEqual({
+        kind: 'waiting',
+        executor: 'Binance Agentic Wallet',
+        approvedBy: 'you',
+        handedOff: false,
+      })
+      expect(panelMode(plan, 'approved', agentic, { approvedBy: 'rule', handedOffAt: '2026-09-09T16:10:00Z' })).toEqual({
+        kind: 'waiting',
+        executor: 'Binance Agentic Wallet',
+        approvedBy: 'rule',
+        handedOff: true,
+      })
+      // The arm was unlinked since, or the visuals are missing: still waiting, still honest about who sends.
+      expect(panelMode(plan, 'approved', undefined, null)).toMatchObject({ kind: 'waiting', executor: 'your agent’s wallet' })
+    })
+
+    it('shows the submission, and who sent it', () => {
+      expect(panelMode(plan, 'submitted', agentic, { txHash: '0xab', reportedBy: 'agent' })).toEqual({ kind: 'submitted', sentByAgent: true })
+      expect(panelMode(plan, 'submitted', signed, { txHash: '0xab' })).toEqual({ kind: 'submitted', sentByAgent: false })
+    })
+
+    // Expiry is the page's clock: the status handed in is already `expired`.
+    it('ends an expired agentic plan: nothing to approve', () => {
+      expect(panelMode(plan, 'expired', agentic, null)).toEqual({ kind: 'ended' })
+      for (const status of ['confirmed', 'failed', 'cancelled', 'superseded', 'blocked'] as const) {
+        expect(panelMode(plan, status, agentic, null), status).toEqual({ kind: 'ended' })
+      }
+    })
   })
 
   it('counts down in minutes and seconds, then goes quiet', () => {

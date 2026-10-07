@@ -760,7 +760,8 @@ export interface Visuals {
   /** `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. `stock` is present for a tokenized stock the service knows by address. */
   assets: Record<string, { symbol: string; name: string; iconUrl: string | null; priceUsd: number | null; stock?: StockMark }>
   chains: Record<string, ChainVisual>
-  wallets: Record<string, { walletType: string; label: string | null }>
+  /** `agentProvider` is the vendor of an `agentic` arm, which the page approves on rather than signs; null for every other kind. */
+  wallets: Record<string, { walletType: string; agentProvider: string | null; label: string | null }>
 }
 
 /**
@@ -779,6 +780,14 @@ export interface ChainVisual {
   nativeDecimals: number
 }
 
+export interface StatusDetail {
+  txHash?: string
+  reason?: string
+  reportedBy?: string
+  handedOffAt?: string
+  approvedBy?: string
+}
+
 export interface ReviewRead {
   plan: Plan
   walletId: string | null
@@ -786,8 +795,10 @@ export interface ReviewRead {
   /**
    * What the latest event carried: the tx hash once submitted, a reason once
    * failed, and `reportedBy: 'agent'` when an agent's own wallet sent it.
+   * On an approved plan, `handedOffAt` once the agent holds the calls, and
+   * `approvedBy: 'rule'` when a per-arm rule approved it rather than a person.
    */
-  statusDetail: { txHash?: string; reason?: string; reportedBy?: string } | null
+  statusDetail: StatusDetail | null
   link: { expiresAt: string }
   visuals?: Visuals
 }
