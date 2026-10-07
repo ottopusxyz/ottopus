@@ -178,6 +178,15 @@ describe('approving by the arm’s rule', () => {
     }
   })
 
+  it('never approves a plan already past its expiry', async () => {
+    await switchOn(agentArm)
+    const plan = planFor(alice, { expiresAt: inMinutes(-1) })
+    const record = await createPlan(db, { plan, walletId: agentArm, approveByRule: true })
+    expect(record.plan.status).toBe('expired')
+    expect((await events()).map((e) => e.status)).toEqual(['awaiting_review'])
+    expect(await handOff(db, ref(plan.id))).toBeNull()
+  })
+
   it('never approves a blocked plan', async () => {
     await switchOn(agentArm)
     const record = await createPlan(db, { plan: planFor(alice, { status: 'blocked' }), walletId: agentArm, approveByRule: true })
