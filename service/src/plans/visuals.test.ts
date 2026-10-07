@@ -11,6 +11,7 @@ const arms: Arm[] = [
     address: '0x0000000000000000000000000000000000000001',
     label: 'Main',
     walletType: 'rabby',
+    agentProvider: null,
     isWatchOnly: false,
     provedAt: '2026-09-05T00:00:00Z',
     createdAt: '2026-09-05T00:00:00Z',
@@ -40,7 +41,16 @@ describe('visuals beside the plan', () => {
     expect(await visualsFor(plan, arms, portfolio)).toEqual({
       assets: { 'eip155:8453/slip44:60': { symbol: 'ETH', name: 'Ether', iconUrl: 'https://cdn/eth.png', priceUsd: 1 } },
       chains: { 'eip155:8453': { name: 'Base', iconUrl: 'https://cdn/base.png', nativeAssetId: 'eip155:8453/slip44:60', nativeSymbol: 'ETH', nativeDecimals: 18 } },
-      wallets: { [ACCOUNT]: { walletType: 'rabby', label: 'Main' } },
+      wallets: { [ACCOUNT]: { walletType: 'rabby', agentProvider: null, label: 'Main' } },
+    })
+  })
+
+  /** The page approves on an agentic arm instead of signing, so it has to know whose agent wallet it is. */
+  it('names the vendor of an agent-operated arm', async () => {
+    const plan = planFor('0191a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b')
+    const agentic: Arm[] = [{ ...arms[0]!, walletType: 'agentic', agentProvider: 'binance', label: null }]
+    expect((await visualsFor(plan, agentic, null)).wallets).toEqual({
+      [ACCOUNT]: { walletType: 'agentic', agentProvider: 'binance', label: null },
     })
   })
 

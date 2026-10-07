@@ -117,15 +117,14 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
    * inside it. A provider outage costs the icons, not the review.
    */
   const visuals = async (userId: string, plan: Parameters<typeof visualsFor>[0]) => {
-    try {
-      const arms = await listWallets(db as unknown as WalletDb, userId)
-      const portfolio = deps.readPortfolio
-        ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
-        : null
-      return visualsFor(plan, arms, portfolio, deps.tokens ?? null, deps.chainIcon ?? null)
-    } catch {
-      return visualsFor(plan, [], null, deps.tokens ?? null, deps.chainIcon ?? null)
-    }
+    // Two reads, failing separately. The arm beside the plan decides whether
+    // the page offers a signature or an approval, so a balance provider's bad
+    // day costs the icons and the prices, never the arm.
+    const arms = await listWallets(db as unknown as WalletDb, userId).catch(() => [])
+    const portfolio = deps.readPortfolio
+      ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address }))).catch(() => null)
+      : null
+    return visualsFor(plan, arms, portfolio, deps.tokens ?? null, deps.chainIcon ?? null)
   }
 
   /**
