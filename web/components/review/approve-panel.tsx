@@ -68,23 +68,28 @@ export function ApprovePanel({ plan, move, executor, waiting, recheck }: Approve
         }
       }
       setPhase('approving')
+      // The service approves from `awaiting_review` alone. A plan a page once
+      // took toward a signature steps back first, which the machine allows
+      // for a wallet that disconnected, rather than being refused here.
+      if (plan.status === 'awaiting_signature') await move({ status: 'awaiting_review' })
       await move({ status: 'approved' })
       // The parent re-reads the status and swaps this panel into the wait.
     } catch (err) {
       setPhase('idle')
       setProblem(describeRefusal(err, 'It could not be approved.'))
     }
-  }, [move, recheck])
+  }, [move, recheck, plan.status])
 
   const reject = useCallback(async () => {
     setRejecting(true)
     try {
       await move({ status: 'cancelled' })
-      setConfirmReject(false)
     } catch (err) {
       setProblem(describeRefusal(err, 'It could not be rejected.'))
     } finally {
+      // Closed either way: a refusal reads on the panel, not behind a dialog.
       setRejecting(false)
+      setConfirmReject(false)
     }
   }, [move])
 
@@ -95,13 +100,10 @@ export function ApprovePanel({ plan, move, executor, waiting, recheck }: Approve
     try {
       await move({ status: 'cancelled' })
     } catch (err) {
-      // Lost the race: the agent read the calls between the last poll and
-      // this click. The next poll shows it; say so now.
-      setProblem(
-        err instanceof ApiError && err.status === 409
-          ? 'Your agent already has the calls, so this can no longer be withdrawn.'
-          : describeRefusal(err, 'It could not be withdrawn.'),
-      )
+      // A 409 is the plan having moved on since the last poll — the agent
+      // read the calls, chat cancelled it, or it expired — and the re-read
+      // behind it says which. Nothing here claims to know before that.
+      setProblem(describeRefusal(err, 'It could not be withdrawn.'))
     } finally {
       setPhase('idle')
     }
