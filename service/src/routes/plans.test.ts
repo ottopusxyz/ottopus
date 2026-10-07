@@ -144,6 +144,30 @@ describe('GET /:token', () => {
     }
   })
 
+  /** The arm decides whether the page approves or signs, so it must outlive the balance provider. */
+  it('keeps the arm beside the plan when the balance provider is down', async () => {
+    await db.insert(schema.linkedWallets).values({
+      userId: alice,
+      address: '0x0000000000000000000000000000000000000001',
+      walletType: 'agentic',
+      agentProvider: 'binance',
+      ownershipProof: { signature: '0x01' },
+      provedAt: new Date(),
+    })
+    const plan = planFor(alice)
+    await createPlan(db, { plan })
+    const { token } = await link(plan.id)
+    const down = async () => {
+      throw new Error('zerion 503')
+    }
+
+    const res = await app(alice, down as never).request(`/${token}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { visuals: { assets: object; wallets: Record<string, unknown> } }
+    expect(body.visuals.assets).toEqual({})
+    expect(body.visuals.wallets[plan.resolution.account.caip10]).toEqual({ walletType: 'agentic', agentProvider: 'binance', label: null })
+  })
+
   /**
    * #37's four: tampered, expired, superseded, someone else's. All the same
    * 404, because the page must not hint at what a dead link used to open.

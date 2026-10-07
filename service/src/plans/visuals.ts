@@ -15,7 +15,8 @@ import type { PlanSummary } from './store.js'
 export interface Visuals {
   assets: Record<string, AssetVisual>
   chains: Record<string, ChainVisual>
-  wallets: Record<string, { walletType: string; label: string | null }>
+  /** `agentProvider` names the vendor of an `agentic` arm, which the page approves on rather than signs; null for every other kind. */
+  wallets: Record<string, { walletType: string; agentProvider: string | null; label: string | null }>
 }
 
 /** An asset's words and icon. `priceUsd` is today's, from whoever knew the asset; null when nobody prices it. */
@@ -151,7 +152,7 @@ export async function visualsFor(
   for (const account of accountsOf(plan)) {
     const address = account.split(':')[2]?.toLowerCase()
     const arm = arms.find((a) => a.address.toLowerCase() === address)
-    if (arm) visuals.wallets[account] = { walletType: arm.walletType, label: arm.label }
+    if (arm) visuals.wallets[account] = { walletType: arm.walletType, agentProvider: arm.agentProvider, label: arm.label }
   }
 
   return visuals
