@@ -29,6 +29,24 @@ export function effectiveStatus(plan: Pick<Plan, 'status' | 'expiresAt'>, now = 
   return new Date(plan.expiresAt).getTime() <= now ? 'expired' : plan.status
 }
 
+/**
+ * Whether the page has to keep asking the service what became of the plan.
+ * An approved plan is sent by the agent's wallet, which reports to the
+ * service and not to this page, so nothing here would otherwise notice that
+ * it left or that it settled. Asked of the stored status, not the page's
+ * clock: past the expiry it is still the service that knows whether the
+ * agent got there first. A plan this page signed is followed through the
+ * connected wallet instead.
+ */
+export function followsAgent(status: PlanStatusName, detail: { reportedBy?: string } | null): boolean {
+  return status === 'approved' || (status === 'submitted' && sentByAgent(detail))
+}
+
+/** Whether an agent's own wallet sent the plan, rather than one connected to this page. */
+export function sentByAgent(detail: { reportedBy?: string } | null): boolean {
+  return detail?.reportedBy === 'agent'
+}
+
 /** Only these may reach the sign button. */
 export function canSign(status: PlanStatusName): boolean {
   return status === 'awaiting_review' || status === 'awaiting_signature'

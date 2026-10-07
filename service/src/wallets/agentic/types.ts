@@ -25,10 +25,27 @@ export interface AgentProviderProfile {
   signSteps(request: SignRequest): string[]
   /** How the agent executes a plan's calls, one call at a time. */
   execute: { command: string; requiresDevMode: boolean }
+  /** The same, as the lines the agent is told: a command per call, in order. */
+  executeSteps(request: ExecuteRequest): string[]
 }
 
 /** What a profile is handed to spell out its signing steps: the account, and the typed data whole. */
 export interface SignRequest {
   address: string
   typedData: object
+}
+
+/** What a profile is handed to spell out an execution: the account that sends, and the calls as approved. */
+export interface ExecuteRequest {
+  address: string
+  calls: readonly ExecuteCall[]
+}
+
+/** One call, in the words a CLI takes: a plain address, wei, calldata, and the chain's own number. */
+export interface ExecuteCall {
+  to: string
+  value: string
+  data: string
+  /** The EVM chain id, without the `eip155:` namespace. */
+  chainReference: string
 }

@@ -42,6 +42,7 @@ export interface PlanTableProps {
 const STATUS_LABEL: Record<string, string> = {
   awaiting_review: 'To review',
   awaiting_signature: 'To sign',
+  approved: 'Waiting for your agent',
   submitted: 'Submitted',
   confirmed: 'Confirmed',
   blocked: 'Blocked',

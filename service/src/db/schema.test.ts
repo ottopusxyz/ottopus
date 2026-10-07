@@ -114,6 +114,7 @@ describe('status vocabulary is frozen', () => {
       'draft',
       'awaiting_review',
       'awaiting_signature',
+      'approved',
       'submitted',
       'confirmed',
       'failed',

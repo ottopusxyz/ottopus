@@ -66,6 +66,8 @@ export interface SignPanelProps {
   open: boolean
   /** The hash the service holds for a submitted plan, so a reopened page resumes the watch. */
   txHash?: string | null | undefined
+  /** An agent's own wallet sent it, so "your wallet" is not the one this page knows. */
+  sentByAgent?: boolean | undefined
   /**
    * Re-run the calls immediately before the wallet is asked to sign: the plan
    * was built minutes ago and the last thing a person should do is send a
@@ -103,7 +105,7 @@ type Phase =
 
 const isHash = (v: unknown): v is `0x${string}` => typeof v === 'string' && /^0x[0-9a-f]{64}$/i.test(v)
 
-export function SignPanel({ plan, move, open, txHash, recheck, walletType }: SignPanelProps) {
+export function SignPanel({ plan, move, open, txHash, sentByAgent, recheck, walletType }: SignPanelProps) {
   const router = useRouter()
   const chain = chainOfPlan(plan)
   const { installed, signer, connect: connectWith, walletConnect, refresh, disconnect: disconnectSigner } = useSigner(chain)
@@ -527,7 +529,8 @@ export function SignPanel({ plan, move, open, txHash, recheck, walletType }: Sig
           <div className="flex flex-col gap-0.5">
             <LoaderDots label="Pending confirmation" className="font-semibold text-[var(--ot-text)]" />
             <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-              Your wallet sent it. Close this page if you like — the transaction finishes either way.
+              {sentByAgent ? 'Your agent’s wallet sent it.' : 'Your wallet sent it.'} Close this page if you like — the
+              transaction finishes either way.
             </p>
           </div>
         </div>

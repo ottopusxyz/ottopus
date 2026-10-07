@@ -4,13 +4,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { encodeFunctionData, maxUint256 } from 'viem'
 import type { Portfolio } from '../connectors/portfolio/index.js'
 import type { StockInfo, StockLookup } from '../connectors/tokens/index.js'
-import type { CreatePlanInput, PlanRecord } from '../plans/index.js'
+import { RpcReadError } from '../core/index.js'
+import type { CreatePlanInput, Handoff, PlanRecord } from '../plans/index.js'
 import { PlanError } from '../plans/index.js'
 import { planFor } from '../plans/fixtures.js'
 import { KNOWN_ABI, type Lookups } from '../verify/index.js'
 import { RouteError, type RouteConnector, type RouteQuote } from '../connectors/route/index.js'
 import type { SimulationRun, Simulator } from '../connectors/simulation/index.js'
 import type { Arm } from '../wallets/index.js'
+import { agentProvider } from '../wallets/agentic/index.js'
 import { buildServer, type ToolDeps } from './server.js'
 
 /**
@@ -133,6 +135,10 @@ const deps = (over: Partial<ToolDeps> = {}): ToolDeps => ({
   }),
   findPlan: async () => null,
   transition: async (input) => input.to,
+  // The store's side of the hand-off is tested against a real database, in handoff.test.ts.
+  handOff: async () => null,
+  recordExecution: async () => 'submitted',
+  readSent: async () => null,
   // Linking is tested against a real database, in link.test.ts.
   startAgentLink: async () => {
     throw new Error('not under test here')
@@ -191,7 +197,7 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers six read tools and six that write, and says which is which', async () => {
+  it('offers six read tools and seven that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -206,14 +212,18 @@ describe('the tool surface', () => {
       'prepare_custom',
       'prepare_trade',
       'prepare_transfer',
+      'report_execution',
       'whoami',
     ])
     for (const tool of tools) {
       const readOnly = ![
+        // Its first read of an approved plan on an agent's own wallet hands out the calls and closes cancel.
+        'get_plan',
         'prepare_transfer',
         'prepare_trade',
         'prepare_custom',
         'cancel_plan',
+        'report_execution',
         'link_agent_wallet_start',
         'link_agent_wallet_finish',
       ].includes(tool.name)
@@ -744,6 +754,288 @@ describe('get_plan', () => {
     const result = await call(client, 'get_plan', { planId: onRecord().plan.id })
     expect(result.isError).toBe(true)
     expect(result.content[0]!.text).toContain('plans:read')
+  })
+})
+
+/** What the store hands back for an approved plan on an agent's arm. */
+const ARM = '0x0000000000000000000000000000000000000001'
+const HANDED_AT = '2026-09-09T10:02:00.000Z'
+/** The fixture plan's one call, as the chain reports it once the arm has sent it. */
+const SENT = { from: ARM, to: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', value: '1000', input: '0x' }
+
+function handoffFor(record: PlanRecord, first = true): Handoff {
+  const { plan } = record
+  return {
+    planHash: plan.planHash,
+    calls: plan.outcome.type === 'calls' ? plan.outcome.calls : [],
+    address: ARM,
+    profile: agentProvider('binance')!,
+    handedOffAt: HANDED_AT,
+    first,
+  }
+}
+
+describe('get_plan for a plan the agent’s own wallet sends', () => {
+  it('hands over the calls, the hash and how to send them once the plan is approved', async () => {
+    const record = onRecord({ status: 'approved' })
+    const asked: unknown[] = []
+    const { client } = await connected(undefined, {
+      findPlan: async () => (asked.length ? { ...record, statusDetail: { handedOffAt: HANDED_AT } } : record),
+      handOff: async (ref) => {
+        asked.push(ref)
+        return handoffFor(record)
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    const words = result.content[0]!.text
+
+    expect(result.isError).toBeUndefined()
+    expect(asked).toEqual([{ userId: USER_ID, planId: record.plan.id, version: 1 }])
+    expect(result.structuredContent).toMatchObject({
+      status: 'approved',
+      planHash: record.plan.planHash,
+      from: ARM,
+      calls: [{ to: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', value: '1000', data: '0x', chainId: 'eip155:8453' }],
+      execute: { provider: 'Binance Agentic Wallet' },
+      handedOffAt: HANDED_AT,
+      alreadyHandedOff: false,
+    })
+    expect(words).toContain(`The calls are yours to send now, from ${ARM} on Base. Ottopus does not send them.`)
+    expect(words).toContain(`Plan hash: ${record.plan.planHash}`)
+    // The provider's own command, with the call in it: a bare transfer has no input data to pass.
+    expect(words).toContain(
+      `baw contract-call preview --binanceChainId 8453 --from ${ARM} --to 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 --value 1000 --json`,
+    )
+    expect(words).toContain('baw contract-call execute --requestId <requestId> --json')
+    expect(words).toContain(`call report_execution with planId ${record.plan.id}`)
+  })
+
+  it('says so when the calls were already handed out, and repeats them', async () => {
+    const record = onRecord({ status: 'approved', statusDetail: { handedOffAt: HANDED_AT } })
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      handOff: async () => handoffFor(record, false),
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    expect(result.content[0]!.text).toContain(`Already handed to your agent at ${HANDED_AT}.`)
+    expect(result.content[0]!.text).toContain('do not send it twice')
+    expect(result.structuredContent).toMatchObject({ alreadyHandedOff: true, planHash: record.plan.planHash })
+    expect((result.structuredContent!.calls as unknown[]).length).toBe(1)
+  })
+
+  /** The store is not even asked: every status but approved answers as it always has. */
+  it.each(['awaiting_review', 'awaiting_signature', 'submitted', 'confirmed', 'failed', 'expired', 'blocked', 'cancelled', 'superseded'] as const)(
+    'never asks for the calls of a plan that is %s',
+    async (status) => {
+      const record = onRecord({ status, statusDetail: status === 'submitted' || status === 'confirmed' ? { txHash: TX } : null })
+      let asked = 0
+      const { client } = await connected(undefined, {
+        findPlan: async () => record,
+        handOff: async () => {
+          asked += 1
+          return handoffFor(record)
+        },
+      }, { grantId: 'grant-1' })
+      const result = await call(client, 'get_plan', { planId: record.plan.id })
+      expect(asked).toBe(0)
+      const everything = JSON.stringify(result)
+      for (const secret of ['"calls"', 'planHash', '"data"', 'contract-call']) expect(everything).not.toContain(secret)
+    },
+  )
+
+  it('never returns calls past expiry, though the last event still says approved', async () => {
+    // What findPlan derives for an approved plan whose time has passed.
+    const record = onRecord({ status: 'expired', statusDetail: { handedOffAt: HANDED_AT } })
+    let asked = 0
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      handOff: async () => {
+        asked += 1
+        return handoffFor(record)
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    expect(asked).toBe(0)
+    // Its calls did leave, so "nothing was sent" is not ours to say.
+    expect(result.content[0]!.text).toContain("Ottopus cannot say whether the agent's wallet sent them")
+    expect(JSON.stringify(result)).not.toContain('"calls"')
+  })
+
+  it('returns no calls when the store refuses: an approved plan on an arm no agent operates', async () => {
+    const record = onRecord({ status: 'approved' })
+    const { client } = await connected(undefined, { findPlan: async () => record, handOff: async () => null }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    expect(result.structuredContent).toMatchObject({ status: 'approved' })
+    const everything = JSON.stringify(result)
+    for (const secret of ['"calls"', 'planHash', '"data"', 'contract-call']) expect(everything).not.toContain(secret)
+  })
+
+  it('never asks for the calls of another grant’s plan', async () => {
+    const record = onRecord({ status: 'approved', grantId: 'grant-2' })
+    let asked = 0
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      handOff: async () => {
+        asked += 1
+        return handoffFor(record)
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'get_plan', { planId: record.plan.id })
+    expect(result.isError).toBe(true)
+    expect(asked).toBe(0)
+    expect(JSON.stringify(result)).not.toContain('planHash')
+  })
+})
+
+describe('report_execution', () => {
+  const approved = () => onRecord({ status: 'approved', statusDetail: { handedOffAt: HANDED_AT } })
+
+  it('checks the hash against the chain, then records it through the store', async () => {
+    const record = approved()
+    const reads: unknown[] = []
+    const reports: unknown[] = []
+    const { client } = await connected(undefined, {
+      findPlan: async () =>
+        reports.length ? onRecord({ plan: { ...record.plan, status: 'submitted' }, statusDetail: { txHash: TX } }) : record,
+      readSent: async (chainId, txHash) => {
+        reads.push([chainId, txHash])
+        return SENT
+      },
+      recordExecution: async (report) => {
+        reports.push(report)
+        return 'submitted'
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: ` ${TX.toUpperCase().replace('0X', '0x')} ` })
+
+    expect(result.isError).toBeUndefined()
+    expect(reads).toEqual([['eip155:8453', TX]])
+    expect(reports).toEqual([{ userId: USER_ID, planId: record.plan.id, version: 1, txHash: TX, sent: SENT }])
+    expect(result.content[0]!.text).toContain(`was sent to Base as ${TX}`)
+    expect(result.structuredContent).toMatchObject({ status: 'submitted', txHash: TX, reported: true })
+  })
+
+  it('refuses a hash from the wrong address, and says whose it was', async () => {
+    const record = approved()
+    const stranger = '0x00000000000000000000000000000000000000ff'
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      readSent: async () => ({ ...SENT, from: stranger }),
+      recordExecution: async () => {
+        throw new PlanError('wrong_sender', 'not the arm')
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain(`Refused: ${TX} was sent by ${stranger}, not by the wallet this plan is bound to (${ARM})`)
+    expect(result.structuredContent).toMatchObject({ status: 'approved', reported: false })
+  })
+
+  it('says why when the store refuses the arm’s own transaction: not this plan’s call, or another plan’s already', async () => {
+    const record = approved()
+    for (const [code, words] of [
+      ['wrong_call', 'it is not this plan’s call'],
+      ['hash_taken', 'already on record as the execution of another plan'],
+    ] as const) {
+      const { client } = await connected(undefined, {
+        findPlan: async () => record,
+        readSent: async () => SENT,
+        recordExecution: async () => {
+          throw new PlanError(code, 'refused')
+        },
+      }, { grantId: 'grant-1' })
+      const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+      expect(result.isError, code).toBe(true)
+      expect(result.content[0]!.text).toContain(`Refused: ${TX}`)
+      expect(result.content[0]!.text).toContain(words)
+      expect(result.structuredContent).toMatchObject({ status: 'approved', reported: false })
+    }
+  })
+
+  it('records nothing for a hash the chain has not seen, or cannot be asked about', async () => {
+    const record = approved()
+    let recorded = 0
+    const recordExecution = async () => {
+      recorded += 1
+      return 'submitted' as const
+    }
+    let { client } = await connected(undefined, { findPlan: async () => record, readSent: async () => null, recordExecution }, { grantId: 'grant-1' })
+    let result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain(`Base has not seen ${TX}`)
+
+    ;({ client } = await connected(undefined, {
+      findPlan: async () => record,
+      readSent: async () => {
+        throw new RpcReadError('eip155:8453', new Error('timeout'))
+      },
+      recordExecution,
+    }, { grantId: 'grant-1' }))
+    result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('could not be read just now')
+    expect(recorded).toBe(0)
+  })
+
+  it('does not read the chain for a plan that is not waiting on its agent', async () => {
+    for (const status of ['awaiting_review', 'expired', 'cancelled', 'confirmed'] as const) {
+      const record = onRecord({ status })
+      let read = 0
+      const { client } = await connected(undefined, {
+        findPlan: async () => record,
+        readSent: async () => {
+          read += 1
+          return SENT
+        },
+      }, { grantId: 'grant-1' })
+      const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+      expect(result.isError, status).toBe(true)
+      expect(result.content[0]!.text).toContain('is not waiting on an execution report')
+      expect(read).toBe(0)
+    }
+  })
+
+  it('answers the same hash a second time without an error', async () => {
+    const record = onRecord({ status: 'submitted', statusDetail: { txHash: TX } })
+    const { client } = await connected(undefined, { findPlan: async () => record }, { grantId: 'grant-1' })
+    const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]!.text).toContain('Already reported')
+
+    const other = await call(client, 'report_execution', { planId: record.plan.id, txHash: '0x' + 'cd'.repeat(32) })
+    expect(other.isError).toBe(true)
+  })
+
+  it('reports what the store decided when the plan moved between the two reads', async () => {
+    const record = approved()
+    const { client } = await connected(undefined, {
+      findPlan: async () => record,
+      readSent: async () => SENT,
+      recordExecution: async () => {
+        throw new PlanError('illegal_transition', 'expired -> submitted is not allowed')
+      },
+    }, { grantId: 'grant-1' })
+    const result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('Not recorded')
+  })
+
+  it('refuses a malformed hash, another grant’s plan, and a connection without plans:write', async () => {
+    const record = approved()
+    let { client } = await connected(undefined, { findPlan: async () => record }, { grantId: 'grant-1' })
+    let result = await call(client, 'report_execution', { planId: record.plan.id, txHash: '0xabc' })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('is not a transaction hash')
+
+    ;({ client } = await connected(undefined, { findPlan: async () => record }, { grantId: 'grant-2' }))
+    result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('only see plans this connection built')
+
+    ;({ client } = await connected(['wallets:read', 'plans:read'], { findPlan: async () => record }, { grantId: 'grant-1' }))
+    result = await call(client, 'report_execution', { planId: record.plan.id, txHash: TX })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('plans:write')
   })
 })
 

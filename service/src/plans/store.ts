@@ -10,8 +10,9 @@ import {
   parsePlan,
 } from '../core/index.js'
 import type * as schema from '../db/schema.js'
-import { planEvents, plans, reviewTokens } from '../db/schema.js'
+import { linkedWallets, planEvents, plans, reviewTokens } from '../db/schema.js'
 import { hashSecret, mintSecret } from '../oauth/crypto.js'
+import { type AgentProviderProfile, capabilitiesOf, profileOf } from '../wallets/agentic/index.js'
 
 /**
  * Where a plan lives between the tool call that built it and the wallet that
@@ -28,7 +29,19 @@ export type PlanDb = PgDatabase<PgQueryResultHKT, typeof schema>
 
 export class PlanError extends Error {
   constructor(
-    readonly code: 'not_found' | 'illegal_transition' | 'illegal_initial_status' | 'missing_tx_hash',
+    readonly code:
+      | 'not_found'
+      | 'illegal_transition'
+      | 'illegal_initial_status'
+      | 'missing_tx_hash'
+      /** `approved` asked of a plan whose arm no agent operates. */
+      | 'not_agentic'
+      /** An execution reported with a transaction the plan's arm did not send. */
+      | 'wrong_sender'
+      /** An execution reported with a transaction that is not the plan's call. */
+      | 'wrong_call'
+      /** An execution reported with a transaction another plan was already settled with. */
+      | 'hash_taken',
     message: string,
   ) {
     super(message)
@@ -143,7 +156,7 @@ function payloadOf(plan: Plan): Omit<Plan, 'status'> {
   return rest
 }
 
-function toRecord(row: PlanRow, event: EventRow, now = new Date()): PlanRecord {
+export function toRecord(row: PlanRow, event: EventRow, now = new Date()): PlanRecord {
   const plan = parsePlan({ ...(row.payload as object), status: event.status })
   // The column is what the unique index and the review token bind to; the
   // payload is what parsePlan just proved. They must agree.
@@ -161,7 +174,7 @@ function toRecord(row: PlanRow, event: EventRow, now = new Date()): PlanRecord {
   }
 }
 
-async function latestEvent(db: PlanDb, planId: string, version: number): Promise<EventRow | null> {
+export async function latestEvent(db: PlanDb, planId: string, version: number): Promise<EventRow | null> {
   const [row] = await db
     .select({ status: planEvents.status, createdAt: planEvents.createdAt, detail: planEvents.detail })
     .from(planEvents)
@@ -169,6 +182,56 @@ async function latestEvent(db: PlanDb, planId: string, version: number): Promise
     .orderBy(desc(planEvents.seq))
     .limit(1)
   return row ?? null
+}
+
+/** When the calls of an approved plan were handed to its agent, if they have been. */
+export function handedOffAt(detail: unknown): string | null {
+  const at = (detail as Record<string, unknown> | null)?.handedOffAt
+  return typeof at === 'string' ? at : null
+}
+
+/**
+ * What a caller's detail may not say. `handedOffAt` is the proof that the
+ * calls left, and `reportedBy` that an agent's wallet sent them; both are
+ * written by the hand-off alone (handoff.ts), under the plan's lock. Taken
+ * from a caller, the first would lock cancel and open an execution report
+ * for a plan whose calls nobody was ever given.
+ */
+const STORE_MARKS = ['handedOffAt', 'reportedBy'] as const
+
+function withoutStoreMarks(detail: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!detail || !STORE_MARKS.some((key) => key in detail)) return detail
+  const own = { ...detail }
+  for (const key of STORE_MARKS) delete own[key]
+  return own
+}
+
+/**
+ * The arm a plan is bound to, if an agent operates it: still linked, proved,
+ * and with a provider this build knows. Null for a wallet a person signs
+ * with, which is every other arm — and the answer that keeps `approved`, and
+ * with it the calls, away from them.
+ */
+export async function executingArm(
+  db: PlanDb,
+  userId: string,
+  walletId: string | null,
+): Promise<{ address: string; profile: AgentProviderProfile } | null> {
+  if (!walletId) return null
+  const [arm] = await db
+    .select({
+      address: linkedWallets.address,
+      walletType: linkedWallets.walletType,
+      agentProvider: linkedWallets.agentProvider,
+      isWatchOnly: linkedWallets.isWatchOnly,
+      provedAt: linkedWallets.provedAt,
+    })
+    .from(linkedWallets)
+    .where(and(eq(linkedWallets.id, walletId), eq(linkedWallets.userId, userId), isNull(linkedWallets.unlinkedAt)))
+  if (!arm) return null
+  const profile = profileOf(arm)
+  if (!profile || !capabilitiesOf({ ...arm, provedAt: arm.provedAt?.toISOString() ?? null }).agentExecutes) return null
+  return { address: arm.address.toLowerCase(), profile }
 }
 
 export interface CreatePlanInput {
@@ -236,7 +299,7 @@ export async function transition(
 ): Promise<PlanStatus> {
   return db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ id: plans.id, expiresAt: plans.expiresAt })
+      .select({ id: plans.id, expiresAt: plans.expiresAt, walletId: plans.walletId })
       .from(plans)
       .where(and(eq(plans.id, planId), eq(plans.version, version), eq(plans.userId, userId)))
       .for('update')
@@ -248,6 +311,24 @@ export async function transition(
     const from = effectiveStatus(latest.status as PlanStatus, row.expiresAt)
     if (!canTransition(from, to)) {
       throw new PlanError('illegal_transition', `${from} -> ${to} is not allowed`)
+    }
+    // Approval releases the calls to an agent, so it exists only where an
+    // agent's wallet is the one that sends. For any other arm the answer to
+    // "approve" is the signature on the review page, and nothing else.
+    if (to === 'approved' && !(await executingArm(tx, userId, row.walletId))) {
+      throw new PlanError('not_agentic', 'only a plan bound to an agent-operated wallet can be approved')
+    }
+    if (from === 'approved') {
+      // The hash an agent reports is checked against the chain first, and
+      // that check lives with the one writer that makes it (handoff.ts).
+      if (to === 'submitted') {
+        throw new PlanError('illegal_transition', 'approved -> submitted is written by a verified execution report only')
+      }
+      // Once the agent holds the calls, "withdrawn, nothing was sent" is no
+      // longer ours to promise: the plan ends as submitted or as expired.
+      if ((to === 'cancelled' || to === 'superseded') && handedOffAt(latest.detail)) {
+        throw new PlanError('illegal_transition', 'the calls were already handed to the agent')
+      }
     }
     // Submitted is the one state our side cannot take back, and the one that
     // needs a reference for receipt tracking. A submission with nothing to
@@ -261,7 +342,8 @@ export async function transition(
     // must not make the plan forget which transaction it became.
     const carried = from === 'submitted' && (to === 'confirmed' || to === 'failed') ? latest.detail : null
     const hash = (carried as Record<string, unknown> | null)?.txHash
-    const written = detail?.txHash === undefined && typeof hash === 'string' ? { ...detail, txHash: hash } : detail
+    const own = withoutStoreMarks(detail)
+    const written = own?.txHash === undefined && typeof hash === 'string' ? { ...own, txHash: hash } : own
     await tx.insert(planEvents).values({ planId, planVersion: version, status: to, detail: written ?? null })
     return to
   })

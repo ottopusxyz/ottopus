@@ -44,6 +44,14 @@ describe('order', () => {
     expect(sortPlans(rows, NOW).map((r) => r.id)).toEqual(['live', 'stale'])
     expect(effectiveStatus(rows[0]!, NOW)).toBe('expired')
   })
+
+  it('expires a plan the agent never sent, and leaves a submitted one to the chain', () => {
+    const past = '2026-09-10T12:01:00Z'
+    expect(effectiveStatus(row({ status: 'approved', expiresAt: past }), NOW)).toBe('expired')
+    expect(effectiveStatus(row({ status: 'approved' }), NOW)).toBe('approved')
+    expect(effectiveStatus(row({ status: 'submitted', expiresAt: past }), NOW)).toBe('submitted')
+    expect(statusCounts([row({ status: 'approved', expiresAt: past })], NOW)).toEqual([{ status: 'expired', count: 1 }])
+  })
 })
 
 describe('filters', () => {

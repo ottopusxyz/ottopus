@@ -48,6 +48,22 @@ describe('the transition table', () => {
   it('lets a disconnected wallet fall back to review', () => {
     expect(canTransition('awaiting_signature', 'awaiting_review')).toBe(true)
   })
+
+  it('walks the agentic path: approved from review, submitted from approved', () => {
+    expect(canTransition('awaiting_review', 'approved')).toBe(true)
+    expect(canTransition('approved', 'submitted')).toBe(true)
+  })
+
+  /** Approval is the review page's answer. Nothing else may give it. */
+  it('reaches approved from review and from nowhere else', () => {
+    for (const from of PLAN_STATUSES) {
+      expect(canTransition(from, 'approved'), `${from} -> approved`).toBe(from === 'awaiting_review')
+    }
+  })
+
+  it('lets an approved plan be withdrawn, replaced or expire, and never go back to review or signing', () => {
+    expect([...PLAN_TRANSITIONS.approved].sort()).toEqual(['cancelled', 'expired', 'submitted', 'superseded'])
+  })
 })
 
 describe('pending', () => {
@@ -55,6 +71,8 @@ describe('pending', () => {
     for (const s of PENDING_STATUSES) expect(isTerminal(s)).toBe(false)
     expect(isPending('draft')).toBe(false)
     expect(isPending('submitted')).toBe(false)
+    // Approved waits on the agent, not on the person.
+    expect(isPending('approved')).toBe(false)
     expect(isPending('awaiting_review')).toBe(true)
     expect(isPending('awaiting_signature')).toBe(true)
   })
@@ -68,6 +86,7 @@ describe('derived expiry', () => {
   it('reads a pending plan past its expiry as expired, without an event', () => {
     expect(effectiveStatus('awaiting_review', before, now)).toBe('expired')
     expect(effectiveStatus('awaiting_signature', before, now)).toBe('expired')
+    expect(effectiveStatus('approved', before, now)).toBe('expired')
     expect(effectiveStatus('draft', before, now)).toBe('expired')
   })
 

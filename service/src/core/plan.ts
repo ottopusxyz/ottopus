@@ -16,6 +16,8 @@ export const PLAN_STATUSES = [
   'draft',
   'awaiting_review',
   'awaiting_signature',
+  /** A person, or a rule they set, has said yes: the agent of an agentic arm may now have the calls. */
+  'approved',
   'submitted',
   'confirmed',
   'failed',

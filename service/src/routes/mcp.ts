@@ -2,8 +2,16 @@ import { Hono } from 'hono'
 import { config } from '../config.js'
 import { getDb } from '../db/client.js'
 import { findUserById } from '../auth/session.js'
-import { createPlan, findPlan, issueReviewLink, recordSimulation, transition } from '../plans/index.js'
-import { httpLookups } from '../verify/index.js'
+import {
+  createPlan,
+  findPlan,
+  handOff,
+  issueReviewLink,
+  recordExecution,
+  recordSimulation,
+  transition,
+} from '../plans/index.js'
+import { httpLookups, httpSenderReader } from '../verify/index.js'
 import { readPortfolio } from '../connectors/portfolio/index.js'
 import { baselineSimulator, composite } from '../connectors/simulation/index.js'
 import type { ToolDeps } from '../mcp/server.js'
@@ -118,6 +126,9 @@ if (!config.databaseUrl) {
     recordSimulation: (input) => recordSimulation(db, input),
     findPlan: (userId, planId) => findPlan(db, userId, planId),
     transition: (input) => transition(db, input),
+    handOff: (ref) => handOff(db, ref),
+    recordExecution: (report) => recordExecution(db, report),
+    readSent: httpSenderReader({ rpcUrlTemplate: config.rpcUrlTemplate }).sent,
     startAgentLink: (userId, input) => startAgentLink(db, userId, input),
     finishAgentLink: (userId, input) => finishAgentLink(db, userId, input),
   }

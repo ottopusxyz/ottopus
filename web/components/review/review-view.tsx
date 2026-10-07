@@ -12,7 +12,7 @@ import { explorerName, explorerTxUrl } from '@/lib/chains'
 import { decoderUrl } from '@/lib/simulators'
 import { AdvancedPanel } from './advanced-panel'
 import { HeadsUpPanel } from './heads-up-panel'
-import { canSign, chainOfPlan, countdown, effectiveStatus } from './model'
+import { canSign, chainOfPlan, countdown, effectiveStatus, followsAgent, sentByAgent } from './model'
 import { ReviewCard } from './review-card'
 import { AdvancedSkeleton, ReviewSkeleton } from './review-skeleton'
 import { Settled, SignPanel } from './sign-panel'
@@ -46,10 +46,18 @@ export function ReviewView({ token }: { token: string }) {
 }
 
 function Review({ token }: { token: string }) {
-  const { state, move } = useReview(token)
+  const { state, move, reload } = useReview(token)
   const now = useClock(state.status === 'ready')
   const read = state.status === 'ready' ? state.read : null
   const plan = read?.plan ?? null
+  // Nothing on this page moves a plan an agent's wallet sends: the service
+  // hears of it first, so the page asks again for as long as that is so.
+  const following = read ? followsAgent(read.plan.status, read.statusDetail) : false
+  useEffect(() => {
+    if (!following) return
+    const id = setInterval(reload, FOLLOW_MS)
+    return () => clearInterval(id)
+  }, [following, reload])
   const chainId = plan ? chainOfPlan(plan) : null
   // The chain's own currency, as the service names it. The page must not work
   // this out: the SLIP-44 table lives in core, and a guess would label BNB as
@@ -149,7 +157,13 @@ function Review({ token }: { token: string }) {
                 walletType={visuals?.wallets[plan.resolution.account.caip10]?.walletType}
               />
             ) : status === 'submitted' ? (
-              <SignPanel plan={plan} move={move} open={false} txHash={statusDetail?.txHash ?? null} />
+              <SignPanel
+                plan={plan}
+                move={move}
+                open={false}
+                txHash={statusDetail?.txHash ?? null}
+                sentByAgent={sentByAgent(statusDetail)}
+              />
             ) : (
               <Ended status={status} chain={chainId} txHash={statusDetail?.txHash ?? null} />
             )}
@@ -185,6 +199,9 @@ function Review({ token }: { token: string }) {
 const WIDE_GRID =
   'relative mx-auto w-full max-w-[440px] min-[1032px]:grid min-[1032px]:max-w-[1032px] min-[1032px]:grid-cols-[280px_440px_280px] min-[1032px]:items-start min-[1032px]:gap-4'
 const MIRROR = 'hidden min-[1032px]:block'
+
+/** How often the page re-reads a plan it is waiting on an agent for. */
+const FOLLOW_MS = 5_000
 
 /** A second hand for the countdown; stops when there is nothing to count. */
 function useClock(running: boolean): number {
@@ -275,6 +292,11 @@ function Blocked({ plan }: { plan: Plan }) {
 }
 
 const ENDED_COPY: Partial<Record<PlanStatusName, { title: string; body: string }>> = {
+  // Not an ending, but nothing here is the person's to do: the agent's wallet sends it.
+  approved: {
+    title: 'Waiting for your agent to execute',
+    body: 'You approved this. Your agent sends it from its own wallet; Ottopus does not.',
+  },
   confirmed: { title: 'Signed and settled', body: 'This one is done.' },
   failed: { title: 'It did not go through', body: 'The transaction failed on chain. Nothing else was sent.' },
   expired: { title: 'This request expired', body: 'Ask the agent again and it will prepare a fresh one.' },

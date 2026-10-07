@@ -5,7 +5,7 @@ import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
 import type { StockInfo } from '../connectors/tokens/index.js'
 import { stockFactsStale, stockMarket, stockMarketWords, stockPremium, stockStaleReason } from '../verify/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
-import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText } from './plan-status.js'
+import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText, reportExecution, reportText } from './plan-status.js'
 import { capabilitiesOf } from '../wallets/index.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
@@ -45,8 +45,8 @@ export interface ToolContext {
  * knows how a userId becomes a row.
  *
  * The reads a prepare_* tool needs are `SwapDeps` (which extends the
- * transfer's `PrepareDeps` with the router) and the reads get_plan and
- * cancel_plan need are `StatusDeps`, declared where those functions live
+ * transfer's `PrepareDeps` with the router) and what get_plan, cancel_plan
+ * and report_execution need is `StatusDeps`, declared where those functions live
  * rather than copied here — one list per capability, and no chance of this
  * one drifting from what the pipeline actually asks for.
  */
@@ -71,6 +71,9 @@ const INSTRUCTIONS = [
   'Every prepare_* tool returns a plan and a review URL. The user opens that link, checks the',
   'decoded calls and the simulation, and signs in their own wallet. Nothing you do here moves funds.',
   'get_plan reports what became of a plan; cancel_plan withdraws one that has not been signed.',
+  'The one exception is a wallet this agent operates itself through a vendor CLI: the person approves',
+  'instead of signing, get_plan then returns that plan’s calls for the agent’s own wallet to send, and',
+  'report_execution records the transaction hash. Ottopus still does not sign or send them.',
 ].join(' ')
 
 type ToolResult = {
@@ -586,28 +589,66 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
   )
 
   /**
-   * The two tools that follow a plan after it is built. Both answer in words
-   * and status, never in calls: an agent learns whether the person signed and
-   * what happened on chain, and nothing it could act on by itself.
+   * The tools that follow a plan after it is built. They answer in words and
+   * status: an agent learns whether the person signed and what happened on
+   * chain, and nothing it could act on by itself — except for a plan on a
+   * wallet the agent itself operates, once that plan is approved. Then, and
+   * only then, get_plan carries the calls, and report_execution takes back
+   * the hash of what the agent's wallet sent.
    */
   server.registerTool(
     'get_plan',
     {
       title: 'Get a plan',
       description:
-        'Where a plan this agent prepared has got to: whether the person has signed, the transaction ' +
-        'hash once it is sent, and the outcome in words once the chain has decided. Poll it after ' +
-        'prepare_* to report back. Never returns the calls themselves. Read-only.',
+        'Where a plan this agent prepared has got to: whether the person has signed or approved, the ' +
+        'transaction hash once it is sent, and the outcome in words once the chain has decided. Poll it ' +
+        'after prepare_* to report back. It never returns the calls of a plan a person signs in their own ' +
+        'wallet. For a plan on a wallet this agent operates, once the person has approved it, it returns ' +
+        'the calls, the plan hash and how to send them with that wallet’s CLI; send them as given, then ' +
+        'call report_execution. It changes nothing about a plan except that the first read to return calls is ' +
+        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them.',
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      // Not read-only: handing out the calls writes an event and closes cancel.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ planId }) => {
       if (!hasScope(ctx.scopes, 'plans:read')) return denied('plans:read')
       const outcome = await getPlan({ userId: ctx.userId, grantId: ctx.grantId }, deps, planId)
       if (outcome.kind === 'not_found') return failure(getPlanText(outcome))
-      return text(getPlanText(outcome), { ...outcome.view })
+      if (!outcome.handoff) return text(getPlanText(outcome), { ...outcome.view })
+      const { calls, planHash, execute, from, handedOffAt, first } = outcome.handoff
+      return text(getPlanText(outcome), { ...outcome.view, calls, planHash, execute, from, handedOffAt, alreadyHandedOff: !first })
+    },
+  )
+
+  server.registerTool(
+    'report_execution',
+    {
+      title: 'Report an execution',
+      description:
+        'Tell Ottopus that this agent’s own wallet sent an approved plan, and with which transaction. ' +
+        'Only for a plan whose calls get_plan handed out. The hash must be the transaction that wallet ' +
+        'sent for this plan: from its address, on the plan’s chain, with the call’s destination, value ' +
+        'and data unchanged, and not already reported for another plan; anything else is refused. For a ' +
+        'plan with several calls, report the last one’s hash. This sends nothing: it records what was ' +
+        'already sent, and get_plan then says whether it confirmed.',
+      inputSchema: {
+        planId: z.string().describe('The planId a prepare_* tool returned.'),
+        txHash: z.string().describe('The transaction hash the wallet’s CLI returned: 0x and 64 hex characters.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ planId, txHash }) => {
+      if (!hasScope(ctx.scopes, 'plans:write')) return denied('plans:write')
+      const outcome = await reportExecution({ userId: ctx.userId, grantId: ctx.grantId }, deps, planId, txHash.trim())
+      if (outcome.kind === 'not_found' || outcome.kind === 'bad_hash') return failure(reportText(outcome))
+      const structured = { ...outcome.view, reported: outcome.kind === 'reported' || outcome.kind === 'already_reported' }
+      return outcome.kind === 'reported' || outcome.kind === 'already_reported'
+        ? text(reportText(outcome), structured)
+        : { ...text(reportText(outcome), structured), isError: true }
     },
   )
 

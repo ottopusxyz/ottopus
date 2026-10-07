@@ -10,6 +10,8 @@ import {
   countdown,
   decodedRows,
   effectiveStatus,
+  followsAgent,
+  sentByAgent,
   changeSource,
   keyFacts,
   planSteps,
@@ -93,6 +95,20 @@ describe('status on the page', () => {
   it('never expires a submitted or terminal plan', () => {
     expect(effectiveStatus({ ...plan, status: 'submitted' }, after)).toBe('submitted')
     expect(effectiveStatus({ ...plan, status: 'confirmed' }, after)).toBe('confirmed')
+  })
+
+  /** The agent's wallet tells the service, not the page: these are the states the page has to ask about. */
+  it('keeps asking the service about a plan an agent sends, and about no other', () => {
+    expect(followsAgent('approved', null)).toBe(true)
+    expect(followsAgent('submitted', { reportedBy: 'agent' })).toBe(true)
+    // Signed on this page: the connected wallet is watched instead.
+    expect(followsAgent('submitted', {})).toBe(false)
+    expect(followsAgent('submitted', null)).toBe(false)
+    for (const status of ['awaiting_review', 'awaiting_signature', 'confirmed', 'failed', 'expired', 'cancelled'] as const) {
+      expect(followsAgent(status, { reportedBy: 'agent' }), status).toBe(false)
+    }
+    expect(sentByAgent({ reportedBy: 'agent' })).toBe(true)
+    expect(sentByAgent(null)).toBe(false)
   })
 
   it('counts down in minutes and seconds, then goes quiet', () => {

@@ -538,6 +538,7 @@ export type PlanStatusName =
   | 'draft'
   | 'awaiting_review'
   | 'awaiting_signature'
+  | 'approved'
   | 'submitted'
   | 'confirmed'
   | 'failed'
@@ -782,8 +783,11 @@ export interface ReviewRead {
   plan: Plan
   walletId: string | null
   statusAt: string
-  /** What the latest event carried: the tx hash once submitted, a reason once failed. */
-  statusDetail: { txHash?: string; reason?: string } | null
+  /**
+   * What the latest event carried: the tx hash once submitted, a reason once
+   * failed, and `reportedBy: 'agent'` when an agent's own wallet sent it.
+   */
+  statusDetail: { txHash?: string; reason?: string; reportedBy?: string } | null
   link: { expiresAt: string }
   visuals?: Visuals
 }
@@ -795,7 +799,7 @@ export function readReview(credentials: Credentials, token: string): Promise<Rev
 
 /** The transitions a browser may write. Anything else is the service's to decide. */
 export type WebTransition =
-  | { status: 'awaiting_review' | 'awaiting_signature' | 'cancelled' }
+  | { status: 'awaiting_review' | 'awaiting_signature' | 'approved' | 'cancelled' }
   | { status: 'submitted'; detail: { txHash: string } }
   /** The hash rides along, as it does from the receipt job, so a reopened page can still point at the explorer. */
   | { status: 'confirmed'; detail?: { txHash: string } }
