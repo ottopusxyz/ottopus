@@ -48,7 +48,6 @@ export function sentByAgent(detail: { reportedBy?: string } | null): boolean {
   return detail?.reportedBy === 'agent'
 }
 
-/** Only these may reach the sign button. */
 /**
  * What the bottom of the card is for.
  *
@@ -56,19 +55,24 @@ export function sentByAgent(detail: { reportedBy?: string } | null): boolean {
  * A wallet a person signs with gets the sign flow; a wallet an agent operates
  * gets approve mode, then the wait while the agent executes. The arm's kind
  * is read from the visuals beside the plan, never from the plan, which does
- * not know who holds the key — and without them a plan reads as signable,
- * which the service refuses to approve anyway.
+ * not know who holds the key. Without the arm the page offers neither: a
+ * guess is the sign flow for a wallet no browser holds the key of, or an
+ * approval the service refuses, and `unknown` says so instead.
  */
 export type PanelMode =
   | { kind: 'sign' }
   | { kind: 'approve'; executor: string }
+  | { kind: 'unknown' }
   | { kind: 'waiting'; executor: string; approvedBy: 'you' | 'rule'; handedOff: boolean }
   | { kind: 'submitted'; sentByAgent: boolean }
   | { kind: 'ended' }
 
 export function panelMode(plan: Plan, status: PlanStatusName, visuals: Visuals | undefined, detail: StatusDetail | null): PanelMode {
   const executor = executorOf(plan, visuals)
-  if (canSign(status)) return executor ? { kind: 'approve', executor } : { kind: 'sign' }
+  if (canSign(status)) {
+    if (!armOf(plan, visuals)) return { kind: 'unknown' }
+    return executor ? { kind: 'approve', executor } : { kind: 'sign' }
+  }
   if (status === 'approved') {
     return {
       kind: 'waiting',
@@ -86,11 +90,17 @@ const AGENT_WALLET = 'your agent’s wallet'
 
 /** The agent wallet that sends this plan, by its vendor's name, or null when a person signs it. */
 export function executorOf(plan: Plan, visuals: Visuals | undefined): string | null {
-  const arm = visuals?.wallets[plan.resolution.account.caip10]
+  const arm = armOf(plan, visuals)
   if (!arm || arm.walletType !== AGENTIC) return null
   return (arm.agentProvider && AGENT_PROVIDERS[arm.agentProvider]?.name) || AGENT_WALLET
 }
 
+/** The linked arm the plan is bound to, as read beside it; null when it is not linked any more or not known. */
+function armOf(plan: Plan, visuals: Visuals | undefined): Visuals['wallets'][string] | null {
+  return visuals?.wallets[plan.resolution.account.caip10] ?? null
+}
+
+/** Only these may reach the sign or the approve button. */
 export function canSign(status: PlanStatusName): boolean {
   return status === 'awaiting_review' || status === 'awaiting_signature'
 }

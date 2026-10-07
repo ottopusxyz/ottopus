@@ -134,12 +134,15 @@ describe('status on the page', () => {
       expect(panelMode(plan, 'awaiting_review', other, null)).toEqual({ kind: 'approve', executor: 'your agent’s wallet' })
     })
 
-    // Nothing beside the plan says who holds the key, so the page offers what
-    // the service will refuse for an agentic arm — and never an approval it
-    // cannot know is right.
-    it('falls back to the signature without the visuals', () => {
-      expect(panelMode(plan, 'awaiting_review', undefined, null)).toEqual({ kind: 'sign' })
-      expect(panelMode(plan, 'awaiting_review', { assets: {}, chains: {}, wallets: {} }, null)).toEqual({ kind: 'sign' })
+    // Nothing beside the plan says who holds the key: the arm was unlinked, or
+    // the read came back without it. The sign flow would ask a browser for a
+    // key an agent's vendor holds, and an approval is one the service refuses
+    // for a signed arm, so the page offers neither and says so.
+    it('offers neither flow when the arm is not beside the plan', () => {
+      expect(panelMode(plan, 'awaiting_review', undefined, null)).toEqual({ kind: 'unknown' })
+      expect(panelMode(plan, 'awaiting_review', { assets: {}, chains: {}, wallets: {} }, null)).toEqual({ kind: 'unknown' })
+      expect(panelMode(plan, 'awaiting_signature', { assets: {}, chains: {}, wallets: {} }, null)).toEqual({ kind: 'unknown' })
+      expect(executorOf(plan, undefined)).toBeNull()
     })
 
     it('waits for the agent once approved, and says who approved and whether the agent has the calls', () => {

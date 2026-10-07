@@ -160,6 +160,8 @@ function Review({ token }: { token: string }) {
                 recheck={simulation.recheck}
                 walletType={visuals?.wallets[plan.resolution.account.caip10]?.walletType}
               />
+            ) : mode.kind === 'unknown' ? (
+              <UnknownArm retry={reload} />
             ) : mode.kind === 'approve' ? (
               <ApprovePanel plan={plan} move={move} executor={mode.executor} recheck={simulation.recheck} />
             ) : mode.kind === 'waiting' ? (
@@ -185,6 +187,26 @@ function Review({ token }: { token: string }) {
         </aside>
       </div>
     </Ground>
+  )
+}
+
+/**
+ * The plan is still open but the page cannot tell which of the person's
+ * wallets it is bound to, so it offers neither a signature nor an approval.
+ * Usually the arm was unlinked after the plan was built; the agent can
+ * prepare it again against a wallet that is.
+ */
+function UnknownArm({ retry }: { retry: () => void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Callout severity="caution" title="Which wallet is this?">
+        Ottopus could not find the linked wallet this request is bound to, so there is nothing to sign or approve here.
+        It may have been unlinked. Nothing was signed.
+      </Callout>
+      <Button variant="link" size="sm" className="self-start" onClick={retry}>
+        Check again
+      </Button>
+    </div>
   )
 }
 
