@@ -386,6 +386,7 @@ export function customText(outcome: CustomOutcome): string {
     case 'blocked':
       return [
         `Ottopus refused to build "${outcome.summary}":`,
+        `Plan ID: ${outcome.planId}`,
         list(outcome.reasons),
         'The calls, or what they do, disagree with the declaration. Fix the calls or the declaration and submit again — never by loosening the declaration to match calls you did not mean.',
         'The refusal is recorded in Activity. Nothing was sent.',
@@ -394,6 +395,7 @@ export function customText(outcome: CustomOutcome): string {
       const seen = outcome.observed.filter((c) => c.diff.startsWith('-'))
       return [
         `Plan ready: ${outcome.summary}.`,
+        `Plan ID: ${outcome.planId}`,
         `Signs from ${outcome.account}. Agent-crafted: no route provider stood behind these calls, and the page will say so.`,
         seen.length
           ? `The simulation saw leave: ${seen.map((c) => `${c.diff.slice(1)} ${c.symbol ?? truncateAddress(parseAssetId(c.asset).assetReference)}`).join(', ')} — all within what was declared.`

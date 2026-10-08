@@ -400,6 +400,7 @@ export function prepareText(outcome: PrepareOutcome): string {
     case 'blocked':
       return [
         `Ottopus refused to build "${outcome.summary}":`,
+        `Plan ID: ${outcome.planId}`,
         ...outcome.reasons.map((r) => `- ${r}`),
         'The refusal is recorded in Activity. Nothing was sent.',
       ].join('\n')
@@ -407,6 +408,7 @@ export function prepareText(outcome: PrepareOutcome): string {
       if (outcome.status === 'approved' && outcome.rule) {
         return [
           `Plan approved: ${outcome.summary}.`,
+          `Plan ID: ${outcome.planId}`,
           outcome.reason,
           ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
           ...approvedLines(outcome.rule, outcome.expiresAt, outcome.reviewUrl),
@@ -414,6 +416,7 @@ export function prepareText(outcome: PrepareOutcome): string {
       }
       return [
         `Plan ready: ${outcome.summary}.`,
+        `Plan ID: ${outcome.planId}`,
         outcome.reason,
         ...ruleLine(outcome.rule),
         ...outcome.warnings.map((w) => `Heads up: ${w.message}`),

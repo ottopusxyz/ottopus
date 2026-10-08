@@ -187,6 +187,13 @@ type Result = {
 const call = async (client: Client, name: string, args: Record<string, unknown> = {}) =>
   (await client.callTool({ name, arguments: args })) as Result
 
+/** A host that shows the model only the text still needs the id for every next call. */
+const namesPlan = (res: { content: { text: string }[]; structuredContent?: Record<string, unknown> }) => {
+  const planId = res.structuredContent?.planId
+  expect(planId).toEqual(expect.any(String))
+  expect(res.content[0]!.text).toContain(`Plan ID: ${planId as string}`)
+}
+
 describe('the tool surface', () => {
   /**
    * The product's whole promise, as a test. Tool calls create plans, never
@@ -448,6 +455,7 @@ describe('prepare_transfer', () => {
     expect(res.isError).toBeFalsy()
     expect(res.content[0]!.text).toMatch(/^Plan ready: Send 500 USDC to 0x1111…1111 from Main on Base\./)
     expect(res.content[0]!.text).toMatch(/Recommended Main \(…6045\) because it holds 1,000 USDC on Base/)
+    namesPlan(res)
     expect(res.content[0]!.text).toMatch(/Review and sign: https:\/\/ottopus\.test\/review\//)
     expect(res.structuredContent).toMatchObject({
       status: 'awaiting_review',
@@ -553,6 +561,7 @@ describe('prepare_transfer', () => {
     })
     const res = (await send(client, {})) as { isError?: boolean; content: { text: string }[]; structuredContent: Record<string, unknown> }
     expect(res.isError).toBe(true)
+    namesPlan(res)
     expect(res.content[0]!.text).toMatch(/Ottopus refused to build "Send 500 USDC/)
     expect(res.content[0]!.text).toMatch(/has no code on Base/)
     expect(res.structuredContent).toMatchObject({ status: 'blocked' })
@@ -1382,6 +1391,7 @@ describe('prepare_trade', () => {
 
     expect(res.isError, res.content[0]?.text).toBeFalsy()
     expect(res.content[0]!.text).toMatch(/^Plan ready: Swap 500 USDC for about 0.12 ETH from Main on Base\./)
+    namesPlan(res)
     expect(res.content[0]!.text).toContain('Route: Swap on Aerodrome.')
     expect(res.structuredContent).toMatchObject({
       status: 'awaiting_review',
@@ -1560,6 +1570,7 @@ describe('prepare_trade', () => {
       }, { grantId: 'grant-1' })
       const res = (await send(client, { to: STOCK })) as Result
       expect(res.isError).toBe(true)
+      namesPlan(res)
       expect(res.content[0]!.text).toContain('Ottopus refused to build')
       expect(res.content[0]!.text).toContain(
         'NVDAB is not trading right now (halted: corporate action). Next open 2026-09-28T13:30:00.000Z.',
@@ -2324,6 +2335,7 @@ describe('prepare_custom', () => {
 
     expect(result.isError).toBeFalsy()
     expect(result.structuredContent).toMatchObject({ status: 'awaiting_review', summary: honest.summary })
+    namesPlan(result)
     expect(result.content[0]!.text).toMatch(/Agent-crafted/)
     expect(result.content[0]!.text).toMatch(/saw leave: 1000000 USDC/)
 
@@ -2346,6 +2358,7 @@ describe('prepare_custom', () => {
 
     expect(result.isError).toBe(true)
     expect(result.structuredContent).toMatchObject({ status: 'blocked' })
+    namesPlan(result)
     expect(result.content[0]!.text).toMatch(/unlimited approval/)
     expect(sink.created[0]!.plan.status).toBe('blocked')
   })
@@ -2537,6 +2550,7 @@ describe('the auto-execute rule', () => {
     expect(res.isError, res.content[0]?.text).toBeFalsy()
     expect(res.content[0]!.text).toMatch(/^Plan approved: Send 500 USDC/)
     expect(res.content[0]!.text).toContain('Approved by the rule for Agent (0x0000…0a11): the plan verified and the simulation passed.')
+    namesPlan(res)
     expect(res.content[0]!.text).toContain('Call get_plan to receive the calls')
     expect(res.content[0]!.text).toContain('withdraw it until the calls are handed out: https://ottopus.test/review/')
     expect(res.structuredContent).toMatchObject({
@@ -2644,6 +2658,7 @@ describe('the auto-execute rule', () => {
     expect(res.isError, res.content[0]?.text).toBeFalsy()
     expect(res.content[0]!.text).toMatch(/^Plan approved: Swap 500 USDC/)
     expect(res.content[0]!.text).toContain('Route: Swap on Aerodrome.')
+    namesPlan(res)
     expect(res.content[0]!.text).toContain('Approved by the rule for Agent (0x0000…0a11)')
     expect(res.structuredContent).toMatchObject({ status: 'approved', rule: { applied: true }, minOut: '119400000000000000' })
     expect(sink.created[0]!.plan.simulation).toMatchObject({ provider: 'stub', success: true })
