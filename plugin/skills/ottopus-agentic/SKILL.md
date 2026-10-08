@@ -72,17 +72,23 @@ reply carries a `planId` and a review link. Give the person the link.
 
 For a plan bound to a wallet the agent operates, the review page shows
 **Approve** instead of a wallet signature. If the person has turned on
-auto-execute for that wallet in settings, Ottopus approves the plan itself
-after verification and a passing simulation, and `get_plan` says
-"approved by your rule".
+auto-execute for that wallet in settings, the `prepare_trade` or
+`prepare_transfer` reply itself says the plan was approved by the rule, after
+verification and a passing simulation, and that no review is needed. Still
+give the person the link: they can withdraw the plan until its calls are
+handed out. `prepare_custom` always needs a review, whatever the toggle says.
 
 Poll `get_plan` with the `planId`. Read the `status`:
 
 - `awaiting_review`, `awaiting_signature`: wait. Do not ask for the calls; they
   are not released, and asking does not hurry the person.
 - `approved`: the reply now carries the calls. Go to executing.
-- `cancelled`, `expired`, `blocked`, `superseded`: over. Nothing was sent. Tell
-  the person; prepare again only if they still want it.
+- `cancelled`, `blocked`, `superseded`: over. Nothing was sent. Tell the
+  person; prepare again only if they still want it.
+- `expired`: over, but not always "nothing was sent". If the calls had already
+  been handed out, `get_plan` says so, and Ottopus cannot know whether the
+  wallet sent them. Check the wallet's transaction history before telling the
+  person, and do not prepare the same trade again until that is settled.
 
 Poll at a human pace, every ten to thirty seconds, and stop at the plan's
 `expiresAt`. An expired plan never becomes approved.
@@ -109,7 +115,11 @@ one preview and one execute per call. Follow them as written.
   `report_execution` with the `planId` and that hash, before `expiresAt`.
   Ottopus checks that the transaction came from the plan's wallet, on the
   plan's chain, carrying the approved call; anything else is refused with the
-  reason. Then poll `get_plan` for `confirmed` or `failed`.
+  reason. `reported: true` means it is on record: poll `get_plan` for
+  `confirmed` or `failed`. `reported: false` with "not recorded yet" means
+  the chain has not seen the hash or could not be read: wait a few seconds
+  and report the same hash again, before `expiresAt`. Never send again to get
+  a hash Ottopus will take.
 
 The first `get_plan` that returns calls is recorded, and the plan can no longer
 be cancelled after it. Reading again returns the same calls with
@@ -197,8 +207,11 @@ For each call, in order:
 5. `BROADCASTED` carries the `txHash`. `PENDING_CONFIRMATION` means the person
    confirms in the Binance App first; the hash is then in
    `baw wallet tx-history --json`.
-6. A preview's request id expires. If execute reports an expired preview, run
-   the same preview again, show it again, then execute the new request id.
+6. A preview's request id expires. If execute reports an expired preview,
+   check the plan's `expiresAt` first. If the plan still has time, run the
+   same preview again, show it again, then execute the new request id. If the
+   plan has expired, stop: an expired plan takes no report, and anything sent
+   now would be outside what the person approved.
 
 When the last call has its hash, call `report_execution` with the `planId` and
 that hash.
