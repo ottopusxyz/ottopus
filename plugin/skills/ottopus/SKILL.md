@@ -93,10 +93,14 @@ person signs. "Half", "a third" and "all" are fractions of the `amount`
 cut (not rounded) at four decimals: take the fraction of that, multiply by
 10^decimals, and round down to a whole number of base units for `amountIn`.
 Because it is cut, "all" never overshoots the real balance. A holding too
-small to show shows as `<0.0001` instead of a number; a fraction of that is
-nothing to trade, so say so rather than guess at a figure. "All" of the chain's own coin still leaves gas behind, since a
-wallet spending its whole native balance is not eligible; say how much
-stayed. "Some" and "take profit" name no amount, and the table supplies
+small to show shows as `<0.0001` instead of a number (fewer zeros for a token
+with fewer decimals). That is a real, positive balance the display cannot
+size, and no tool here returns the exact figure, so a fraction of it cannot
+be computed: take the base-unit amount from the person or from a balance the
+agent can read elsewhere, and do not invent one or call the holding
+untradeable; the service prepares any amount the wallet covers. "All" of the
+chain's own coin still leaves gas behind, since a wallet spending its whole
+native balance is not eligible; say how much stayed. "Some" and "take profit" name no amount, and the table supplies
 none; a plan needs a number, so ask for one.
 
 ## 2. Read before you spend
