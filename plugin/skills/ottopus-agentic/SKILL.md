@@ -101,7 +101,9 @@ Poll `get_plan` with the `planId`. Read the `status`:
   person, and do not prepare the same trade again until that is settled.
 
 Poll at a human pace, every ten to thirty seconds, and stop at the plan's
-`expiresAt`. An expired plan never becomes approved.
+`expiresAt` unless it is `submitted`: a sent transaction does not expire, so
+keep watching it until it is `confirmed` or `failed`. An expired plan never
+becomes approved.
 
 ## 3. Executing
 
