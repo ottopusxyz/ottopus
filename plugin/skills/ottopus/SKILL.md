@@ -63,22 +63,22 @@ one of them. Read all three from the person's words before picking an asset.
 | "send", "pay", "transfer 20 USDT to koshik.eth" | that asset | the recipient, not the wallet: `prepare_transfer`, never a trade | the spend side |
 
 **An open side is a stablecoin.** When the person says what to buy but not
-what to pay with, pay with a stablecoin held on that chain: USDT when a
-wallet holds enough of it for the amount, else the stablecoin with the
-largest holding that covers it (USDC, USD1, FDUSD, whatever `get_portfolio`
-lists), compared by the dollar `value` shown, not by raw balance. When they
-say what to sell but not what to receive, receive USDT on that chain; it need
-not be held already. BNB or another volatile asset goes on an open side only
-when the person names it, or when no stablecoin on that chain can pay: then
-spend the largest holding there that can, so the person gets a plan rather
-than a dead end. Either way, say which asset was chosen in the same sentence
-as the link, and the person declines on the review page if that is not what
-they meant. One exception to that last step: a plan on an agent-operated
-wallet under the auto-execute rule skips the review page. When such a plan
-spends a volatile asset the person did not name, tell them which one before
-fetching its calls with `get_plan`; their next word decides between sending
-and `cancel_plan`. A plan the person signs or approves themselves needs no
-such pause.
+what to pay with, pay with a stablecoin held on that chain: USDT when one
+eligible wallet (right kind, not watch-only, with gas) holds enough of it
+for the amount by itself, else the stablecoin with the largest single-wallet
+holding that covers it (USDC, USD1, FDUSD, whatever `get_portfolio` lists),
+compared by the dollar `value` shown, not by raw balance. Check per wallet:
+the asset total adds every wallet together, and one plan spends from one.
+When they say what to sell but not what to receive, receive USDT on that
+chain; it need not be held already. BNB or another volatile asset goes on an
+open side only when the person names it, or when no stablecoin on that chain
+can pay: then spend the largest holding there that can, so the person gets a
+plan rather than a dead end. Either way, say which asset was chosen in the
+same sentence as the link, and the person declines on the review page if
+that is not what they meant. A plan on an agent-operated wallet under the
+auto-execute rule skips the review page by the person's own standing
+decision; it is prepared, approved and sent like any other, and the report
+names the asset the same way.
 
 **The amount goes in `amountIn`.** Both route providers quote by what goes
 in and refuse `amountOut`, so when the amount is on the receive side ("buy
@@ -90,9 +90,11 @@ quantity into a spend takes both assets' prices. Say the plan spends about
 that much for about that many; the quote's minimum received is the floor the
 person signs. "Half", "a third" and "all" are fractions of the `amount`
 `get_portfolio` shows, which is a display amount with thousands separators,
-cut (not rounded) at four decimals: take the fraction of that, then multiply
-by 10^decimals for `amountIn`. Because it is cut, "all" never overshoots the
-real balance. "All" of the chain's own coin still leaves gas behind, since a
+cut (not rounded) at four decimals: take the fraction of that, multiply by
+10^decimals, and round down to a whole number of base units for `amountIn`.
+Because it is cut, "all" never overshoots the real balance. A holding too
+small to show shows as `<0.0001` instead of a number; a fraction of that is
+nothing to trade, so say so rather than guess at a figure. "All" of the chain's own coin still leaves gas behind, since a
 wallet spending its whole native balance is not eligible; say how much
 stayed. "Some" and "take profit" name no amount, and the table supplies
 none; a plan needs a number, so ask for one.

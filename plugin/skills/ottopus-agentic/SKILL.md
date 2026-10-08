@@ -79,8 +79,8 @@ says which wallet won and why the others lost; repeat it to the person. Pass
 `fromAccount` only when the person names a wallet, or asks to sign it
 themselves. A wallet that cannot pay the amount is never chosen for being
 agent-operated, and a label like "vault" or "cold" counts against it: it
-loses to any other eligible wallet, but still wins when it is the only one
-that can pay.
+loses to any eligible wallet without such a label, but still wins when it is
+the only one that can pay.
 
 For a plan bound to a wallet the agent operates, the review page shows
 **Approve** instead of a wallet signature. If the person has turned on
