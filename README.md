@@ -107,13 +107,18 @@ signed, confirmed or expired. It brings the MCP server with it.
 
 More in [`plugin/README.md`](plugin/README.md).
 
-### Agent skill
+### Agent skills
 
-For an agent that also operates a wallet through a vendor CLI, the
-[`ottopus-agentic`](plugin/skills/ottopus-agentic/SKILL.md) skill spells out the
-three moments where the two meet: linking that wallet, waiting for your approval,
-and sending the approved calls. Claude Code gets it with the plugin. Any other host
-that reads Agent Skills installs it from this repo:
+Two skills teach an agent how to use the tools well. Claude Code gets both with
+the plugin. Any other host that reads Agent Skills installs them from this repo:
+
+- [`ottopus`](plugin/skills/ottopus/SKILL.md), for any agent with the tools: what
+  to read before spending, how a wallet is chosen, the defaults for a tokenized
+  stock (chain, provider, quote asset, amounts, market state), and what each plan
+  status means.
+- [`ottopus-agentic`](plugin/skills/ottopus-agentic/SKILL.md), for an agent that
+  also operates a wallet through a vendor CLI: linking that wallet, waiting for
+  your approval, sending the approved calls, and recurring buys.
 
 ```
 npx skills add ottopusxyz/ottopus
