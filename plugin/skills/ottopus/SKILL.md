@@ -49,7 +49,7 @@ scopes in Ottopus settings, not the agent.
   from another source.
 - **Amounts are base units.** The display amount times 10^decimals, as a
   decimal string, with the decimals the tool returned. USDT has 18 decimals
-  on BNB Chain and 6 on Ethereum; assuming one for the other is a thousandfold
+  on BNB Chain and 6 on Ethereum; assuming one for the other is a trillionfold
   error. Give `amountIn` (what is spent). `amountOut` is for an exact output
   the person asked for, and the BNB Chain route provider does not quote it.
 - **Show the address before spending.** A symbol can be ambiguous; the id
@@ -59,8 +59,10 @@ scopes in Ottopus settings, not the agent.
 
 Omit `fromAccount` unless the person names a wallet or asks to sign
 themselves. Ottopus picks one that holds enough of the asset and has gas,
-prefers a wallet the agent operates over one the person signs with, keeps a
-wallet labelled "vault" or "cold" out, and the reply says which won and why.
+prefers a wallet the agent operates over one the person signs with, marks a
+wallet labelled "vault" or "cold" down so it loses to a daily wallet but can
+still win when it is the only one that fits, and the reply says which won and
+why.
 Repeat that reason to the person. Pass `fromAccount` with the wallet's name,
 number, id or address exactly as `list_wallets` shows it.
 
@@ -112,11 +114,14 @@ Never round up to a nicer number.
   blocks on it. Wait a minute, call `find_stock` again, and do not look the
   contract up elsewhere. "Could not look up right now" means the same.
 
-**Premium.** The signed gap in `find_stock` is the on-chain price against
-the reference. Past 1% in the costly direction the plan carries a caution
-naming it; say the figure before preparing and let the person choose a
-smaller amount or to wait. Picking the provider with the smaller gap is the
-right use of it. Pretending the gap is not there is not.
+**Premium.** The signed gap in `find_stock` is the token's price against
+its par, which is the share's reference price times the shares one token
+represents, so a token worth a tenth of a share is not 90% under. Compare
+providers on the `premiumPercent` the tool returns, not on raw prices. Past
+1% in the costly direction the plan carries a caution naming it; say the
+figure before preparing and let the person choose a smaller amount or to
+wait. Picking the provider with the smaller gap is the right use of it.
+Pretending the gap is not there is not.
 
 **Ondo tokens** carry a jurisdiction note: Ondo restricts who may hold them
 and the chain does not check. Mention it once; eligibility is the person's
@@ -134,15 +139,23 @@ their call, but say so.
 
 The reply carries a `planId`, a review link and an `expiresAt`. Give the
 person the link, the wallet and its reason, and any caution verbatim. Then
-`get_plan` at a human pace, every ten to thirty seconds, and stop at
-`expiresAt`.
+`get_plan` at a human pace, every ten to thirty seconds. Stop at `expiresAt`
+unless the plan is `submitted`: a sent transaction does not expire, so keep
+watching it until it is `confirmed` or `failed`.
 
 - `awaiting_signature`, `awaiting_review`: wait. Nothing hurries the person.
 - `submitted`: the wallet sent it; wait for the chain.
 - `approved`: only for a wallet the agent operates; the `ottopus-agentic`
   skill takes it from here.
-- `confirmed`: done; repeat the explorer link.
-- `failed`: the transaction reverted; say so and prepare again only if asked.
+- `confirmed`: repeat the `outcome` sentence and the explorer link. For a
+  bridge it means only that the source transaction confirmed; Ottopus does
+  not watch the destination, so say the funds have left and where to check
+  for their arrival, not that it went through.
+- `failed`: repeat the `outcome` sentence, which says whether the
+  transaction reverted or whether no receipt appeared within a day. In the
+  second case the wallet may have dropped or replaced it and Ottopus does
+  not know; ask the person to check the wallet's history before suggesting
+  another plan. Prepare again only if asked.
 - `blocked`: verification refused it, with the reason. Do not prepare the
   same plan with a different wallet, asset or amount to get past it.
 - `cancelled`, `superseded`, `expired`: over, nothing sent for a plan the
@@ -171,8 +184,11 @@ transfer the other tools already do.
   plan, a review link or a simulation.
 - Never change a wallet, asset or amount to get past a block, a caution or a
   halt. Report it and let the person decide.
-- Never present a review link as a completed trade. Until `get_plan` says
-  `confirmed`, nothing has happened.
+- Never present a review link as a completed trade, and never claim a
+  trade completed before `get_plan` says `confirmed`. The reverse does not
+  hold: `submitted` means it was sent, and a wallet the agent operates can
+  send before anything is reported, so the absence of a confirmation never
+  proves nothing was sent.
 - Never handle, print or store a private key, seed or API secret.
 
 ## Agent-operated wallets
