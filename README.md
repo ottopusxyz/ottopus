@@ -49,7 +49,8 @@ It is not a wallet and not an agent with keys. Your wallet stays the final autho
    install.
 3. **Say what you want.** *"Buy me 10 USD worth of Tesla."* Ottopus finds the token,
    picks a wallet and says why, builds the route, decodes and simulates it, and hands
-   you a review link. You open it, connect that wallet, and sign.
+   you a review link. You open it, connect that wallet, and sign. If the wallet is one
+   your agent operates, you approve instead, and the agent's wallet sends.
 
 ## Use it with your agent
 
@@ -83,22 +84,25 @@ The agent gets these tools:
 | `prepare_transfer` | A plan to send a token or native currency |
 | `prepare_trade` | A plan to swap, or to bridge across chains |
 | `prepare_custom` | Calls the agent wrote itself, held to a declaration of what they do |
-| `get_plan` | Whether a plan has been signed, and what happened on chain |
+| `get_plan` | Whether a plan has been signed, and what happened on chain. For an approved plan on an agent wallet, the calls to send |
+| `report_execution` | The transaction hash of an approved plan the agent's own wallet sent |
 | `cancel_plan` | Withdraw a plan before it is signed |
 | `link_agent_wallet_start` | A challenge for a wallet the agent operates to sign with its vendor CLI |
 | `link_agent_wallet_finish` | Link that wallet if the signature recovers to its address |
 
 Every `prepare_*` tool returns a plan and a review link. Nothing the agent does moves
 funds. The review page shows the decoded calls, the simulation, and anything worth
-reading first, such as an approval, before you connect the wallet and sign.
+reading first, such as an approval, before you connect the wallet and sign. For a
+wallet the agent operates, the same page offers Approve instead of a signature.
 
 Linking a wallet from the agent is the one permission that is never on by default.
 It is a switch on the consent page, and it stays off unless you turn it on.
 
 ### Claude Code plugin
 
-The plugin shows each plan as a card above your prompt and follows it until it is
-signed, confirmed or expired. It brings the MCP server with it.
+The plugin shows each plan as a card above your prompt and follows it from prepared
+to confirmed, through signing or approval, until it ends. It brings the MCP server
+with it.
 
 ```
 /plugin marketplace add ottopusxyz/ottopus
@@ -132,15 +136,27 @@ npx skills add ottopusxyz/ottopus
   issuer's token (bStocks, Ondo and others) with its price, its premium over the
   share, and whether the market is open.
 - **A wallet picked with a stated reason**, from every wallet you have linked.
-- **A review page bound to the plan's hash**: decoded calls, a simulation that is
-  independent of the router, and a second, labelled simulation from Binance to compare.
-- **Agent wallets.** An agent can link a wallet it operates (Binance Agentic Wallet)
-  by signing a challenge with the vendor's CLI. Its key never leaves the vendor.
-- **A plan card in Claude Code** that tracks a plan from prepared to confirmed.
+- **A review page bound to the plan's hash**: decoded calls, read through minimal-proxy
+  clones to their verified implementation, a simulation that is independent of the
+  router, and a second, labelled simulation from Binance to compare.
+- **Signing from the review page itself.** It connects the plan's own wallet when it
+  is installed in the browser, and pairs a phone or any other wallet over
+  WalletConnect when it is not.
+- **Agent wallets, end to end.** An agent can link a wallet it operates (Binance
+  Agentic Wallet) by signing a challenge with the vendor's CLI; its key never leaves
+  the vendor. A plan for that wallet gets an Approve button instead of a signature.
+  Once approved, `get_plan` hands the agent the calls, its wallet sends them, and
+  `report_execution` records the hash. In Settings, a per-wallet rule can approve a
+  plan on its own once it verifies and the simulation passes; you keep the link and
+  can withdraw it until the agent takes the calls.
+- **A plan card in Claude Code** that follows a plan from prepared to confirmed,
+  whether a person signs it or an agent wallet sends it.
 
-In progress: letting an agent wallet send a plan you approved. Approve mode on the
-review page and a per-wallet auto-execute rule are open issues, so today every plan
-is still signed in a wallet you connect.
+Not there yet: the auto-execute rule is a plain switch, with no spend cap or asset
+allow-list, so turn it on only for a wallet you would let act alone. Binance's RFQ
+fills for tokenized stocks are not supported: a quote that only a market maker would
+fill is passed over, and the order goes to the next route provider, or is refused when
+none has a pool route.
 
 ## Architecture
 
@@ -186,11 +202,10 @@ Four rules define the product:
    agent-operated wallet's key lives with its vendor, and Ottopus still only
    sees the address.
 2. **Tool calls create plans, not transactions.** Prepare, never surprise. One
-   stated exception, for agent-operated wallets only and still being built: once a
-   person has approved a plan on the review page, or a rule the person set has
-   approved it after a passing simulation, `get_plan` hands the agent that plan's
-   calls and the agent's own wallet sends them. Ottopus still never signs and never
-   broadcasts.
+   stated exception, for agent-operated wallets only: once a person has approved a
+   plan on the review page, or a rule the person set has approved it after a passing
+   simulation, `get_plan` hands the agent that plan's calls and the agent's own
+   wallet sends them. Ottopus still never signs and never broadcasts.
 3. **The review page is a hard security boundary**, bound to an immutable `planHash`.
    A tampered or expired plan will not sign, and will not release its calls.
 4. **Simulation is independent of whoever built the route.** The routing vendor is
@@ -216,7 +231,9 @@ pnpm dev                                  # web on :3000, service on :8787
 Optional keys in `service/.env`: `ZERION_API_KEY` for portfolios, `LIFI_API_KEY`
 for a higher routing rate limit, `BINANCE_WEB3_API_KEY`/`BINANCE_WEB3_SECRET_KEY`
 for BNB Chain routing, stock data and the second simulation, `RPC_URL_TEMPLATE`
-for a faster RPC provider. Each file explains what happens without it.
+for a faster RPC provider. In `web/.env.local`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+lets the review page pair wallets that are not installed in the browser. Each file
+explains what happens without it.
 
 To reach `/mcp` from an agent host during development, expose the service over HTTPS
 (for example `cloudflared tunnel --url http://localhost:8787`) and set `PUBLIC_URL`
@@ -237,16 +254,16 @@ service deploys from `service/Dockerfile`; the web app is a standard Next.js bui
 ## Layout
 
 ```
-web/       Next.js app: sign in, wallets, portfolio, activity, /review/[token], OAuth consent
+web/       Next.js app: sign in, portfolio, activity, requests, settings, /review/[token], OAuth consent
 service/   Node service: /mcp and /api over one core
   src/core         intents, plans, planHash, the wallet scorer
   src/verify       decoder and plan policies
-  src/connectors   portfolio, stock, route and simulation adapters
+  src/connectors   portfolio, activity, token, stock, route and simulation adapters
   src/wallets      linked wallets and agent wallet providers
   src/mcp          the MCP server and its tools
   src/oauth        OAuth 2.1 for agent hosts
   src/db           Drizzle schema and migrations
-plugin/    Claude Code plugin: the plan card
+plugin/    Claude Code plugin: the plan card, and the two agent skills
 ```
 
 ## Contributing

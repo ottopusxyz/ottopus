@@ -7,7 +7,8 @@ own, so you never have to ask the agent what happened.
 - **Plan card** with the wallet, the amounts and a countdown to expiry.
 - **Review and sign** link to the review page, where you check the decoded calls
   and the simulation and sign in your own wallet.
-- **Live status**: signed, confirmed (with an explorer link), cancelled or expired.
+- **Live status**: signed or approved, submitted, confirmed (with an explorer link),
+  cancelled or expired. A plan an agent wallet sends is followed the same way.
 
 Claude prepares it. You still sign.
 
