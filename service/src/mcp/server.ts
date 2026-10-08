@@ -607,7 +607,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'wallet. For a plan on a wallet this agent operates, once the person has approved it, it returns ' +
         'the calls, the plan hash and how to send them with that wallet’s CLI; send them as given, then ' +
         'call report_execution. It changes nothing about a plan except that the first read to return calls is ' +
-        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them.',
+        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them. ' +
+        'Do not ask for the calls before the status is approved, and never carry out the plan with the ' +
+        'wallet CLI’s own swap or send commands instead: the calls are the trade.',
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
       },
@@ -692,7 +694,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'to the person’s Ottopus account. Returns an EIP-712 challenge bound to the ' +
         'person, the address and the provider, with a short expiry, and how to sign it with that CLI. ' +
         'Sign it with the wallet itself, then call link_agent_wallet_finish. An address already linked ' +
-        'as another kind of wallet is refused. Nothing is linked by this call.',
+        'as another kind of wallet is refused. Nothing is linked by this call. It needs the wallets:write ' +
+        'scope, which the person allows on the consent page; the ottopus-agentic skill has the whole procedure.',
       inputSchema: {
         provider: z.string().describe(linkWords.provider),
         address: z.string().describe('The wallet’s 0x address, as its CLI reports it.'),
@@ -721,7 +724,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'Second step: hand back the signature over the challenge from link_agent_wallet_start. If it ' +
         'recovers to the address the challenge names, the wallet is linked as an agent wallet and shows ' +
         'in list_wallets. A challenge works once and expires after a few minutes; a wrong signer, a ' +
-        'replay or an expired challenge is refused with the reason.',
+        'replay or an expired challenge is refused with the reason. Linking proves which address the agent ' +
+        'operates and nothing more: plans on it still wait for the person to approve.',
       inputSchema: {
         challengeId: z.string().describe('The challengeId link_agent_wallet_start returned.'),
         signature: z
