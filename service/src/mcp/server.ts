@@ -74,6 +74,8 @@ const INSTRUCTIONS = [
   'The one exception is a wallet this agent operates itself through a vendor CLI: the person approves',
   'instead of signing, get_plan then returns that plan’s calls for the agent’s own wallet to send, and',
   'report_execution records the transaction hash. Ottopus still does not sign or send them.',
+  'When the person names no wallet, Ottopus prefers such an agent-operated wallet over one they sign',
+  'with, as long as it can pay; the reply says which wallet it chose and why.',
 ].join(' ')
 
 type ToolResult = {
