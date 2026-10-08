@@ -114,7 +114,16 @@ More in [`plugin/README.md`](plugin/README.md).
 ### Agent skills
 
 Two skills teach an agent how to use the tools well. Claude Code gets both with
-the plugin. Any other host that reads Agent Skills installs them from this repo:
+the plugin. Any other host that reads Agent Skills (Codex, Cursor, Gemini CLI and
+others) installs them from this repo:
+
+```
+npx skills add ottopusxyz/ottopus -s ottopus -s ottopus-agentic
+```
+
+Add `-a codex` (or any host the CLI knows) to choose where they go, and `-g` to
+install them for every project rather than the current one. The same command
+with `-l` lists the skills without installing anything.
 
 - [`ottopus`](plugin/skills/ottopus/SKILL.md), for any agent with the tools: what
   to read before spending, how a wallet is chosen, the defaults for a tokenized
@@ -123,10 +132,6 @@ the plugin. Any other host that reads Agent Skills installs them from this repo:
 - [`ottopus-agentic`](plugin/skills/ottopus-agentic/SKILL.md), for an agent that
   also operates a wallet through a vendor CLI: linking that wallet, waiting for
   your approval, sending the approved calls, and recurring buys.
-
-```
-npx skills add ottopusxyz/ottopus
-```
 
 ## What works today
 

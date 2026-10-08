@@ -46,8 +46,12 @@ Any other host that reads Agent Skills (Codex, Cursor, Gemini CLI and others)
 installs the same files from the repo:
 
 ```
-npx skills add ottopusxyz/ottopus
+npx skills add ottopusxyz/ottopus -s ottopus -s ottopus-agentic
 ```
+
+Add `-a codex` (or any host the CLI knows) to choose where they go, and `-g` to
+install them for every project rather than the current one. The same command
+with `-l` lists the skills without installing anything.
 
 ## Options
 
