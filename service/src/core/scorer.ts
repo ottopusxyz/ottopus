@@ -26,6 +26,12 @@ export interface WalletCandidate {
   assetBalance: bigint
   /** Base units of the chain's own currency, for gas. */
   gasBalance: bigint
+  /**
+   * The agent's own wallet sends an approved plan's calls, so a plan here
+   * needs an approval rather than a signature, and none at all under the
+   * person's auto-execute rule. Browser-signed and watch-only arms are false.
+   */
+  agentExecutes: boolean
 }
 
 /**
@@ -60,6 +66,13 @@ export const WEIGHTS = {
   riskUnverified: 10,
   /** A wallet whose label says it is not for everyday sends. */
   preferenceReserved: 3,
+  /**
+   * An arm the agent executes itself. Chosen over a browser wallet that could
+   * also pay, whatever their balances, because the plan then needs an approval
+   * rather than a signature, or nothing under the person's rule. Smaller than
+   * the reserved penalty, so a label still keeps a vault out. Decided Oct 8.
+   */
+  preferenceAgentic: 1,
 } as const
 
 /** Labels that say "not for everyday sends". A vault should lose a tie to a daily wallet. */
@@ -181,6 +194,7 @@ interface Scored {
 function scoreTransfer(c: WalletCandidate): Scored {
   const notes: string[] = []
   let score = 0
+  if (c.agentExecutes) score += WEIGHTS.preferenceAgentic
   if (c.label && RESERVED.test(c.label)) {
     score -= WEIGHTS.preferenceReserved
     notes.push(`is labelled ${c.label}, which reads as not for everyday sends`)
@@ -302,21 +316,30 @@ function chooseWallet({ candidates, asset, native, amount, chain, verb, fromAcco
 
   eligible.sort(byScoreThenBalance)
   const winner = eligible[0]!
+  const wonAsAgent = winner.candidate.agentExecutes
   for (const s of eligible.slice(1)) {
     losers.push({
       account: s.candidate.account,
       ...(s.candidate.label ? { label: s.candidate.label } : {}),
       reason:
         s.notes[0] ??
-        `holds ${amountWords(s.candidate.assetBalance, asset)} on ${chain}, less than ${candidateName(winner.candidate)}`,
+        (wonAsAgent && !s.candidate.agentExecutes
+          ? `needs a signature on the review page, where ${candidateName(winner.candidate)} can execute an approved plan itself`
+          : `holds ${amountWords(s.candidate.assetBalance, asset)} on ${chain}, less than ${candidateName(winner.candidate)}`),
     })
   }
+  // "Holds the most" is only true of a tie broken by balance: among the
+  // wallets scored equal to the winner, not those a penalty or the agent
+  // preference already settled.
+  const peers = eligible.filter((s) => s.score === winner.score)
+  const wonOnBalance = peers.length > 1 && peers.every((s) => s.candidate.assetBalance <= winner.candidate.assetBalance)
   const because = [
     need === null
       ? `holds ${amountWords(winner.candidate.assetBalance, asset)} on ${chain}`
       : `holds ${amountWords(winner.candidate.assetBalance, asset)} on ${chain}, enough to ${verb} ${need}`,
     'has gas',
-    ...(eligible.length > 1 ? [`of ${eligible.length} wallets that could, it holds the most`] : []),
+    ...(wonAsAgent ? ['can execute an approved plan itself'] : []),
+    ...(wonOnBalance ? [`of ${eligible.length} wallets that could, it holds the most`] : []),
   ]
   return {
     ok: true,

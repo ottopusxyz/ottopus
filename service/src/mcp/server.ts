@@ -74,6 +74,8 @@ const INSTRUCTIONS = [
   'The one exception is a wallet this agent operates itself through a vendor CLI: the person approves',
   'instead of signing, get_plan then returns that plan’s calls for the agent’s own wallet to send, and',
   'report_execution records the transaction hash. Ottopus still does not sign or send them.',
+  'When the person names no wallet, Ottopus prefers such an agent-operated wallet over one they sign',
+  'with, as long as it can pay; the reply says which wallet it chose and why.',
 ].join(' ')
 
 type ToolResult = {
@@ -413,7 +415,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'own token symbol (NVDAB, NVDAon). Per token: the provider, decimals, shares per token, the ' +
         'token’s price, the underlying share’s reference price, the gap between them as a signed ' +
         'percentage, and whether the market is open, with the next open and close. A bare ticker with ' +
-        'several providers means ask the person which one they want; a suffixed symbol (…B for bStock, ' +
+        'several providers: pick the one that is open, has a reference price and sits closest to it when ' +
+        'that gap is under 1% in the direction that costs the person, and say which and why; ask the person when none is open with a reference, ' +
+        'the best gap is over 1%, or two are within a tenth of a percent. A suffixed symbol (…B for bStock, ' +
         '…on for Ondo) names one. A reading older than five minutes is marked stale, with when it was ' +
         'read; prepare_trade blocks on stale facts until they refresh. Read-only, and it reveals nothing ' +
         'about the person. Show the address before spending anything.',
@@ -452,7 +456,11 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           : `${first.companyName} (${first.ticker}) has ${variants.length} tokens on ${chainName(chain)}, from different providers:`
       const lines = [heading, ...rows.flatMap((row) => [row.line, `  assetId ${row.assetId}`])]
       if (variants.length > 1) {
-        lines.push('Ask which provider the person means before preparing anything; each is a different contract.')
+        lines.push(
+          'Each is a different contract. Pick the open one closest to its reference when that gap is under 1% in the ' +
+            'direction that costs the person and say why; ask which provider the person means before preparing anything ' +
+            'when none is open with a reference, the best gap is over 1%, or two are within a tenth of a percent.',
+        )
       }
       return text(lines.join('\n'), {
         ticker: first.ticker,
@@ -607,7 +615,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'wallet. For a plan on a wallet this agent operates, once the person has approved it, it returns ' +
         'the calls, the plan hash and how to send them with that wallet’s CLI; send them as given, then ' +
         'call report_execution. It changes nothing about a plan except that the first read to return calls is ' +
-        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them.',
+        'recorded, after which the plan can no longer be cancelled; reading again is safe and repeats them. ' +
+        'Do not ask for the calls before the status is approved, and never carry out the plan with the ' +
+        'wallet CLI’s own swap or send commands instead: the calls are the trade.',
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
       },
@@ -692,7 +702,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'to the person’s Ottopus account. Returns an EIP-712 challenge bound to the ' +
         'person, the address and the provider, with a short expiry, and how to sign it with that CLI. ' +
         'Sign it with the wallet itself, then call link_agent_wallet_finish. An address already linked ' +
-        'as another kind of wallet is refused. Nothing is linked by this call.',
+        'as another kind of wallet is refused. Nothing is linked by this call. It needs the wallets:write ' +
+        'scope, which the person allows on the consent page; the ottopus-agentic skill has the whole procedure.',
       inputSchema: {
         provider: z.string().describe(linkWords.provider),
         address: z.string().describe('The wallet’s 0x address, as its CLI reports it.'),
@@ -721,7 +732,8 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'Second step: hand back the signature over the challenge from link_agent_wallet_start. If it ' +
         'recovers to the address the challenge names, the wallet is linked as an agent wallet and shows ' +
         'in list_wallets. A challenge works once and expires after a few minutes; a wrong signer, a ' +
-        'replay or an expired challenge is refused with the reason.',
+        'replay or an expired challenge is refused with the reason. Linking proves which address the agent ' +
+        'operates and nothing more: plans on it still wait for the person to approve.',
       inputSchema: {
         challengeId: z.string().describe('The challengeId link_agent_wallet_start returned.'),
         signature: z

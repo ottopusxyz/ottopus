@@ -7,7 +7,8 @@ own, so you never have to ask the agent what happened.
 - **Plan card** with the wallet, the amounts and a countdown to expiry.
 - **Review and sign** link to the review page, where you check the decoded calls
   and the simulation and sign in your own wallet.
-- **Live status**: signed, confirmed (with an explorer link), cancelled or expired.
+- **Live status**: signed or approved, submitted, confirmed (with an explorer link),
+  cancelled or expired. A plan an agent wallet sends is followed the same way.
 
 Claude prepares it. You still sign.
 
@@ -24,6 +25,33 @@ consent page where you choose what the agent may do.
 
 If you already added the server yourself (`claude mcp add`, or the Claude.ai
 connector), the card works with that connection too.
+
+## Skills
+
+The plugin carries two skills, and Claude Code loads both with it.
+
+- `ottopus`, under [`skills/ottopus/`](skills/ottopus/SKILL.md), for any agent
+  with the Ottopus tools: what to read before spending, how a wallet is chosen,
+  the defaults for a tokenized stock (chain, provider, quote asset, amounts,
+  market state, premium), transfers, and what each plan status means. Loaded as
+  `ottopus:ottopus`.
+- `ottopus-agentic`, under
+  [`skills/ottopus-agentic/`](skills/ottopus-agentic/SKILL.md), for an agent that
+  also operates a wallet through a vendor CLI (Binance Agentic Wallet today): how
+  to link that wallet to your Ottopus account, how to wait for you to approve a
+  plan, how to send the approved calls from its own wallet and report the hash,
+  and how to run a recurring buy. Loaded as `ottopus:ottopus-agentic`.
+
+Any other host that reads Agent Skills (Codex, Cursor, Gemini CLI and others)
+installs the same files from the repo:
+
+```
+npx skills add ottopusxyz/ottopus -s ottopus -s ottopus-agentic
+```
+
+Add `-a codex` (or any host the CLI knows) to choose where they go, and `-g` to
+install them for every project rather than the current one. The same command
+with `-l` lists the skills without installing anything.
 
 ## Options
 
@@ -47,4 +75,10 @@ proposal until you sign it in your own wallet.
 claude plugin validate plugin
 claude plugin test plugin
 claude --plugin-dir plugin
+npx skills-ref validate plugin/skills/ottopus
+npx skills-ref validate plugin/skills/ottopus-agentic
 ```
+
+The plugin pins its `version` in `.claude-plugin/plugin.json`, so Claude Code keeps
+users on the cached copy until that string changes. Bump it in the same PR as any
+change to the hooks or the skill, or nobody receives the change.

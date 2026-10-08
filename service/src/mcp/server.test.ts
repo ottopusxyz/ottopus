@@ -2001,7 +2001,9 @@ describe('find_stock', () => {
     // Par moves with the share ratio: 224.88 × 1.0012 = 225.15, and 221.73 sits 1.52% under it.
     expect(lines[3]).toBe('NVDAon (ondo) $221.73, −1.52% under reference, market open (regular hours), 1.0012 shares per token')
     expect(lines[4]).toBe(`  assetId eip155:56/erc20:${NVDAON}`)
-    expect(lines[5]).toContain('Ask which provider the person means')
+    expect(lines[5]).toContain('Pick the open one closest to its reference when that gap is under 1%')
+    expect(lines[5]).toContain('ask which provider the person means before preparing anything when none is open')
+    expect(lines[5]).toContain('two are within a tenth of a percent')
     expect(res.structuredContent).toMatchObject({
       ticker: 'NVDA',
       companyName: 'Nvidia Corp',
@@ -2034,7 +2036,7 @@ describe('find_stock', () => {
     const one = await call(client, 'find_stock', { chain: 'eip155:56', query: 'NVDAB' })
     expect(one.isError).toBeFalsy()
     expect(one.content[0]!.text).toContain('Nvidia Corp (NVDA) has one token on BNB Chain:')
-    expect(one.content[0]!.text).not.toContain('Ask which provider')
+    expect(one.content[0]!.text).not.toContain('ask which provider')
   })
 
   /**
