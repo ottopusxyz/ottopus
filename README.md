@@ -107,6 +107,18 @@ signed, confirmed or expired. It brings the MCP server with it.
 
 More in [`plugin/README.md`](plugin/README.md).
 
+### Agent skill
+
+For an agent that also operates a wallet through a vendor CLI, the
+[`ottopus-agentic`](plugin/skills/ottopus-agentic/SKILL.md) skill spells out the
+three moments where the two meet: linking that wallet, waiting for your approval,
+and sending the approved calls. Claude Code gets it with the plugin. Any other host
+that reads Agent Skills installs it from this repo:
+
+```
+npx skills add ottopusxyz/ottopus
+```
+
 ## What works today
 
 - **Transfers, swaps and bridges** across EVM chains, with Binance asked first for
