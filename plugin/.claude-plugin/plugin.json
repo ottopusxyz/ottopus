@@ -1,12 +1,12 @@
 {
   "name": "ottopus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shows an Ottopus plan as a card in Claude Code and follows it until it is signed, confirmed or expired.",
   "author": { "name": "Ottopus", "url": "https://ottopus.xyz" },
   "homepage": "https://ottopus.xyz",
   "repository": "https://github.com/ottopusxyz/ottopus",
   "license": "MIT",
-  "keywords": ["mcp", "wallet", "onchain", "bnb-chain", "tokenized-stocks"],
+  "keywords": ["mcp", "wallet", "onchain", "bnb-chain", "tokenized-stocks", "agent-skills"],
   "types": "./types/index.d.ts",
   "userConfig": {
     "server": {

@@ -25,6 +25,22 @@ consent page where you choose what the agent may do.
 If you already added the server yourself (`claude mcp add`, or the Claude.ai
 connector), the card works with that connection too.
 
+## Skill: agent-operated wallets
+
+The plugin also carries the `ottopus-agentic` skill, under
+[`skills/ottopus-agentic/`](skills/ottopus-agentic/SKILL.md). It is for an agent
+that operates a wallet through a vendor CLI (Binance Agentic Wallet today): how to
+link that wallet to your Ottopus account, how to wait for you to approve a plan, and
+how to send the approved calls from its own wallet and report the hash. Claude Code
+loads it with the plugin as `ottopus:ottopus-agentic`.
+
+Any other host that reads Agent Skills (Codex, Cursor, Gemini CLI and others)
+installs the same file from the repo:
+
+```
+npx skills add ottopusxyz/ottopus
+```
+
 ## Options
 
 | Option | Default | What it does |
@@ -47,4 +63,9 @@ proposal until you sign it in your own wallet.
 claude plugin validate plugin
 claude plugin test plugin
 claude --plugin-dir plugin
+npx skills-ref validate plugin/skills/ottopus-agentic
 ```
+
+The plugin pins its `version` in `.claude-plugin/plugin.json`, so Claude Code keeps
+users on the cached copy until that string changes. Bump it in the same PR as any
+change to the hooks or the skill, or nobody receives the change.
