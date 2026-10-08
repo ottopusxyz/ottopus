@@ -25,7 +25,7 @@ import {
 import { assemblePlan } from '../core/index.js'
 import { blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { canSign, resolveWallet, truncateAddress } from './readable.js'
+import { agentExecutes, canSign, resolveWallet, truncateAddress } from './readable.js'
 import { wordsFor } from './trade.js'
 import type { PrepareContext, PrepareDeps } from './transfer.js'
 
@@ -252,6 +252,7 @@ export async function prepareCustom(
       account: intent.fromAccount,
       label: arm.label,
       canSign: true,
+      agentExecutes: agentExecutes(arm),
       assetBalance: holdingOf(portfolio, change.asset, arm.id),
       gasBalance: holdingOf(portfolio, gasAsset, arm.id),
     }

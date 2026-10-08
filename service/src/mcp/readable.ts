@@ -50,6 +50,11 @@ export function canSign(arm: Pick<Arm, 'walletType' | 'agentProvider' | 'isWatch
   return capabilitiesOf(arm).canSign
 }
 
+/** The scorer's preference: the agent's own wallet sends this arm's approved plans. */
+export function agentExecutes(arm: Pick<Arm, 'walletType' | 'agentProvider' | 'isWatchOnly' | 'provedAt'>): boolean {
+  return capabilitiesOf(arm).agentExecutes
+}
+
 /**
  * A wallet's name where several may appear side by side. A label is unique
  * enough on its own; a fallback like "Watch Only" is not — two pasted

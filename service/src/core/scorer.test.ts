@@ -20,6 +20,7 @@ const wallet = (n: number, over: Partial<WalletCandidate> = {}): WalletCandidate
   canSign: true,
   assetBalance: 1_000_000_000n, // 1000 USDC
   gasBalance: 10n ** 16n,
+  agentExecutes: false,
   ...over,
 })
 
@@ -131,6 +132,61 @@ describe('resolveTransferWallet', () => {
     expect(out.walletId).toBe('w2')
     expect(out.resolution.reason).toMatch(/holds 2 ETH on Base/)
     expect(out.resolution.candidatesConsidered[0]!.reason).toBe('holds 1 ETH on Base, less than Two (…0002)')
+  })
+
+  it('prefers an arm the agent executes over a richer browser wallet', () => {
+    const out = resolveTransferWallet({
+      intent: usdcIntent,
+      candidates: [
+        wallet(1, { label: 'Main', assetBalance: 50_000_000_000n }),
+        wallet(2, { label: 'Agent', assetBalance: 600_000_000n, agentExecutes: true }),
+      ],
+      asset: USDC,
+      native: false,
+    })
+    if (!out.ok) throw new Error(out.reasons.join())
+    expect(out.walletId).toBe('w2')
+    expect(out.resolution.reason).toBe(
+      'Recommended Agent (…0002) because it holds 600 USDC on Base, enough to send 500 USDC, has gas, can execute an approved plan itself.',
+    )
+    expect(out.resolution.candidatesConsidered[0]!.reason).toBe(
+      'needs a signature on the review page, where Agent (…0002) can execute an approved plan itself',
+    )
+  })
+
+  it('still breaks a tie between two agent arms by balance, and says so', () => {
+    const out = resolveTransferWallet({
+      intent: usdcIntent,
+      candidates: [
+        wallet(1, { label: 'Agent A', assetBalance: 600_000_000n, agentExecutes: true }),
+        wallet(2, { label: 'Agent B', assetBalance: 900_000_000n, agentExecutes: true }),
+      ],
+      asset: USDC,
+      native: false,
+    })
+    if (!out.ok) throw new Error(out.reasons.join())
+    expect(out.walletId).toBe('w2')
+    expect(out.resolution.reason).toMatch(/can execute an approved plan itself, of 2 wallets that could, it holds the most/)
+    expect(out.resolution.candidatesConsidered[0]!.reason).toBe('holds 600 USDC on Base, less than Agent B (…0002)')
+  })
+
+  it('does not let the agent preference pull an eligible-but-short arm in, or beat a vault label', () => {
+    const short = resolveTransferWallet({
+      intent: usdcIntent,
+      candidates: [wallet(1, { label: 'Main' }), wallet(2, { label: 'Agent', assetBalance: 1_000_000n, agentExecutes: true })],
+      asset: USDC,
+      native: false,
+    })
+    if (!short.ok) throw new Error(short.reasons.join())
+    expect(short.walletId).toBe('w1')
+    const vault = resolveTransferWallet({
+      intent: usdcIntent,
+      candidates: [wallet(1, { label: 'Main' }), wallet(2, { label: 'Agent vault', agentExecutes: true })],
+      asset: USDC,
+      native: false,
+    })
+    if (!vault.ok) throw new Error(vault.reasons.join())
+    expect(vault.walletId).toBe('w1')
   })
 
   it('lets a penalty outweigh any balance', () => {

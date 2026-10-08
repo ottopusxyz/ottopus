@@ -26,7 +26,7 @@ import {
 import type { CreatePlanInput, PlanRecord, ReviewLink } from '../plans/index.js'
 import { KNOWN_ABI, type Lookups, blockWarnings, decodeCalls, verifyPlan } from '../verify/index.js'
 import type { Arm } from '../wallets/index.js'
-import { canSign, humanAmount, resolveWallet, truncateAddress } from './readable.js'
+import { agentExecutes, canSign, humanAmount, resolveWallet, truncateAddress } from './readable.js'
 import { type RuleOutcome, approvedLines, armRule, ruleLine, ruleOutcome, ruleVerdict, simulatorFor } from './rule.js'
 
 /**
@@ -153,6 +153,7 @@ function candidatesFrom(
       account: accountOn(chain, arm.address),
       label: arm.label,
       canSign: canSign(arm),
+      agentExecutes: agentExecutes(arm),
       assetBalance: holdingOf(portfolio, intent.asset, arm.id),
       gasBalance: holdingOf(portfolio, gasAsset, arm.id),
     }))
