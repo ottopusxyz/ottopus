@@ -594,6 +594,7 @@ export function tradeText(outcome: TradeOutcome): string {
     case 'blocked':
       return [
         `Ottopus refused to build "${outcome.summary}":`,
+        `Plan ID: ${outcome.planId}`,
         ...outcome.reasons.map((r) => `- ${r}`),
         'The refusal is recorded in Activity. Nothing was traded.',
       ].join('\n')
@@ -607,10 +608,11 @@ export function tradeText(outcome: TradeOutcome): string {
         ...outcome.warnings.map((w) => `Heads up: ${w.message}`),
       ]
       if (outcome.status === 'approved' && outcome.rule) {
-        return [`Plan approved: ${outcome.summary}.`, ...shape, ...approvedLines(outcome.rule, outcome.expiresAt, outcome.reviewUrl)].join('\n')
+        return [`Plan approved: ${outcome.summary}.`, `Plan ID: ${outcome.planId}`, ...shape, ...approvedLines(outcome.rule, outcome.expiresAt, outcome.reviewUrl)].join('\n')
       }
       return [
         `Plan ready: ${outcome.summary}.`,
+        `Plan ID: ${outcome.planId}`,
         ...ruleLine(outcome.rule),
         ...shape,
         `Review and sign: ${outcome.reviewUrl}`,
