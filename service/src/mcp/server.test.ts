@@ -2002,7 +2002,8 @@ describe('find_stock', () => {
     expect(lines[3]).toBe('NVDAon (ondo) $221.73, −1.52% under reference, market open (regular hours), 1.0012 shares per token')
     expect(lines[4]).toBe(`  assetId eip155:56/erc20:${NVDAON}`)
     expect(lines[5]).toContain('Pick the open one closest to its reference when that gap is under 1%')
-    expect(lines[5]).toContain('otherwise ask which provider the person means')
+    expect(lines[5]).toContain('ask which provider the person means before preparing anything when none is open')
+    expect(lines[5]).toContain('two are within a tenth of a percent')
     expect(res.structuredContent).toMatchObject({
       ticker: 'NVDA',
       companyName: 'Nvidia Corp',

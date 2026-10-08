@@ -416,7 +416,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         'token’s price, the underlying share’s reference price, the gap between them as a signed ' +
         'percentage, and whether the market is open, with the next open and close. A bare ticker with ' +
         'several providers: pick the one that is open, has a reference price and sits closest to it when ' +
-        'that gap is under 1%, and say which and why; ask the person when none is open with a reference, ' +
+        'that gap is under 1% in the direction that costs the person, and say which and why; ask the person when none is open with a reference, ' +
         'the best gap is over 1%, or two are within a tenth of a percent. A suffixed symbol (…B for bStock, ' +
         '…on for Ondo) names one. A reading older than five minutes is marked stale, with when it was ' +
         'read; prepare_trade blocks on stale facts until they refresh. Read-only, and it reveals nothing ' +
@@ -457,8 +457,9 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       const lines = [heading, ...rows.flatMap((row) => [row.line, `  assetId ${row.assetId}`])]
       if (variants.length > 1) {
         lines.push(
-          'Each is a different contract. Pick the open one closest to its reference when that gap is under 1% and say why; ' +
-            'otherwise ask which provider the person means before preparing anything.',
+          'Each is a different contract. Pick the open one closest to its reference when that gap is under 1% in the ' +
+            'direction that costs the person and say why; ask which provider the person means before preparing anything ' +
+            'when none is open with a reference, the best gap is over 1%, or two are within a tenth of a percent.',
         )
       }
       return text(lines.join('\n'), {
