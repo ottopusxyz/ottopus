@@ -7,7 +7,8 @@ description: |
   and sending an approved plan's calls from the agent's own wallet. Also use
   when the person asks for a plan, a review link, a simulated trade, a
   tokenized stock, or any Ottopus prepare_* tool, and the agent is tempted to
-  trade with the wallet CLI directly instead.
+  trade with the wallet CLI directly instead. Also use when the person wants a
+  recurring buy, a DCA, or any trade on a schedule.
 metadata:
   author: ottopus
   version: '0.1.0'
@@ -70,6 +71,15 @@ Prepare the plan as for any wallet: `find_stock` or `find_asset` to resolve
 the asset, then `prepare_trade`, `prepare_transfer` or `prepare_custom`. The
 reply carries a `planId` and a review link. Give the person the link.
 
+When the person names no wallet, Ottopus picks one, and it prefers a wallet
+the agent executes over one the person signs with, as long as it holds enough
+of the asset and has gas. A plan on that wallet needs an approval, not a
+signature, and none at all under the auto-execute rule. The reply's reason
+says which wallet won and why the others lost; repeat it to the person. Pass
+`fromAccount` only when the person names a wallet, or asks to sign it
+themselves. A wallet that cannot pay the amount is never chosen for being
+agent-operated, and a label like "vault" still keeps it out.
+
 For a plan bound to a wallet the agent operates, the review page shows
 **Approve** instead of a wallet signature. If the person has turned on
 auto-execute for that wallet in settings, the `prepare_trade` or
@@ -124,6 +134,58 @@ one preview and one execute per call. Follow them as written.
 The first `get_plan` that returns calls is recorded, and the plan can no longer
 be cancelled after it. Reading again returns the same calls with
 `alreadyHandedOff: true`; that is for a lost run, not a reason to send twice.
+
+## Recurring intents: DCA and other schedules
+
+Ottopus never schedules anything. The clock is the agent's: a recurring buy
+is the agent's own scheduler running the same intent on a cadence, and every
+run is a fresh plan with its own `planHash`, review link and `expiresAt`.
+There is no standing order on the Ottopus side to edit or cancel; stopping the
+schedule is done in the host that runs it.
+
+Setting one up:
+
+1. Ask the person to turn on auto-execute for the agent-operated wallet in
+   Ottopus settings. Without it every run stops at a review link, which is
+   allowed, but then the schedule only produces links, and nothing is bought
+   until the person approves each one.
+2. Create a job in the host's scheduler with the intent in plain words and the
+   rules below, for example: "Buy 25 USD of Tesla with USDT on BNB Chain
+   through Ottopus from the wallet you operate. If the plan is approved,
+   execute its calls and report the hash. If it needs a review, send me the
+   link and stop."
+3. Each run follows sections 2 and 3 as written: resolve the asset, prepare,
+   read whether the reply says the rule approved it, then `get_plan`, execute
+   and `report_execution`. The `get_plan` reply names the wallet; it should
+   be the agent's own.
+
+Rules that hold on every run:
+
+- **One open plan per schedule.** Before preparing, check the previous run's
+  plan with `get_plan`. If it is still `approved` with calls handed out, or
+  `expired` with the wallet's history not yet checked, do not prepare again;
+  tell the person instead.
+- **A refused run ends that run, not the schedule.** A `blocked` plan, a
+  failed simulation or a refused preview means skip today and report it.
+  Never retry with a different amount, asset or wallet to make the run go
+  through.
+- **The person's words set the size.** Never raise the amount to catch up a
+  missed run, and never add runs.
+- **Say how to stop.** Turning off auto-execute in settings makes every later
+  run wait for a review; removing the job in the host stops the runs.
+
+Where to schedule, by host:
+
+| Host | Scheduler |
+|---|---|
+| Claude Code | `/schedule` creates a routine on a cron schedule that runs this skill with the Ottopus MCP server connected; `/loop <interval> <prompt>` repeats inside a live session |
+| Codex | an automation in the Codex app, with the intent as its prompt and the Ottopus MCP server configured for that workspace |
+| Hermes Agent | `/cron add` in chat, or `hermes cron create` with a cron expression; the Hermes gateway must be running for jobs to fire |
+| OpenClaw | `openclaw cron add` with a name, a cron expression and the intent as the message; runs in the Gateway and can deliver the result to a chat channel |
+
+Whichever host, the job's prompt should name this skill and the Ottopus
+tools, so a fresh session on the schedule does not fall back to the wallet
+CLI's own order commands.
 
 ## What the agent must not do
 
