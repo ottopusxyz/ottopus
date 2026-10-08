@@ -63,26 +63,39 @@ one of them. Read all three from the person's words before picking an asset.
 | "send", "pay", "transfer 20 USDT to koshik.eth" | that asset | the recipient, not the wallet: `prepare_transfer`, never a trade | the spend side |
 
 **An open side is a stablecoin.** When the person says what to buy but not
-what to pay with, pay with a stablecoin the wallet holds on that chain: USDT
-first, else the one with the largest balance (USDC, USD1, FDUSD, whatever
-`get_portfolio` lists). When they say what to sell but not what to receive,
-receive USDT on that chain; it need not be held already. Never put BNB or
-any other volatile asset on an open side unless the person names it, and say
-which stablecoin was chosen in the same sentence as the link. A wallet with
-no stablecoin on that chain still gets a plan rather than a dead end: spend
-the largest holding there that can pay, name it beside the link, and the
-person declines on the review page if that is not what they meant.
+what to pay with, pay with a stablecoin held on that chain: USDT when a
+wallet holds enough of it for the amount, else the stablecoin with the
+largest holding that covers it (USDC, USD1, FDUSD, whatever `get_portfolio`
+lists), compared by the dollar `value` shown, not by raw balance. When they
+say what to sell but not what to receive, receive USDT on that chain; it need
+not be held already. BNB or another volatile asset goes on an open side only
+when the person names it, or when no stablecoin on that chain can pay: then
+spend the largest holding there that can, so the person gets a plan rather
+than a dead end. Either way, say which asset was chosen in the same sentence
+as the link, and the person declines on the review page if that is not what
+they meant. One exception to that last step: a plan on an agent-operated
+wallet under the auto-execute rule skips the review page. When such a plan
+spends a volatile asset the person did not name, tell them which one before
+fetching its calls with `get_plan`; their next word decides between sending
+and `cancel_plan`. A plan the person signs or approves themselves needs no
+such pause.
 
 **The amount goes in `amountIn`.** Both route providers quote by what goes
 in and refuse `amountOut`, so when the amount is on the receive side ("buy
 0.1 BNB", "buy 2 Tesla") turn it into a spend with the price the tool
-returned: `find_stock` gives a stock token's price, `find_asset` gives
-"about $x each", `get_portfolio` gives the value of a holding. Say the plan
-spends about that much for about that many; the quote's minimum received is
-the floor the person signs. "Half", "a third" and "all" are fractions of the
-base-unit balance `get_portfolio` lists. "All" of the chain's own coin
-leaves gas behind, since a wallet with nothing for gas is not eligible; say
-how much stayed.
+returned: `find_stock` gives each row's `tokenPriceUsd`, `find_asset` gives
+`priceUsd`, and `get_portfolio` gives each holding's dollar `value` beside
+its `amount`, so a unit price is value over amount. Turning a receive-side
+quantity into a spend takes both assets' prices. Say the plan spends about
+that much for about that many; the quote's minimum received is the floor the
+person signs. "Half", "a third" and "all" are fractions of the `amount`
+`get_portfolio` shows, which is a display amount with thousands separators,
+cut (not rounded) at four decimals: take the fraction of that, then multiply
+by 10^decimals for `amountIn`. Because it is cut, "all" never overshoots the
+real balance. "All" of the chain's own coin still leaves gas behind, since a
+wallet spending its whole native balance is not eligible; say how much
+stayed. "Some" and "take profit" name no amount, and the table supplies
+none; a plan needs a number, so ask for one.
 
 ## 2. Read before you spend
 
@@ -134,13 +147,14 @@ only when the person names it or it is the only token.
 
 **Quote asset.** "10 USD of Tesla" is paid in USDT on that chain unless the
 person names another asset, and a sale is paid out in USDT. The stablecoin
-rule in section 1 covers the rest: the stablecoin held most when USDT is
-short, never BNB for a dollar amount unless named, and say which was used.
+rule in section 1 covers the rest: the stablecoin with the largest
+sufficient holding when USDT is short, BNB for a dollar amount only when
+named or when nothing else can pay, and say which was used.
 
 **Amount.** Dollars become `amountIn` of the quote asset: 10 USD is
 "10000000000000000000" for 18-decimal USDT. A sale is `amountIn` of the stock
-token: "half my Tesla" is half the base-unit balance `get_portfolio` lists.
-Never round up to a nicer number.
+token: "half my Tesla" is half the `amount` `get_portfolio` shows for it,
+turned into base units with its decimals. Never round up to a nicer number.
 
 **Market state.** `find_stock` names it per row, and the plan carries it.
 
