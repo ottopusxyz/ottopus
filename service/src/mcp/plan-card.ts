@@ -61,30 +61,95 @@ function appClient(): string {
   return client
 }
 
+/** The review page's tokens (web/app/globals.css), light and dark, and the web app's Button pills. */
 const CSS = `
-:root { --ink: #0b1b3f; --muted: #5b6478; --line: #e3e6ee; --bg: #ffffff; --plan: #4f8df7; --ok: #3cc98a; --warn: #f5b843; --block: #c62a2f; --block-text: #c62a2f; --navy: #0b1b3f; }
-@media (prefers-color-scheme: dark) { :root { --ink: #eef1f8; --muted: #a3abbe; --line: #2a3350; --bg: #121a2e; --block-text: #ff8a8d; } }
-[data-theme="dark"] { --ink: #eef1f8; --muted: #a3abbe; --line: #2a3350; --bg: #121a2e; --block-text: #ff8a8d; }
-[data-theme="light"] { --ink: #0b1b3f; --muted: #5b6478; --line: #e3e6ee; --bg: #ffffff; --block-text: #c62a2f; }
+:root {
+  --card: #FFFFFF; --surface-2: #F7F2EA; --surface-3: #EFE8DD; --border: #E3DBCF; --border-strong: #C4B9A8;
+  --text: #16213E; --text-2: #4B556E; --text-3: #66708A; --text-4: #9AA2B8; --navy-soft: #DDE2F0;
+  --coral: #F58A6A; --coral-hover: #E8724F; --coral-soft: #FFE6DC; --coral-text: #B3421F; --on-state: #16213E;
+  --plan-bg: #E8F0FF; --plan-text: #1D4FB0; --warn-bg: #FFF3D6; --warn-text: #7A4E00;
+  --ok-bg: #E1F6EC; --ok-text: #0E6642; --block-bg: #FDE8E8; --block-text: #A0262A; --water: #F4F7FB;
+  --shadow: 0 1px 2px rgba(22,33,62,.06), 0 6px 20px rgba(22,33,62,.06);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --card: #141D33; --surface-2: #16213E; --surface-3: #1F2D52; --border: #2B3B69; --border-strong: #41538A;
+  --text: #F5F0E6; --text-2: #BFC7DB; --text-3: #8F9BBD; --text-4: #6B7796; --navy-soft: #2B3B69;
+  --coral: #FF9A7A; --coral-hover: #FFAE93; --coral-soft: #4A2A22; --coral-text: #FFB9A2;
+  --plan-bg: #172A4A; --plan-text: #9EC2FF; --warn-bg: #3A2B0D; --warn-text: #FFCB6B;
+  --ok-bg: #10352A; --ok-text: #7BE3B8; --block-bg: #3D1A1C; --block-text: #FF9FA1; --water: #111B30;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+} }
+[data-theme="dark"] {
+  --card: #141D33; --surface-2: #16213E; --surface-3: #1F2D52; --border: #2B3B69; --border-strong: #41538A;
+  --text: #F5F0E6; --text-2: #BFC7DB; --text-3: #8F9BBD; --text-4: #6B7796; --navy-soft: #2B3B69;
+  --coral: #FF9A7A; --coral-hover: #FFAE93; --coral-soft: #4A2A22; --coral-text: #FFB9A2;
+  --plan-bg: #172A4A; --plan-text: #9EC2FF; --warn-bg: #3A2B0D; --warn-text: #FFCB6B;
+  --ok-bg: #10352A; --ok-text: #7BE3B8; --block-bg: #3D1A1C; --block-text: #FF9FA1; --water: #111B30;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+}
 * { box-sizing: border-box; }
-body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: transparent; }
-.frame { display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px 16px; max-width: 520px; }
-#card { flex: 1; min-width: 0; }
-.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.brand { font-weight: 600; font-size: 12px; letter-spacing: .02em; color: var(--muted); }
-.badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: var(--ink); background: var(--line); }
-.badge.plan, .badge.ok, .badge.warn { color: var(--navy); }
-.badge.plan { background: var(--plan); } .badge.ok { background: var(--ok); } .badge.warn { background: var(--warn); }
-.badge.block { background: var(--block); color: #ffffff; }
-.summary { font-size: 16px; font-weight: 600; margin: 4px 0 10px; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 10px; }
-dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
-ul { margin: 0 0 10px; padding-left: 18px; } li.block { color: var(--block-text); }
-.outcome { color: var(--muted); margin: 0 0 10px; }
-.stale { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
-.actions { display: flex; gap: 8px; flex-wrap: wrap; }
-button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; background: var(--plan); color: var(--navy); }
-button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+body { margin: 0; padding: 2px 2px 8px; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: transparent; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+.pc { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; max-width: 520px; }
+.pc-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; }
+.pc-head .otto { width: 48px; height: 48px; }
+.pc-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pc-brand { font-size: 12px; font-weight: 600; color: var(--text-3); display: flex; gap: 8px; align-items: baseline; }
+.pc-ref { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.pc-title { font: 700 17px/1.28 ui-rounded, "SF Pro Rounded", system-ui, sans-serif; letter-spacing: -.01em; margin: 0; overflow-wrap: anywhere; }
+.pc-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; background: var(--surface-3); color: var(--text-2); }
+.chip.plan { background: var(--plan-bg); color: var(--plan-text); }
+.chip.ok { background: var(--ok-bg); color: var(--ok-text); }
+.chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+.chip.block { background: var(--block-bg); color: var(--block-text); }
+.chip.agent { background: var(--coral-soft); color: var(--coral-text); }
+.chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.live .dot { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.clock { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.why { margin: 0; padding: 0 16px 12px; font-size: 12.5px; color: var(--text-2); }
+.water { background: var(--water); padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.amt { display: flex; align-items: center; gap: 10px; }
+.tok { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--navy-soft); color: var(--text); }
+.tok.in { border-radius: 9px; background: var(--coral-soft); color: var(--coral-text); }
+.amt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.amt-num { font-size: 17px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.amt-num.in { color: var(--ok-text); }
+.about { font: 500 11px system-ui, sans-serif; color: var(--text-3); margin-right: 4px; }
+.amt-sub { font-size: 11.5px; color: var(--text-3); }
+.line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--text-2); }
+.tile { width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; background: var(--navy-soft); color: var(--text); margin-right: 5px; vertical-align: middle; }
+.tile.bnb { background: #F3BA2F; color: #16213E; }
+.sep { color: var(--text-3); }
+.verdict { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--surface-3); color: var(--text-2); }
+.verdict.ok { background: var(--ok-bg); color: var(--ok-text); }
+.facts { padding: 0 16px; }
+.fact { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.fact:last-child { border-bottom: 0; }
+.fact span { color: var(--text-2); }
+.fact b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.heads { margin: 10px 16px 0; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; background: var(--warn-bg); }
+.heads.block { background: var(--block-bg); }
+.heads b { font-weight: 600; color: var(--warn-text); }
+.heads.block b { color: var(--block-text); }
+.heads span { color: var(--text-2); }
+.heads ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); }
+.foot { margin-top: 12px; border-top: 1px solid var(--border); background: var(--water); padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.trust { margin: 0; font-size: 11px; color: var(--text-3); text-align: center; }
+.stale { margin: 0; font-size: 11.5px; color: var(--text-3); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; border-radius: 999px; font: 500 13px/1 system-ui, sans-serif; padding: 7px 14px; cursor: pointer; transition: background-color 160ms cubic-bezier(.2,.8,.2,1); }
+.btn:focus-visible { outline: 2px solid var(--plan-text); outline-offset: 2px; }
+.btn.primary { border: 1px solid var(--coral); background: var(--coral); color: var(--on-state); }
+.btn.primary:hover { background: var(--coral-hover); border-color: var(--coral-hover); }
+.btn.secondary { border: 1px solid var(--border-strong); background: var(--card); color: var(--text); }
+.btn.secondary:hover { background: var(--surface-2); }
+.btn.grow { flex: 1; }
+.btn.out::after { content: "↗"; }
+.sk { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-2) 50%, var(--surface-3) 100%); background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+@keyframes sweep { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk, .chip.live .dot { animation: none; } }
 `
 
 /**
@@ -96,8 +161,12 @@ button.quiet { background: transparent; color: var(--ink); border: 1px solid var
 const SCRIPT = String.raw`
 const { App, applyDocumentTheme, applyHostStyleVariables } = globalThis.OttopusExtApps
 const app = new App({ name: 'Ottopus plan card', version: '1' }, {}, { autoResize: true })
-const root = document.getElementById('card')
+const shell = document.getElementById('pc')
 const otto = document.getElementById('otto')
+const ref = document.getElementById('ref')
+const title = document.getElementById('title')
+const side = document.getElementById('side')
+const root = document.getElementById('card')
 
 // The label for a reply that carries none (a prepare_* reply); plan_status sends its own.
 const STATUS = {
@@ -115,9 +184,14 @@ const STATUS = {
 }
 
 const POSE = {
-  awaiting_review: 'ready', awaiting_signature: 'ready', approved: 'ready', submitted: 'busy',
+  planning: 'busy', awaiting_review: 'ready', awaiting_signature: 'ready', approved: 'ready', submitted: 'busy',
   confirmed: 'done', failed: 'alert', blocked: 'alert', expired: 'alert',
 }
+
+// Still waiting on a person or a chain: the dot pulses and the clock runs.
+const OPEN = ['awaiting_review', 'awaiting_signature', 'approved']
+
+const TRUST = 'Ottopus never holds a key and never sends anything.'
 
 function el(tag, cls, text) {
   const node = document.createElement(tag)
@@ -126,25 +200,35 @@ function el(tag, cls, text) {
   return node
 }
 
+// A CAIP-10 reads as its address, shortened the way the replies shorten one.
+function addressOf(caip10) {
+  const address = String(caip10).split(':').pop()
+  return address.length > 12 ? address.slice(0, 6) + '…' + address.slice(-4) : address
+}
+
 function walletOf(sc) {
   if (typeof sc.recommendedAccount === 'string') return sc.recommendedAccount
-  if (typeof sc.account === 'string') return sc.account
-  if (sc.account && typeof sc.account === 'object') return sc.account.label || sc.account.caip10
+  if (sc.account && typeof sc.account === 'object') return sc.account.label || addressOf(sc.account.caip10)
+  if (typeof sc.account === 'string') return addressOf(sc.account)
   return null
 }
 
-function simulationOf(sc) {
-  if (Array.isArray(sc.observed)) {
-    return sc.observed.length
-      ? 'Simulated: ' + sc.observed.map((o) => o.diff + ' ' + (o.symbol || o.asset)).join(', ')
-      : 'Simulated: no balance changes'
-  }
-  if (sc.rule && sc.rule.reason) return sc.rule.reason
-  return null
+// A short handle for the plan, the way the review page's header shows one.
+function shortId(id) {
+  return typeof id === 'string' ? '#' + id.replace(/-/g, '').slice(0, 6) : ''
 }
 
-function link(label, url, quiet) {
-  const button = el('button', quiet ? 'quiet' : '', label)
+function initial(text) {
+  const match = String(text || '').match(/[A-Za-z0-9]/)
+  return match ? match[0].toUpperCase() : '?'
+}
+
+function shortHash(hash) {
+  return hash.length > 14 ? hash.slice(0, 6) + '…' + hash.slice(-4) : hash
+}
+
+function link(label, url, cls) {
+  const button = el('button', 'btn out ' + cls, label + ' ')
   button.addEventListener('click', () => { app.openLink({ url }) })
   return button
 }
@@ -157,47 +241,209 @@ function pose(status) {
   otto.dataset.status = status
 }
 
-function render(sc) {
-  root.replaceChildren()
-  pose(String(sc.status))
-  const card = el('div', 'card')
-  const status = STATUS[sc.status] || [String(sc.status || 'Unknown'), '']
-  const top = el('div', 'top')
-  top.append(el('span', 'brand', 'OTTOPUS PLAN'), el('span', 'badge ' + status[1], sc.statusLabel || status[0]))
-  card.append(top, el('div', 'summary', sc.summary || 'A plan'))
+/**
+ * The head stays in the page and only its words change, so Otto, who lives
+ * in it, is never rebuilt and his motion never restarts.
+ */
+function head(status, label, cls, live) {
+  shell.hidden = false
+  pose(status)
+  const chip = el('span', 'chip ' + cls + (live ? ' live' : ''))
+  if (live) chip.append(el('span', 'dot'))
+  chip.append((cls === 'ok' ? '✓ ' : '') + label)
+  side.replaceChildren(chip)
+}
 
-  const rows = el('dl')
-  const add = (term, value) => { if (value) rows.append(el('dt', '', term), el('dd', '', value)) }
-  add('Wallet', walletOf(sc))
-  add('Why', sc.reason)
-  add('Route', sc.route)
-  if (sc.feesUsd && sc.feesUsd !== 'unknown') add('Fees', '$' + sc.feesUsd)
-  add('Simulation', simulationOf(sc) || (sc.reviewUrl ? 'Runs on the review page before you sign' : null))
-  if (sc.expiresAt && !sc.txHash && !sc.terminal) add('Expires', new Date(sc.expiresAt).toLocaleString())
-  add('Transaction', sc.txHash)
-  if (rows.childElementCount) card.append(rows)
+const clock = { timer: 0, until: 0, node: null }
 
-  if (sc.outcome) card.append(el('p', 'outcome', sc.outcome))
+function tick() {
+  const left = Math.max(0, Math.round((clock.until - Date.now()) / 1000))
+  const h = Math.floor(left / 3600)
+  const m = Math.floor((left % 3600) / 60)
+  const sec = String(left % 60).padStart(2, '0')
+  clock.node.textContent = h ? h + ':' + String(m).padStart(2, '0') + ':' + sec : m + ':' + sec
+  if (!left) clearInterval(clock.timer)
+}
 
-  const notes = []
-  for (const reason of sc.reasons || []) notes.push(['block', reason])
-  for (const w of sc.warnings || []) if (!(sc.reasons || []).includes(w.message)) notes.push([w.severity === 'block' ? 'block' : '', w.message])
-  if (notes.length) {
-    const list = el('ul')
-    for (const [cls, message] of notes) list.append(el('li', cls, message))
-    card.append(list)
+// One timer, updating one node's text: the countdown never redraws the card.
+function countdown(expiresAt) {
+  clearInterval(clock.timer)
+  const until = Date.parse(expiresAt)
+  if (!Number.isFinite(until)) return
+  clock.until = until
+  clock.node = el('span', 'clock mono')
+  clock.node.title = 'Expires at ' + new Date(until).toLocaleTimeString()
+  clock.node.setAttribute('aria-label', 'Time left to review')
+  side.append(clock.node)
+  tick()
+  clock.timer = setInterval(tick, 1000)
+}
+
+function amount(cls, letter, num, sub, about) {
+  const row = el('div', 'amt')
+  const main = el('div', 'amt-main')
+  const figure = el('span', 'amt-num mono' + (cls ? ' ' + cls : ''))
+  if (about) figure.append(el('span', 'about', 'about'))
+  figure.append(num)
+  main.append(figure)
+  if (sub) main.append(el('span', 'amt-sub', sub))
+  row.append(el('span', 'tok' + (cls ? ' ' + cls : ''), letter), main)
+  return row
+}
+
+function water(sc, wallet) {
+  const box = el('div', 'water')
+  const a = sc.amounts
+  if (a && a.toSymbol) {
+    // A trade. Never an amount the reply did not give: exact-out has no input figure.
+    box.append(amount('', initial(a.fromSymbol), '−' + (a.in ? a.in + ' ' : '') + a.fromSymbol, wallet ? 'from ' + wallet : null, false))
+    const floor = sc.trade === 'bridge'
+      ? 'at least ' + a.atLeast + (sc.chain && sc.chain.to ? ' arriving on ' + sc.chain.to : ' on arrival')
+      : 'at least ' + a.atLeast + ', or it reverts'
+    box.append(amount('in', initial(a.toSymbol), '+' + a.out + ' ' + a.toSymbol, floor, true))
+  } else if (a && a.symbol) {
+    box.append(amount('', initial(a.symbol), '−' + a.out + ' ' + a.symbol, 'to ' + a.to, false))
   }
 
-  const actions = el('div', 'actions')
-  if (sc.reviewUrl && sc.status !== 'blocked') actions.append(link('Open review', sc.reviewUrl, false))
-  if (sc.explorerUrl) actions.append(link('View transaction', sc.explorerUrl, !!sc.reviewUrl))
-  if (actions.childElementCount) card.append(actions)
+  const line = el('div', 'line')
+  const part = (letter, text, tile, strong) => {
+    const span = el('span')
+    span.append(el('span', 'tile' + (tile ? ' ' + tile : ''), letter))
+    span.append(strong ? el('b', '', text) : text)
+    if (line.childElementCount) line.append(el('span', 'sep', '·'))
+    line.append(span)
+  }
+  if (wallet) part(initial(wallet), wallet, '', true)
+  if (sc.chain && sc.chain.name) part(initial(sc.chain.name), sc.chain.name, sc.chain.id === 'eip155:56' ? 'bnb' : '', false)
+  const simulated = Array.isArray(sc.observed) || (sc.rule && sc.rule.applied)
+  const verdict = simulated ? ['verdict ok', '✓ Simulated'] : OPEN.includes(sc.status) && sc.reviewUrl ? ['verdict', 'Simulates on review'] : null
+  if (verdict) {
+    if (line.childElementCount) line.append(el('span', 'sep', '·'))
+    line.append(el('span', verdict[0], verdict[1]))
+  }
+  if (sc.txHash) {
+    const tx = el('div', 'line')
+    tx.append(el('span', '', 'Transaction'), el('span', 'mono', shortHash(sc.txHash)))
+    tx.title = sc.txHash
+    box.append(tx)
+  }
+  if (line.childElementCount) box.append(line)
+  return box.childElementCount ? box : null
+}
+
+function facts(sc) {
+  const list = el('div', 'facts')
+  const add = (term, value, mono) => {
+    if (!value) return
+    const row = el('div', 'fact')
+    row.append(el('span', '', term), el('b', mono ? 'mono' : '', value))
+    list.append(row)
+  }
+  const eta = typeof sc.etaSeconds === 'number' ? ' · ~' + (sc.etaSeconds < 90 ? sc.etaSeconds + 's' : Math.round(sc.etaSeconds / 60) + ' min') : ''
+  add('Route', sc.route ? sc.route + eta : null)
+  if (sc.feesUsd && sc.feesUsd !== 'unknown') add('Fees', '$' + sc.feesUsd, true)
+  if (typeof sc.slippageBps === 'number') add('Slippage', sc.slippageBps / 100 + '%', true)
+  return list.childElementCount ? list : null
+}
+
+// The heads-up: on a live plan the count and the worst one, the full list
+// being the review page's job. A refusal has no page, so every reason shows.
+function headsUp(sc) {
+  const reasons = sc.reasons || []
+  const warnings = (sc.warnings || []).filter((w) => !reasons.includes(w.message))
+  if (sc.status === 'blocked') {
+    if (!reasons.length) return null
+    const box = el('div', 'heads block')
+    box.append(el('b', '', reasons[0]))
+    if (reasons.length > 1) {
+      const rest = el('ul')
+      for (const reason of reasons.slice(1)) rest.append(el('li', '', reason))
+      box.append(rest)
+    }
+    return box
+  }
+  if (!warnings.length) return null
+  const rank = { block: 0, caution: 1, info: 2 }
+  const worst = warnings.slice().sort((x, y) => (rank[x.severity] ?? 3) - (rank[y.severity] ?? 3))[0]
+  const box = el('div', 'heads' + (worst.severity === 'block' ? ' block' : ''))
+  box.append(el('b', '', warnings.length > 1 ? warnings.length + ' things to read first' : 'Heads up'), el('span', '', ' · ' + worst.message))
+  return box
+}
+
+function why(sc) {
+  if (sc.status === 'blocked') return 'Ottopus refused to build this plan.'
+  if (sc.status === 'submitted' && !sc.outcome) return 'Waiting for ' + ((sc.chain && sc.chain.name) || 'the chain') + ' to confirm it.'
+  if (sc.terminal || sc.status === 'submitted') return sc.outcome || null
+  return sc.reason || null
+}
+
+function render(sc) {
+  const status = String(sc.status)
+  const known = STATUS[status] || [String(sc.status || 'Unknown'), '']
+  ref.textContent = shortId(sc.planId)
+  title.textContent = sc.summary || 'A plan'
+  head(status, sc.statusLabel || known[0], known[1], (OPEN.includes(status) || status === 'submitted') && !sc.terminal)
+  if (Array.isArray(sc.observed)) side.prepend(el('span', 'chip agent', 'Agent-crafted'))
+  clearInterval(clock.timer)
+  if (OPEN.includes(status) && !sc.txHash && !sc.terminal && sc.expiresAt) countdown(sc.expiresAt)
+
+  const body = []
+  const reason = why(sc)
+  if (reason) body.push(el('p', 'why', reason))
+  const wallet = walletOf(sc)
+  const box = water(sc, wallet)
+  if (box) body.push(box)
+  if (OPEN.includes(status)) { const list = facts(sc); if (list) body.push(list) }
+  const heads = headsUp(sc)
+  if (heads) body.push(heads)
+
+  const foot = el('div', 'foot')
   if (poll.stale) {
-    card.append(el('p', 'stale', poll.okAt
+    foot.append(el('p', 'stale', poll.okAt
       ? 'Last updated ' + new Date(poll.okAt).toLocaleTimeString() + '. Still trying.'
       : 'Could not check for updates. Still trying.'))
   }
-  root.append(card)
+  const acts = el('div', 'acts')
+  const review = sc.reviewUrl && status !== 'blocked'
+  if (sc.explorerUrl) acts.append(link('View transaction', sc.explorerUrl, 'secondary' + (review ? '' : ' grow')))
+  if (review) acts.append(link('Open review', sc.reviewUrl, sc.explorerUrl ? 'secondary' : 'primary grow'))
+  if (acts.childElementCount) foot.append(acts)
+  foot.append(el('p', 'trust', status === 'blocked' ? 'Nothing was prepared. There is nothing to sign.' : TRUST))
+  body.push(foot)
+  root.replaceChildren(...body)
+}
+
+/**
+ * While a prepare_* call runs, the host may send its arguments. They are
+ * the agent's raw input — asset ids and base units — so the card shows only
+ * what reads as words and makes up no progress: the host sends none.
+ */
+function planning(args) {
+  ref.textContent = ''
+  const a = args || {}
+  title.textContent = typeof a.summary === 'string' && a.summary
+    ? a.summary
+    : a.asset ? 'Preparing a transfer' : a.from ? 'Preparing a trade' : a.planId ? 'Looking up a plan' : 'Preparing a plan'
+  head('planning', 'Planning', '', true)
+  clearInterval(clock.timer)
+  const list = el('div', 'facts')
+  const add = (term, value) => {
+    if (typeof value !== 'string' || !value) return
+    const row = el('div', 'fact')
+    row.append(el('span', '', term), el('b', '', value))
+    list.append(row)
+  }
+  if (a.asset) add('To', a.to)
+  add('Wallet', a.fromAccount || a.account)
+  add('Note', a.note)
+  const skeleton = el('div', 'water')
+  skeleton.append(el('div', 'sk'), el('div', 'sk'))
+  skeleton.firstChild.style.width = '62%'
+  skeleton.lastChild.style.width = '40%'
+  const foot = el('div', 'foot')
+  foot.style.marginTop = '0'
+  foot.append(el('p', 'trust', 'Nothing moves until it is approved on the review page.'))
+  root.replaceChildren(...[el('p', 'why', 'Picking a wallet, finding a route and checking it.'), list.childElementCount ? list : null, skeleton, foot].filter(Boolean))
 }
 
 /**
@@ -250,19 +496,37 @@ async function check() {
   next()
 }
 
+function stop() {
+  clearTimeout(poll.timer)
+  clearInterval(clock.timer)
+  poll.plan = null
+}
+
 function theme(ctx) {
   if (!ctx) return
   if (ctx.theme) applyDocumentTheme(ctx.theme)
   if (ctx.styles && ctx.styles.variables) applyHostStyleVariables(ctx.styles.variables)
 }
 
+app.ontoolinput = (params) => {
+  // A result can beat its own input here; the plan wins.
+  if (!poll.plan) planning(params && params.arguments)
+}
+app.ontoolcancelled = () => {
+  if (poll.plan) return
+  stop()
+  head('cancelled', 'Stopped', '', false)
+  root.replaceChildren(el('p', 'why', 'The request was stopped before a plan came back.'))
+}
 app.ontoolresult = (result) => {
   const sc = result.structuredContent
   if (sc && typeof sc === 'object') return follow(sc)
-  clearTimeout(poll.timer)
-  poll.plan = null
+  stop()
   const text = (result.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n')
-  root.replaceChildren(el('div', 'card', text || 'No plan in this reply.'))
+  ref.textContent = ''
+  title.textContent = result.isError ? 'No plan was made' : 'Ottopus'
+  head('failed', result.isError ? 'No plan' : 'Note', result.isError ? 'warn' : '', false)
+  root.replaceChildren(el('p', 'why', text || 'No plan in this reply.'))
 }
 app.onhostcontextchanged = theme
 app.connect().then(() => theme(app.getHostContext()))
@@ -274,8 +538,10 @@ export function planCardHtml(client: string = appClient()): string {
     '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
     '<title>Ottopus plan</title>',
     `<style>${CSS}${MASCOT_CSS}</style>`,
-    // Otto sits outside #card: render() rebuilds the card, and rebuilding him would restart his motion.
-    `</head><body><div class="frame">${MASCOT_HTML}<div id="card"></div></div>`,
+    // Otto sits in the head, outside #card: render() rebuilds the card, and rebuilding him would restart his motion.
+    `</head><body><div class="pc" id="pc" hidden><div class="pc-head">${MASCOT_HTML}`,
+    '<div class="pc-id"><span class="pc-brand">OTTOPUS PLAN <span class="pc-ref mono" id="ref"></span></span><h3 class="pc-title" id="title"></h3></div>',
+    '<div class="pc-side" id="side"></div></div><div id="card"></div></div>',
     // Two scripts, not one: the minified client's top-level names would collide with the card's.
     `<script type="module">${client}</script>`,
     `<script type="module">${SCRIPT}</script>`,

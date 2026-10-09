@@ -54,7 +54,9 @@ describe('the plan card', () => {
 
   it('keeps Otto outside the part of the card that is redrawn', () => {
     const page = planCardHtml('/* client */')
-    expect(page).toMatch(/<div class="frame"><div class="otto" id="otto" hidden[^>]*>[\s\S]*<\/div><div id="card"><\/div><\/div>/)
+    expect(page).toMatch(/<div class="pc-head"><div class="otto" id="otto" hidden[^>]*>/)
+    expect(page).toMatch(/<div id="card"><\/div><\/div>/)
+    expect(page.indexOf('id="otto"')).toBeLessThan(page.indexOf('id="card"'))
     for (const pose of ['ready', 'busy', 'done', 'alert', 'rest']) expect(page).toContain(`<svg class="p-${pose}"`)
     expect(page).toContain('prefers-reduced-motion: reduce')
   })
@@ -63,6 +65,20 @@ describe('the plan card', () => {
     const script = planCardHtml('/* client */')
     // Its only buttons open a link.
     expect(script.match(/el\('button'/g)).toHaveLength(1)
-    expect([...script.matchAll(/link\('([^']+)'/g)].map((m) => m[1])).toEqual(['Open review', 'View transaction'])
+    expect([...script.matchAll(/link\('([^']+)'/g)].map((m) => m[1])).toEqual(['View transaction', 'Open review'])
+  })
+
+  /** Base units read as nonsense, and the card has no decimals to convert them with. */
+  it('prints amounts only from the readable copy, never base units', () => {
+    const script = planCardHtml('/* client */')
+    expect(script).toContain('sc.amounts')
+    expect(script).not.toMatch(/expectedOut|minOut|amountIn|amountOut|\.diff\b|a\.amount\b/)
+  })
+
+  it('shows a planning state from the tool input, and lets a result replace it', () => {
+    const script = planCardHtml('/* client */')
+    expect(script).toContain('app.ontoolinput')
+    expect(script).toContain('app.ontoolcancelled')
+    expect(script).toMatch(/if \(!poll\.plan\) planning\(/)
   })
 })
