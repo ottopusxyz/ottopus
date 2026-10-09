@@ -252,6 +252,42 @@ describe('the tool surface', () => {
       expect(tool.annotations?.destructiveHint ?? false, `${tool.name} is never destructive`).toBe(false)
     }
   })
+
+  /**
+   * A host that speaks MCP Apps draws the plan card under the tools that
+   * return a plan, and only those. The card reads; it never signs.
+   */
+  it('draws the plan card under the tools that return a plan, and no others', async () => {
+    const { client } = await connected()
+    const { tools } = await client.listTools()
+    const withCard = tools.filter((tool) => (tool._meta?.ui as { resourceUri?: string } | undefined)?.resourceUri)
+    expect(withCard.map((tool) => tool.name).sort()).toEqual(['get_plan', 'prepare_custom', 'prepare_trade', 'prepare_transfer'])
+    for (const tool of withCard) {
+      expect(tool._meta).toEqual({ ui: { resourceUri: 'ui://ottopus/plan' }, 'ui/resourceUri': 'ui://ottopus/plan' })
+    }
+  })
+
+  it('serves the card as one self-contained MCP App page', async () => {
+    const { client } = await connected()
+    const { resources } = await client.listResources()
+    expect(resources.map((r) => r.uri)).toEqual(['ui://ottopus/plan'])
+
+    const { contents } = await client.readResource({ uri: 'ui://ottopus/plan' })
+    expect(contents).toHaveLength(1)
+    const page = contents[0] as { mimeType: string; text: string }
+    expect(page.mimeType).toBe('text/html;profile=mcp-app')
+    expect(page.text).toContain('globalThis.OttopusExtApps={')
+    // The sandbox loads nothing: no external script, stylesheet or fetch.
+    expect(page.text).not.toMatch(/<script[^>]+src=|<link[^>]+href=|fetch\(/)
+  })
+
+  it('still answers in the same text when a host draws no card', async () => {
+    const { client } = await connected()
+    const result = await call(client, 'get_plan', { planId: 'not-a-plan' })
+    expect(result.isError).toBe(true)
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0]!.type).toBe('text')
+  })
 })
 
 describe('whoami', () => {
