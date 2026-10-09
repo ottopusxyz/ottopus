@@ -505,6 +505,8 @@ describe('prepare_transfer', () => {
       status: 'awaiting_review',
       summary: 'Send 500 USDC to 0x1111…1111 from Main on Base',
       recommendedAccount: 'Main (0xd8da…6045)',
+      amounts: { out: '500', symbol: 'USDC', to: '0x1111…1111' },
+      chain: { id: BASE, name: 'Base' },
       warnings: [],
     })
     expect(JSON.stringify(res)).not.toContain('"calls"')
@@ -1538,6 +1540,9 @@ describe('prepare_trade', () => {
       minOut: '119400000000000000',
       expectedOut: '120000000000000000',
       feesUsd: '0.31',
+      // The card reads these; it has no decimals to turn base units into tokens.
+      amounts: { in: '500', out: '0.12', atLeast: '0.1194', fromSymbol: 'USDC', toSymbol: 'ETH' },
+      chain: { id: BASE, name: 'Base' },
     })
     // Both calls are on the plan; neither reaches the agent.
     const plan = sink.created[0]!.plan

@@ -88,6 +88,9 @@ export type PrepareOutcome =
       reason: string
       /** The arm's auto-execute rule and what it decided; null when the arm has none. */
       rule: RuleOutcome | null
+      /** What leaves and where it goes, in tokens rather than base units. */
+      amounts: { out: string; symbol: string; to: string }
+      chain: { id: string; name: string }
       warnings: Warning[]
       expiresAt: string
       reviewUrl: string
@@ -159,10 +162,15 @@ function candidatesFrom(
     }))
 }
 
+/** The recipient as the summary names it: the ENS name when there was one, and the address either way. */
+function recipientWords(intent: TransferIntent): string {
+  const address = truncateAddress(parseAccountId(intent.to).address)
+  return intent.toName ? `${intent.toName} (${address})` : address
+}
+
 export function transferSummary(intent: TransferIntent, asset: AssetWords, from: { label?: string | undefined; caip10: string }): string {
   const amount = `${humanAmount(intent.amount, asset.decimals)} ${asset.symbol}`
-  const address = truncateAddress(parseAccountId(intent.to).address)
-  const to = intent.toName ? `${intent.toName} (${address})` : address
+  const to = recipientWords(intent)
   const fromName = from.label ?? truncateAddress(parseAccountId(from.caip10).address)
   return `Send ${amount} to ${to} from ${fromName} on ${chainName(sourceChainOf(intent))}`
 }
@@ -341,6 +349,8 @@ export async function prepareTransfer(
     recommendedAccount,
     reason: chosen.resolution.reason,
     rule: ruleOutcome(byRule, recommendedAccount, record.plan.status),
+    amounts: { out: humanAmount(intent.amount, asset.decimals), symbol: asset.symbol, to: recipientWords(intent) },
+    chain: { id: chainId, name: chainName(chain) },
     warnings,
     expiresAt: record.plan.expiresAt,
     reviewUrl: link.url,

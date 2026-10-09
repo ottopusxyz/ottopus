@@ -115,6 +115,10 @@ export type TradeOutcome =
       etaSeconds: number | null
       expectedOut: string
       minOut: string
+      /** The same amounts in tokens, for a reader that has no decimals to hand. `in` is null on an exact-out trade. */
+      amounts: { in: string | null; out: string; atLeast: string; fromSymbol: string; toSymbol: string }
+      /** Where it starts, and where it lands when that is somewhere else. */
+      chain: { id: string; name: string; to?: string | undefined }
       slippageBps: number | null
       feesUsd: string | null
       warnings: Warning[]
@@ -479,6 +483,18 @@ export async function prepareTrade(
     etaSeconds: quote.etaSeconds,
     expectedOut: quote.expectedOut,
     minOut: quote.minOut,
+    amounts: {
+      in: intent.amountIn ? humanAmount(intent.amountIn, fromWords.decimals) : null,
+      out: humanAmount(quote.expectedOut, toWords.decimals),
+      atLeast: humanAmount(quote.minOut, toWords.decimals),
+      fromSymbol: fromWords.symbol,
+      toSymbol: toWords.symbol,
+    },
+    chain: {
+      id: chainId,
+      name: chainName(chain),
+      ...(crossing ? { to: chainName(destination) } : {}),
+    },
     slippageBps: intent.slippageBps ?? null,
     feesUsd: quote.feesUsd,
     warnings,
