@@ -5,8 +5,18 @@ import { EVM_ADDRESS_RE, chainName } from '../core/index.js'
 import type { StockInfo } from '../connectors/tokens/index.js'
 import { stockFactsStale, stockMarket, stockMarketWords, stockPremium, stockStaleReason } from '../verify/index.js'
 import { NEVER_GRANTED, SCOPE_COPY, hasScope, type Scope } from '../oauth/scopes.js'
-import { type StatusDeps, cancelPlan, cancelText, getPlan, getPlanText, reportExecution, reportText } from './plan-status.js'
+import {
+  type StatusDeps,
+  cancelPlan,
+  cancelText,
+  getPlan,
+  getPlanText,
+  readStatus,
+  reportExecution,
+  reportText,
+} from './plan-status.js'
 import { capabilitiesOf } from '../wallets/index.js'
+import { PLAN_CARD_META, PLAN_STATUS_META, registerPlanCard } from './plan-card.js'
 import { portfolioText, resolveWallet, summarisePortfolio, usd, walletsText } from './readable.js'
 import { type CustomDeps, customText, prepareCustom } from './custom.js'
 import { type LinkDeps, finishLink, finishText, linkToolWords, startLink, startText } from './link.js'
@@ -116,6 +126,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
     capabilities: { tools: {} },
     instructions: INSTRUCTIONS,
   })
+  registerPlanCard(server)
 
   /**
    * Who the agent is acting for, in words a person would recognise as their
@@ -282,6 +293,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
           .describe('The linked wallet to send from: its name ("Safe"), id, 0x address, CAIP-10, or number in list_wallets. Omit to let Ottopus recommend one.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
+      _meta: PLAN_CARD_META,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (input) => {
@@ -515,6 +527,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         fromAccount: z.string().optional().describe('The linked wallet to spend from: its name ("Safe"), id, 0x address, CAIP-10, or number in list_wallets. Omit to let Ottopus recommend one.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
+      _meta: PLAN_CARD_META,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (input) => {
@@ -576,6 +589,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
         nativeValue: z.string().regex(/^[0-9]+$/).optional().describe('Total wei of native value the calls send. Omit for none.'),
         note: z.string().max(200).optional().describe('Why, in the person’s words. Shown on the review page.'),
       },
+      _meta: PLAN_CARD_META,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async (input) => {
@@ -621,6 +635,7 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       inputSchema: {
         planId: z.string().describe('The planId a prepare_* tool returned.'),
       },
+      _meta: PLAN_CARD_META,
       // Not read-only: handing out the calls writes an event and closes cancel.
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -631,6 +646,38 @@ export function buildServer(ctx: ToolContext, deps: ToolDeps): McpServer {
       if (!outcome.handoff) return text(getPlanText(outcome), { ...outcome.view })
       const { calls, planHash, execute, from, handedOffAt, first } = outcome.handoff
       return text(getPlanText(outcome), { ...outcome.view, calls, planHash, execute, from, handedOffAt, alreadyHandedOff: !first })
+    },
+  )
+
+  /**
+   * What the plan card polls to follow a plan to its end. It cannot be
+   * get_plan: on an approved agentic plan, get_plan's first read hands out
+   * the calls and closes cancel, and a card refreshing in the background must
+   * never do that. This one is only handed the store's read.
+   *
+   * Hidden from the model by `visibility: ["app"]`, but that is the host's
+   * courtesy, not a check: anyone holding the grant can call it, so it asks
+   * for plans:read and sees only this grant's plans, exactly like get_plan.
+   */
+  server.registerTool(
+    'plan_status',
+    {
+      title: 'Plan status',
+      description:
+        'The status of a plan this agent prepared, for the plan card to stay current. Read-only: it never ' +
+        'returns calls and never changes the plan. Agents use get_plan.',
+      inputSchema: {
+        planId: z.string().describe('The planId a prepare_* tool returned.'),
+      },
+      _meta: PLAN_STATUS_META,
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ planId }) => {
+      if (!hasScope(ctx.scopes, 'plans:read')) return denied('plans:read')
+      const outcome = await readStatus({ userId: ctx.userId, grantId: ctx.grantId }, deps, planId)
+      if (outcome.kind === 'not_found') return failure(getPlanText(outcome))
+      const { view } = outcome
+      return text(`Status: ${view.status}. ${view.outcome}`, { ...view })
     },
   )
 
