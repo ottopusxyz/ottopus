@@ -35,9 +35,32 @@ describe('the plan card', () => {
     expect(script).not.toMatch(/sc\.calls|sc\.planHash|\.data\b/)
   })
 
+  /**
+   * The card calls one tool, plan_status, which only reads. Never get_plan:
+   * its first read of an approved agentic plan hands out the calls.
+   */
+  it('calls no tool but plan_status', () => {
+    const script = planCardHtml('/* client */')
+    expect(script.match(/callServerTool/g)).toHaveLength(1)
+    expect([...script.matchAll(/callServerTool\(\{ name: '([^']+)'/g)].map((m) => m[1])).toEqual(['plan_status'])
+    expect(script).not.toMatch(/'(get_plan|cancel_plan|report_execution|prepare_\w+)'/)
+  })
+
+  it('stops where the server says the plan is over, keeping no list of its own', () => {
+    const script = planCardHtml('/* client */')
+    expect(script).toContain('plan.terminal')
+    expect(script).not.toMatch(/TERMINAL|isTerminal/)
+  })
+
+  it('keeps Otto outside the part of the card that is redrawn', () => {
+    const page = planCardHtml('/* client */')
+    expect(page).toMatch(/<div class="frame"><div class="otto" id="otto" hidden[^>]*>[\s\S]*<\/div><div id="card"><\/div><\/div>/)
+    for (const pose of ['ready', 'busy', 'done', 'alert', 'rest']) expect(page).toContain(`<svg class="p-${pose}"`)
+    expect(page).toContain('prefers-reduced-motion: reduce')
+  })
+
   it('offers no way to approve, sign or cancel', () => {
     const script = planCardHtml('/* client */')
-    expect(script).not.toMatch(/callServerTool/)
     // Its only buttons open a link.
     expect(script.match(/el\('button'/g)).toHaveLength(1)
     expect([...script.matchAll(/link\('([^']+)'/g)].map((m) => m[1])).toEqual(['Open review', 'View transaction'])
