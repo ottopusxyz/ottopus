@@ -218,7 +218,7 @@ describe('the tool surface', () => {
     expect(names.filter((name) => /^(sign|send|broadcast|submit)/.test(name))).toEqual([])
   })
 
-  it('offers six read tools and seven that write, and says which is which', async () => {
+  it('offers seven read tools and seven that write, and says which is which', async () => {
     const { client } = await connected()
     const { tools } = await client.listTools()
     expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -230,6 +230,7 @@ describe('the tool surface', () => {
       'link_agent_wallet_finish',
       'link_agent_wallet_start',
       'list_wallets',
+      'plan_status',
       'prepare_custom',
       'prepare_trade',
       'prepare_transfer',
@@ -265,6 +266,13 @@ describe('the tool surface', () => {
     for (const tool of withCard) {
       expect(tool._meta).toEqual({ ui: { resourceUri: 'ui://ottopus/plan' }, 'ui/resourceUri': 'ui://ottopus/plan' })
     }
+  })
+
+  it('offers the card its status reader and hides it from the model', async () => {
+    const { client } = await connected()
+    const { tools } = await client.listTools()
+    const appOnly = tools.filter((tool) => (tool._meta?.ui as { visibility?: string[] } | undefined)?.visibility)
+    expect(appOnly.map((tool) => [tool.name, tool._meta])).toEqual([['plan_status', { ui: { visibility: ['app'] } }]])
   })
 
   it('serves the card as one self-contained MCP App page', async () => {
@@ -943,6 +951,102 @@ describe('get_plan for a plan the agent’s own wallet sends', () => {
     expect(result.isError).toBe(true)
     expect(asked).toBe(0)
     expect(JSON.stringify(result)).not.toContain('planHash')
+  })
+})
+
+/**
+ * The card's poll. Everything get_plan says about status, nothing it does:
+ * however often the card asks, an approved agentic plan stays unhanded-off
+ * and cancellable.
+ */
+describe('plan_status', () => {
+  /** Deps that fail the test if anything but a read is attempted. */
+  const readOnly = (record: PlanRecord): Partial<ToolDeps> => ({
+    findPlan: async () => record,
+    handOff: async () => {
+      throw new Error('plan_status must never hand off')
+    },
+    transition: async () => {
+      throw new Error('plan_status must never transition')
+    },
+    recordExecution: async () => {
+      throw new Error('plan_status must never record')
+    },
+  })
+
+  it('reads an approved agentic plan without handing it off, so cancel still works', async () => {
+    const record = onRecord({ status: 'approved' })
+    const { client } = await connected(undefined, readOnly(record), { grantId: 'grant-1' })
+    for (let i = 0; i < 3; i++) {
+      const result = await call(client, 'plan_status', { planId: record.plan.id })
+      expect(result.isError).toBeUndefined()
+      expect(result.structuredContent).toMatchObject({ status: 'approved', statusLabel: 'Approved', terminal: false })
+      const everything = JSON.stringify(result)
+      for (const secret of ['"calls"', 'planHash', '"data"', 'contract-call', 'handedOffAt']) {
+        expect(everything, `${secret} must not reach the card`).not.toContain(secret)
+      }
+    }
+
+    // Still cancellable: the cancel goes through as if the card had never looked.
+    const moves: string[] = []
+    const after = await connected(undefined, {
+      findPlan: async () => record,
+      transition: async (input) => (moves.push(input.to), input.to),
+    }, { grantId: 'grant-1' })
+    const cancelled = await call(after.client, 'cancel_plan', { planId: record.plan.id })
+    expect(moves).toEqual(['cancelled'])
+    expect(cancelled.content[0]!.text).toContain('Cancelled:')
+  })
+
+  it.each([
+    ['awaiting_review', null, 'Ready for review', false],
+    ['submitted', { txHash: TX }, 'Sent', false],
+    ['confirmed', { txHash: TX }, 'Confirmed', true],
+    ['failed', { txHash: TX, reason: 'reverted' }, 'Failed', true],
+    ['failed', { txHash: TX, reason: 'dropped' }, 'Dropped', true],
+    ['expired', null, 'Expired', true],
+    ['expired', { handedOffAt: HANDED_AT }, 'Execution unreported', true],
+    ['blocked', null, 'Blocked', true],
+    ['cancelled', null, 'Cancelled', true],
+    ['superseded', null, 'Replaced', true],
+  ] as const)('labels %s (%j) as "%s", terminal=%s', async (status, statusDetail, label, terminal) => {
+    const record = onRecord({ status, statusDetail })
+    const { client } = await connected(undefined, readOnly(record), { grantId: 'grant-1' })
+    const result = await call(client, 'plan_status', { planId: record.plan.id })
+    expect(result.structuredContent).toMatchObject({ status, statusLabel: label, terminal })
+  })
+
+  it('says a crossing plan’s confirmation is the source leg only', async () => {
+    const record = onRecord({
+      status: 'confirmed',
+      statusDetail: { txHash: TX },
+      plan: planFor(USER_ID, {
+        status: 'confirmed',
+        intent: { kind: 'bridge', from: `${BASE}/erc20:${USDC}`, to: 'eip155:1/slip44:60', amountIn: '1000' },
+      }),
+    })
+    const { client } = await connected(undefined, readOnly(record), { grantId: 'grant-1' })
+    const result = await call(client, 'plan_status', { planId: record.plan.id })
+    expect(result.structuredContent).toMatchObject({ statusLabel: 'Source confirmed' })
+    expect(result.structuredContent!.outcome).toContain('the funds have left')
+  })
+
+  it('is not found for another grant’s plan or a web plan', async () => {
+    for (const grantId of ['grant-2', null]) {
+      const record = onRecord({ status: 'approved', grantId })
+      const { client } = await connected(undefined, readOnly(record), { grantId: 'grant-1' })
+      const result = await call(client, 'plan_status', { planId: record.plan.id })
+      expect(result.isError, `grant ${grantId}`).toBe(true)
+      expect(result.structuredContent).toBeUndefined()
+    }
+  })
+
+  it('refuses without plans:read, whatever the host shows the model', async () => {
+    const record = onRecord()
+    const { client } = await connected(['wallets:read', 'plans:write'], readOnly(record), { grantId: 'grant-1' })
+    const result = await call(client, 'plan_status', { planId: record.plan.id })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('plans:read')
   })
 })
 

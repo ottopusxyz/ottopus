@@ -77,6 +77,10 @@ export interface PlanView {
   explorerUrl: string | null
   /** The status, as a sentence the agent can repeat. */
   outcome: string
+  /** The status in a word or two, sharpened where the bare status would mislead. */
+  statusLabel: string
+  /** Nothing further will happen to this plan. */
+  terminal: boolean
 }
 
 /** What the agent of an agentic arm is handed once its plan is approved, and nothing before. */
@@ -125,7 +129,7 @@ const isUuid = (id: string) => z.uuid().safeParse(id).success
  * The plan, if this grant made it. A malformed id is refused here rather than
  * handed to Postgres, whose uuid column would throw on it.
  */
-async function ownPlan(ctx: StatusContext, deps: StatusDeps, planId: string): Promise<PlanRecord | null> {
+async function ownPlan(ctx: StatusContext, deps: Pick<StatusDeps, 'findPlan'>, planId: string): Promise<PlanRecord | null> {
   if (!isUuid(planId)) return null
   const record = await deps.findPlan(ctx.userId, planId)
   if (!record || record.grantId !== ctx.grantId) return null
@@ -216,6 +220,40 @@ export function outcomeWords(record: PlanRecord): string {
   }
 }
 
+/**
+ * The status as a badge reads it. Three statuses say less than they seem to:
+ * a crossing plan's confirmed is only the source leg, a dropped transaction
+ * is not one that reverted, and an expired plan whose calls were handed out
+ * may well have been sent.
+ */
+export function statusLabel(record: PlanRecord): string {
+  const { plan } = record
+  switch (plan.status) {
+    case 'draft':
+      return 'Planning'
+    case 'awaiting_review':
+      return 'Ready for review'
+    case 'awaiting_signature':
+      return 'Waiting for signature'
+    case 'approved':
+      return handedOffAtOf(record) ? 'Sending' : 'Approved'
+    case 'submitted':
+      return 'Sent'
+    case 'confirmed':
+      return crossesChains(plan.intent) ? 'Source confirmed' : 'Confirmed'
+    case 'failed':
+      return record.statusDetail?.reason === 'dropped' ? 'Dropped' : 'Failed'
+    case 'expired':
+      return handedOffAtOf(record) ? 'Execution unreported' : 'Expired'
+    case 'blocked':
+      return 'Blocked'
+    case 'superseded':
+      return 'Replaced'
+    case 'cancelled':
+      return 'Cancelled'
+  }
+}
+
 export function viewOf(record: PlanRecord): PlanView {
   const { plan } = record
   const chain = sourceChainOf(plan.intent)
@@ -236,6 +274,8 @@ export function viewOf(record: PlanRecord): PlanView {
     txHash,
     explorerUrl: txHash ? explorerTxUrl(chain, txHash) : null,
     outcome: outcomeWords(record),
+    statusLabel: statusLabel(record),
+    terminal: isTerminal(plan.status),
   }
 }
 
@@ -278,6 +318,20 @@ export async function getPlan(ctx: StatusContext, deps: StatusDeps, planId: stri
   const after = (await deps.findPlan(ctx.userId, record.plan.id)) ?? record
   if (!handoff) return { kind: 'found', view: viewOf(after) }
   return { kind: 'found', view: viewOf(after), handoff: handoffView(handoff) }
+}
+
+/**
+ * What the plan card polls. The same view as get_plan, through the same
+ * grant check, and nothing else: it is handed only `findPlan`, so it cannot
+ * release calls or move the plan however it is called or how often.
+ */
+export async function readStatus(
+  ctx: StatusContext,
+  deps: Pick<StatusDeps, 'findPlan'>,
+  planId: string,
+): Promise<{ kind: 'not_found'; planId: string } | { kind: 'found'; view: PlanView }> {
+  const record = await ownPlan(ctx, deps, planId)
+  return record ? { kind: 'found', view: viewOf(record) } : { kind: 'not_found', planId }
 }
 
 /**

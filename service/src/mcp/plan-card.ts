@@ -23,6 +23,9 @@ export const PLAN_CARD_URI = 'ui://ottopus/plan'
 /** What a tool carries to have the card drawn under it. The flat key is the older spelling some hosts still read. */
 export const PLAN_CARD_META = { ui: { resourceUri: PLAN_CARD_URI }, 'ui/resourceUri': PLAN_CARD_URI } as const
 
+/** The card's own status reader: callable by the card, not offered to the model. */
+export const PLAN_STATUS_META = { ui: { visibility: ['app'] } } as const
+
 /**
  * The ext-apps browser client, made usable from an inline script.
  *
