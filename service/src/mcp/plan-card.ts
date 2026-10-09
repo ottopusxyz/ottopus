@@ -153,6 +153,33 @@ body { margin: 0; padding: 2px 2px 8px; font: 14px/1.45 system-ui, -apple-system
 `
 
 /**
+ * The card's pure helpers: no DOM, no host. Inlined ahead of SCRIPT, and
+ * exported so the tests can run the code the card runs.
+ */
+export const PLAN_CARD_HELPERS = String.raw`
+// A CAIP-10 reads as its address, shortened the way the replies shorten one.
+function addressOf(caip10) {
+  const address = String(caip10).split(':').pop()
+  return address.length > 12 ? address.slice(0, 6) + '…' + address.slice(-4) : address
+}
+
+// prepare_custom's account is already a label, "Treasury (0x1234…5678)"; only a CAIP-10 gets shortened.
+function walletOf(sc) {
+  if (typeof sc.recommendedAccount === 'string') return sc.recommendedAccount
+  if (sc.account && typeof sc.account === 'object') return sc.account.label || addressOf(sc.account.caip10)
+  if (typeof sc.account === 'string') return /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}:\S+$/.test(sc.account) ? addressOf(sc.account) : sc.account
+  return null
+}
+
+// A plan_status read on top of the plan so far. Its chain is {id, name}; a bridge's destination stays.
+function mergeStatus(plan, view) {
+  const merged = Object.assign({}, plan, view)
+  if (plan.chain && view.chain) merged.chain = Object.assign({}, plan.chain, view.chain)
+  return merged
+}
+`
+
+/**
  * The card's own script. Plain JS in a raw string, so no template
  * substitutions: every `+` below is deliberate. It builds the DOM with
  * textContent only — the summary and warnings come from an agent's input
@@ -198,19 +225,6 @@ function el(tag, cls, text) {
   if (cls) node.className = cls
   if (text != null) node.textContent = String(text)
   return node
-}
-
-// A CAIP-10 reads as its address, shortened the way the replies shorten one.
-function addressOf(caip10) {
-  const address = String(caip10).split(':').pop()
-  return address.length > 12 ? address.slice(0, 6) + '…' + address.slice(-4) : address
-}
-
-function walletOf(sc) {
-  if (typeof sc.recommendedAccount === 'string') return sc.recommendedAccount
-  if (sc.account && typeof sc.account === 'object') return sc.account.label || addressOf(sc.account.caip10)
-  if (typeof sc.account === 'string') return addressOf(sc.account)
-  return null
 }
 
 // A short handle for the plan, the way the review page's header shows one.
@@ -489,7 +503,7 @@ async function check() {
   const view = result && result.structuredContent
   if (result.isError || !view || view.planId !== plan.planId) return
   poll.step = view.status === plan.status ? poll.step + 1 : 0
-  poll.plan = Object.assign({}, plan, view)
+  poll.plan = mergeStatus(plan, view)
   poll.okAt = Date.now()
   poll.stale = false
   render(poll.plan)
@@ -544,7 +558,7 @@ export function planCardHtml(client: string = appClient()): string {
     '<div class="pc-side" id="side"></div></div><div id="card"></div></div>',
     // Two scripts, not one: the minified client's top-level names would collide with the card's.
     `<script type="module">${client}</script>`,
-    `<script type="module">${SCRIPT}</script>`,
+    `<script type="module">${PLAN_CARD_HELPERS}${SCRIPT}</script>`,
     '</body></html>',
   ].join('\n')
 }

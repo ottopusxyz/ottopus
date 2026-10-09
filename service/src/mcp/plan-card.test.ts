@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { inlineAppClient, planCardHtml } from './plan-card.js'
+import { inlineAppClient, PLAN_CARD_HELPERS, planCardHtml } from './plan-card.js'
+
+// The card's own helper code, run as the card runs it.
+const helpers = new Function(`${PLAN_CARD_HELPERS}; return { walletOf, mergeStatus }`)() as {
+  walletOf(sc: object): string | null
+  mergeStatus(plan: object, view: object): Record<string, unknown>
+}
 
 describe('the plan card', () => {
   it('turns the client bundle’s one export into a global the card can read', () => {
@@ -80,5 +86,19 @@ describe('the plan card', () => {
     expect(script).toContain('app.ontoolinput')
     expect(script).toContain('app.ontoolcancelled')
     expect(script).toMatch(/if \(!poll\.plan\) planning\(/)
+  })
+
+  it('shortens a CAIP-10 wallet and leaves a reply’s own label alone', () => {
+    expect(helpers.walletOf({ account: 'eip155:56:0x51e0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa51e0' })).toBe('0x51e0…51e0')
+    expect(helpers.walletOf({ account: 'Treasury (0x1234…5678)' })).toBe('Treasury (0x1234…5678)')
+    expect(helpers.walletOf({ account: '0x1234…5678' })).toBe('0x1234…5678')
+  })
+
+  it('keeps a bridge’s destination when a plan_status read lands', () => {
+    const plan = { planId: 'p', status: 'awaiting_review', chain: { id: 'eip155:56', name: 'BNB Chain', to: 'Base' } }
+    const merged = helpers.mergeStatus(plan, { planId: 'p', status: 'submitted', chain: { id: 'eip155:56', name: 'BNB Chain' } })
+    expect(merged.status).toBe('submitted')
+    expect(merged.chain).toEqual({ id: 'eip155:56', name: 'BNB Chain', to: 'Base' })
+    expect(plan.status).toBe('awaiting_review')
   })
 })
