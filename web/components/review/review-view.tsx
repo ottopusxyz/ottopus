@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { RequireSession, usePrivyAvailable } from '@/components/auth'
 import { Otto } from '@/components/brand'
 import { BubbleField, GUTTER_LIFE, SeaLife } from '@/components/motion'
@@ -245,6 +245,12 @@ function useClock(running: boolean): number {
 }
 
 
+/** The landing's light from the surface, kept to the gutters either side of the card. */
+const REVIEW_SHAFTS: readonly [string, number, string][] = [
+  ['6%', 120, '12deg'],
+  ['80%', 160, '15deg'],
+]
+
 function Ground({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <main
@@ -268,6 +274,13 @@ function Ground({ children, wide = false }: { children: ReactNode; wide?: boolea
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="ot-caustic" />
         <div className="ot-caustic ot-caustic--b" />
+        {REVIEW_SHAFTS.map(([left, width, tilt]) => (
+          <span
+            key={left}
+            className="ot-shaft ot-land-shaft"
+            style={{ left, width, height: '120%', '--ot-shaft-tilt': tilt } as CSSProperties}
+          />
+        ))}
         <BubbleField pattern="canvas" />
         <SeaLife creatures={GUTTER_LIFE} />
       </div>

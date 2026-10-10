@@ -1,13 +1,9 @@
-/* P4 · Review. The card stands on the portfolio's water. Opaque from the
-   first pixel, unlike .ot-sea, because nothing sits above it to fade from. */
+/* P4 · Review. The card stands in the landing hero's water — the same
+   gradient, so following a review link from an agent feels like the same
+   sea. Opaque from the first pixel, unlike .ot-sea, because nothing sits
+   above it to fade from. The card itself stays opaque and still. */
 .ot-review-sea {
-  background: linear-gradient(
-    180deg,
-    var(--ot-water-1) 0%,
-    color-mix(in srgb, var(--ot-plan) 5%, var(--ot-water-1)) 28%,
-    color-mix(in srgb, var(--ot-plan) 11%, var(--ot-water-2)) 64%,
-    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-3)) 100%
-  );
+  background: var(--ot-sea-gradient);
 }
 
 /* P4 · Review. The one ripple that is not a loader: it plays once, on

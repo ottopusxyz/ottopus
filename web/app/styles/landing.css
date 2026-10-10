@@ -9,13 +9,7 @@
 /* ── The hero's sea ───────────────────────────────────────────────── */
 
 .ot-land-sea {
-  background: linear-gradient(
-    180deg,
-    var(--ot-water-1) 0%,
-    color-mix(in srgb, var(--ot-plan) 8%, var(--ot-water-1)) 30%,
-    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-2)) 70%,
-    color-mix(in srgb, var(--ot-plan) 30%, var(--ot-water-3)) 100%
-  );
+  background: var(--ot-sea-gradient);
 }
 
 /* Light from the surface. Brighter than the review page's shafts, which

@@ -7,6 +7,19 @@
 
 :root { --ot-ambient-play: running; }
 
+/* The sea the landing hero is drawn in: surface water at the top, deeper
+   blue at the floor. One gradient, so the landing, the review page and the
+   app frame are the same water rather than three close guesses. */
+:root {
+  --ot-sea-gradient: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 8%, var(--ot-water-1)) 30%,
+    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-2)) 70%,
+    color-mix(in srgb, var(--ot-plan) 30%, var(--ot-water-3)) 100%
+  );
+}
+
 [data-stillness="held"] { --ot-ambient-play: paused; }
 
 .ot-ambient,
