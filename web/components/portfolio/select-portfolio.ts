@@ -124,3 +124,21 @@ export function byBalance<T extends { id: string }>(wallets: readonly T[], arms:
   const totals = new Map((arms ?? []).filter((arm) => arm.status === 'ok').map((arm) => [arm.walletId, arm.total]))
   return [...wallets].sort((a, b) => (totals.get(b.id) ?? -Infinity) - (totals.get(a.id) ?? -Infinity) || 0)
 }
+
+/**
+ * A selection's loose balances in two: tokenized stocks the service knows by
+ * address, and everything else. Shares and values are re-summed from the
+ * rows, so Stocks, Wallet and DeFi still add up to the total.
+ */
+export function splitStocks(rows: readonly (AssetRow & { share: number })[]) {
+  const section = (part: (AssetRow & { share: number })[]) => ({
+    rows: part,
+    value: part.reduce((sum, row) => sum + row.value, 0),
+    share: part.reduce((sum, row) => sum + row.share, 0),
+    change: part.reduce((sum, row) => sum + row.change1d, 0),
+  })
+  return {
+    stocks: section(rows.filter((row) => row.asset.stock)),
+    tokens: section(rows.filter((row) => !row.asset.stock)),
+  }
+}

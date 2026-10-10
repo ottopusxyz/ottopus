@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import type { Arm } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { ProtocolCard, SectionHead } from './protocol-card'
-import type { SelectedPortfolio } from './select-portfolio'
+import { splitStocks, type SelectedPortfolio } from './select-portfolio'
 import { TokenTable } from './token-table'
 import { walletRefsOf } from './wallet-marks'
 
@@ -27,6 +27,17 @@ function DefiGlyph() {
       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
         <ellipse cx="8" cy="4.5" rx="5" ry="2" />
         <path d="M3 4.5v3c0 1.1 2.2 2 5 2s5-.9 5-2v-3M3 7.5v3c0 1.1 2.2 2 5 2s5-.9 5-2v-3" />
+      </svg>
+    </span>
+  )
+}
+
+/** The stocks section's mark: a rising line, the size of an app's icon. */
+function StocksGlyph() {
+  return (
+    <span aria-hidden className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] bg-[var(--ot-coral-soft)] text-[var(--ot-coral-text)]">
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12.5h12M3 10l3-3 2.5 2L13 4.5M10.5 4.5H13V7" />
       </svg>
     </span>
   )
@@ -55,6 +66,8 @@ export function Holdings({ portfolio, wallets = [], show = 'all' }: HoldingsProp
   const chains = useMemo(() => new Map(portfolio.chains.map((chain) => [chain.chainId, chain])), [portfolio.chains])
   const walletRefs = useMemo(() => walletRefsOf(wallets), [wallets])
   const empty = portfolio.assets.length === 0 && portfolio.protocols.length === 0
+  // Tokenized stocks get their own section, above the wallet's other tokens.
+  const { stocks, tokens } = useMemo(() => splitStocks(portfolio.assets), [portfolio.assets])
   const cards = portfolio.protocols.map((protocol) => (
     <ProtocolCard key={protocol.id} protocol={protocol} chains={chains} wallets={walletRefs} currency={portfolio.currency} />
   ))
@@ -83,14 +96,25 @@ export function Holdings({ portfolio, wallets = [], show = 'all' }: HoldingsProp
       {empty ? (
         <p className="ot-token-row py-8 text-center text-[13px] text-[var(--ot-text-2)]">No balances on this network.</p>
       ) : (
-        <section aria-label="Wallet balances">
-          <SectionHead icon={<WalletGlyph />} title="Wallet" value={portfolio.wallet.value} share={portfolio.wallet.share} currency={portfolio.currency} />
-          {portfolio.assets.length > 0 ? (
-            <TokenTable rows={portfolio.assets} chains={portfolio.chains} currency={portfolio.currency} wallets={wallets} />
-          ) : (
-            <p className="ot-token-row py-6 text-center text-[13px] text-[var(--ot-text-2)]">Nothing loose in a wallet here — it is all in protocols.</p>
-          )}
-        </section>
+        <>
+          {stocks.rows.length > 0 ? (
+            <section aria-label="Stocks">
+              <SectionHead icon={<StocksGlyph />} title="Stocks" value={stocks.value} share={stocks.share} change={stocks.change} currency={portfolio.currency} />
+              <TokenTable rows={stocks.rows} chains={portfolio.chains} currency={portfolio.currency} wallets={wallets} />
+            </section>
+          ) : null}
+          {/* With stocks and nothing else loose, an empty Wallet section would only repeat that. */}
+          {tokens.rows.length > 0 || stocks.rows.length === 0 ? (
+            <section aria-label="Wallet balances">
+              <SectionHead icon={<WalletGlyph />} title="Wallet" value={tokens.value} share={tokens.share} currency={portfolio.currency} />
+              {tokens.rows.length > 0 ? (
+                <TokenTable rows={tokens.rows} chains={portfolio.chains} currency={portfolio.currency} wallets={wallets} />
+              ) : (
+                <p className="ot-token-row py-6 text-center text-[13px] text-[var(--ot-text-2)]">Nothing loose in a wallet here — it is all in protocols.</p>
+              )}
+            </section>
+          ) : null}
+        </>
       )}
       {/* When the rail carries the protocols, the column keeps them only where there is no rail. */}
       <div className={cn('space-y-3', show === 'wallet' && 'xl:hidden')}>{cards}</div>

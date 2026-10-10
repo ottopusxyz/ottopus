@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetRow, Portfolio, ProtocolHolding, ProtocolRow } from '@/lib/api'
-import { byBalance, selectPortfolio } from './select-portfolio'
+import { byBalance, selectPortfolio, splitStocks } from './select-portfolio'
 
 const ASSET = { symbol: 'TOKEN', name: 'Token', decimals: 18, iconUrl: null, verified: true }
 
@@ -165,5 +165,15 @@ describe('wallet order', () => {
 
   it('keeps link order while nothing has been read', () => {
     expect(byBalance(wallets, undefined).map((w) => w.id)).toEqual(wallets.map((w) => w.id))
+  })
+})
+
+describe('stocks section', () => {
+  it('takes tokenized stocks out of the loose balances, and the two halves add up', () => {
+    const stock = { ...row('eip155:56', [300], 6), asset: { ...ASSET, symbol: 'NVDAon', stock: { issuer: 'ondo', ticker: 'NVDA' } }, share: 0.75 }
+    const token = { ...row('eip155:56', [100], 2), share: 0.25 }
+    const split = splitStocks([token, stock])
+    expect(split.stocks).toEqual({ rows: [stock], value: 300, share: 0.75, change: 6 })
+    expect(split.tokens).toEqual({ rows: [token], value: 100, share: 0.25, change: 2 })
   })
 })
