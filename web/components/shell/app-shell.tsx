@@ -51,13 +51,7 @@ export function AppShell(props: AppShellProps) {
 function Shell({ children, agent, account }: AppShellProps) {
   const sidebarNudge = useSidebarNudge()
   return (
-    <div className="ot-app-shell ot-app-sea relative flex min-h-dvh flex-col p-0 sm:p-6">
-      {/* The landing's light, washing over the gutter. Behind the frame, so it
-          never sits under a balance or an address. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="ot-caustic" />
-        <div className="ot-caustic ot-caustic--b" />
-      </div>
+    <div className="ot-app-shell flex min-h-dvh flex-col bg-[var(--ot-page)] p-0 sm:p-6">
       <a
         href="#main"
         className={
@@ -70,7 +64,7 @@ function Shell({ children, agent, account }: AppShellProps) {
 
       <div
         className={
-          'ot-app-grid relative grid flex-1 overflow-hidden border-[var(--ot-border)] bg-[var(--ot-surface)] ' +
+          'ot-app-grid grid flex-1 overflow-hidden border-[var(--ot-border)] bg-[var(--ot-surface)] ' +
           'sm:rounded-[18px] sm:border ' +
           // Below lg main is the only item in the grid, and it gets all of it —
           // a page that pins its own height (the portfolio) needs a definite
@@ -103,7 +97,7 @@ function Shell({ children, agent, account }: AppShellProps) {
             exactly as tall as the page's overflow. */}
         <main
           id="main"
-          className="ot-scroll ot-app-main relative flex min-w-0 flex-col lg:col-start-2 lg:row-span-3 lg:row-start-1"
+          className="ot-scroll relative flex min-w-0 flex-col lg:col-start-2 lg:row-span-3 lg:row-start-1"
         >
           {children}
         </main>
