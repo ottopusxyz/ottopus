@@ -29,8 +29,11 @@ that would sit poorly on the dark palette, and a light tile keeps every mark
 legible without per-theme variants.
 
 `openclaw.png` came later, on 2026-09-29, from the Ottopus intro films, where
-OpenClaw sits in the row of agents beside Claude, Codex and Hermes. It is drawn
-on the landing page's agent row only; the connect dialog has no OpenClaw entry.
+OpenClaw sits in the row of agents beside Claude, Codex and Hermes. It was first
+drawn on the landing page's agent row only. On 2026-10-10 OpenClaw joined the
+connect list, so `openclaw.svg` now wraps that same PNG the way `hermes` does.
+VS Code left the connect list the same day; `vscode.svg` stays for grants it
+already holds.
 
 `grok` came on 2026-10-10, from the same logr set, with its viewBox padded to
 match the rest. It is drawn for Grok, and for Cursor too, by choice, until

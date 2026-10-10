@@ -97,6 +97,19 @@ describe('every mark a rule names is a file we actually ship', () => {
   })
 })
 
+describe('the clients the connect panel offers', () => {
+  /**
+   * Landing and Settings both draw this list. VS Code left it on 2026-10-10;
+   * its brand rule stays, so a grant it already holds still wears its mark.
+   */
+  it('offers Cursor, Grok and OpenClaw, and not VS Code', () => {
+    const labels = CONNECT_CLIENTS.map((c) => c.label)
+    expect(labels).toEqual(expect.arrayContaining(['Cursor', 'Grok', 'OpenClaw']))
+    expect(labels).not.toContain('VS Code')
+    expect(agentBrand('VS Code').icon).toBe('vscode')
+  })
+})
+
 describe('the surface is read from the callback, not from the name', () => {
   it('calls an https callback a hosted client', () => {
     expect(surfaceOf(['https://claude.ai/api/mcp/auth_callback'], 'Claude')).toBe('web')

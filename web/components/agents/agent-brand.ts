@@ -30,7 +30,7 @@ export interface AgentBrand {
 }
 
 /** The marks we actually have. Anything else falls back to `other`. */
-export const AGENT_ICONS = ['claude-ai', 'codex', 'vscode', 'hermes', 'grok', 'other'] as const
+export const AGENT_ICONS = ['claude-ai', 'codex', 'vscode', 'hermes', 'grok', 'openclaw', 'other'] as const
 
 export type AgentIconKey = (typeof AGENT_ICONS)[number]
 
@@ -61,6 +61,7 @@ const VENDORS: readonly VendorRule[] = [
   // squashed spelling quietly drew the fallback bot instead.
   { vendor: 'VS Code', match: /vs\s*code|visual\s*studio\s*code/i, icon: 'vscode' },
   { vendor: 'Hermes', match: /hermes/i, icon: 'hermes' },
+  { vendor: 'OpenClaw', match: /open\s*claw/i, icon: 'openclaw' },
   // Cursor wears the Grok mark for now, by choice: Cursor has none here yet.
   { vendor: 'Cursor', match: /cursor/i, icon: 'grok' },
   { vendor: 'Grok', match: /\bgrok\b/i, icon: 'grok' },

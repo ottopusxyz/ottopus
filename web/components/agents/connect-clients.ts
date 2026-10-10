@@ -59,11 +59,34 @@ export const CONNECT_CLIENTS: readonly ConnectClient[] = [
     note: `Then codex mcp login ${SERVER_NAME} runs the OAuth flow.`,
   },
   {
-    key: 'vscode',
-    label: 'VS Code',
-    icon: 'vscode',
-    command: (url) => `code --add-mcp '{"name":"${SERVER_NAME}","type":"http","url":"${url}"}'`,
-    note: "Adds the server to Copilot's MCP config.",
+    key: 'cursor',
+    label: 'Cursor',
+    icon: 'grok',
+    note: 'Cursor adds remote servers from its MCP settings rather than a command.',
+    steps: [
+      'Cursor Settings → MCP & Integrations → New MCP Server.',
+      `Under mcpServers, add "${SERVER_NAME}": { "url": "<the URL above>" } and save.`,
+      'Approve the grant when Ottopus opens in your browser.',
+    ],
+  },
+  {
+    key: 'grok',
+    label: 'Grok',
+    icon: 'grok',
+    note: 'Grok adds servers as connectors on grok.com.',
+    steps: [
+      'Open grok.com/connectors → New Connector → Custom.',
+      'Paste the URL above and save.',
+      'Approve the grant when Ottopus opens in your browser.',
+    ],
+  },
+  {
+    key: 'openclaw',
+    label: 'OpenClaw',
+    icon: 'openclaw',
+    command: (url) =>
+      `openclaw mcp set ${SERVER_NAME} '{"url":"${url}","transport":"streamable-http","auth":"oauth"}'`,
+    note: `Then openclaw mcp login ${SERVER_NAME} runs the OAuth flow.`,
   },
   {
     key: 'hermes',
