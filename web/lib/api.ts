@@ -860,9 +860,13 @@ export interface PlanSummary {
   createdAt: string
   statusAt: string
   assetIconUrl: string | null
+  /** The bought side's icon on a swap or bridge. */
+  toAssetIconUrl: string | null
   chainIconUrl: string | null
   valueUsd: number | null
   wallet: { walletType: string; label: string | null } | null
+  /** The arm's auto-execute rule approved it, not a person. */
+  approvedByRule: boolean
 }
 
 /** Waiting on me only; what the nav badge polls. */

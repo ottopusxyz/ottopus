@@ -15,6 +15,7 @@ import {
   listPending,
   listPlans,
   resolveReviewToken,
+  ruleApprovedVersions,
   summarise,
   transition,
 } from '../plans/index.js'
@@ -106,10 +107,29 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
       const portfolio = deps.readPortfolio
         ? await deps.readPortfolio(arms.map((a) => ({ walletId: a.id, namespace: a.namespace, address: a.address })))
         : null
-      return rows.map((row) => decorateSummary(row, arms, portfolio))
+      const toIcons = await boughtIcons(rows, portfolio)
+      return rows.map((row) => decorateSummary(row, arms, portfolio, toIcons))
     } catch {
       return rows.map((row) => decorateSummary(row, [], null))
     }
+  }
+
+  /**
+   * The bought side of a trade is rarely held yet, so its icon comes from the
+   * token registry. Each lookup that fails costs that one icon.
+   */
+  const boughtIcons = async (rows: PlanSummary[], portfolio: Portfolio | null): Promise<Map<string, string | null>> => {
+    const held = new Set(portfolio?.assets.map((a) => a.assetId.toLowerCase()) ?? [])
+    const ids = [...new Set(rows.flatMap((r) => (r.toAsset ? [r.toAsset.id.toLowerCase()] : [])))].filter((id) => !held.has(id))
+    const icons = new Map<string, string | null>()
+    if (!deps.tokens) return icons
+    await Promise.all(
+      ids.map(async (id) => {
+        const known = await deps.tokens!.byAssetId(id).catch(() => null)
+        icons.set(id, known?.iconUrl ?? null)
+      }),
+    )
+    return icons
   }
 
   /**
@@ -137,7 +157,8 @@ export function planRoutes(db: PlanDb, session: MiddlewareHandler, deps: PlanRou
   app.get('/', async (c) => {
     const userId = c.get('userId')
     const records = c.req.query('pending') === '1' ? await listPending(db, userId) : await listPlans(db, userId)
-    const rows = records.map(summarise)
+    const ruleApproved = await ruleApprovedVersions(db, records.map((r) => r.plan.id))
+    const rows = records.map((record) => summarise(record, ruleApproved))
     return c.json({ plans: await decorate(userId, rows), count: rows.length })
   })
 

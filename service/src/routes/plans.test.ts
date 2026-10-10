@@ -105,6 +105,51 @@ describe('GET /?pending=1', () => {
   })
 })
 
+describe('GET / labels and icons', () => {
+  it('marks a plan the arm’s rule approved, and keeps the mark after it moves on', async () => {
+    const [agentic] = await db
+      .insert(schema.linkedWallets)
+      .values({
+        userId: alice,
+        address: '0x0000000000000000000000000000000000000001',
+        walletType: 'agentic',
+        agentProvider: 'binance',
+        ownershipProof: { signature: '0x01' },
+        provedAt: new Date(),
+        autoExecute: true,
+      })
+      .returning({ id: schema.linkedWallets.id })
+    const byRule = planFor(alice)
+    await createPlan(db, { plan: byRule, walletId: agentic!.id, approveByRule: true })
+    await transition(db, { userId: alice, planId: byRule.id, version: 1, to: 'cancelled' })
+    const byPerson = planFor(alice)
+    await createPlan(db, { plan: byPerson, walletId: agentic!.id })
+    await transition(db, { userId: alice, planId: byPerson.id, version: 1, to: 'approved' })
+
+    const body = (await (await app(alice).request('/')).json()) as { plans: { id: string; status: string; approvedByRule: boolean }[] }
+    const flags = Object.fromEntries(body.plans.map((p) => [p.id, [p.status, p.approvedByRule]]))
+    expect(flags).toEqual({ [byRule.id]: ['cancelled', true], [byPerson.id]: ['approved', false] })
+  })
+
+  it('draws the bought side from the token registry when nobody holds it yet', async () => {
+    const to = 'eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const swap = planFor(alice, { intent: { kind: 'swap', from: 'eip155:8453/slip44:60', to, amountIn: '1000' } })
+    await createPlan(db, { plan: swap })
+    const asked: string[] = []
+    const tokens = {
+      byAssetId: async (id: string) => {
+        asked.push(id)
+        return { iconUrl: 'https://cdn/usdc.png' }
+      },
+    } as never
+    const res = await planRoutes(db, signedInAs(alice), { webUrl: 'https://ottopus.test/', readPortfolio, tokens }).request('/')
+    const body = (await res.json()) as { plans: { assetIconUrl: string | null; toAssetIconUrl: string | null }[] }
+    expect(body.plans[0]).toMatchObject({ assetIconUrl: 'https://cdn/eth.png', toAssetIconUrl: 'https://cdn/usdc.png' })
+    // The paid side is held, so only the bought side was looked up.
+    expect(asked).toEqual([to])
+  })
+})
+
 describe('GET /:token', () => {
   it('returns the plan behind a live link, to its owner', async () => {
     const plan = planFor(alice)

@@ -43,6 +43,11 @@ describe('what we can tell from a registration', () => {
     expect(agentBrand('Claude').icon).toBe('claude-ai')
   })
 
+  it('draws the Grok mark for Grok, and for Cursor until Cursor has its own', () => {
+    expect(agentBrand('Cursor')).toMatchObject({ vendor: 'Cursor', icon: 'grok' })
+    expect(agentBrand('Grok')).toMatchObject({ vendor: 'Grok', icon: 'grok' })
+  })
+
   it('says nothing rather than guessing for a name it does not know', () => {
     const brand = agentBrand('Totally Unknown Thing', ['https://example.test/cb'])
     expect(brand.vendor).toBeNull()

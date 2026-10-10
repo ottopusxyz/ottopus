@@ -31,3 +31,7 @@ legible without per-theme variants.
 `openclaw.png` came later, on 2026-09-29, from the Ottopus intro films, where
 OpenClaw sits in the row of agents beside Claude, Codex and Hermes. It is drawn
 on the landing page's agent row only; the connect dialog has no OpenClaw entry.
+
+`grok` came on 2026-10-10, from the same logr set, with its viewBox padded to
+match the rest. It is drawn for Grok, and for Cursor too, by choice, until
+Cursor has a mark of its own here.

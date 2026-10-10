@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Skeleton, SkeletonRow } from '@/components/motion'
 import { AssetIcon } from '@/components/portfolio/asset-icon'
 import { WalletMark, type WalletRef } from '@/components/portfolio/wallet-marks'
-import { StatusChip } from '@/components/ui'
+import { Badge, StatusChip } from '@/components/ui'
 import { walletMark } from '@/components/wallets/naming'
 import type { PlanSummary } from '@/lib/api'
 import { cn } from '@/lib/cn'
@@ -16,6 +16,7 @@ import {
   effectiveStatus,
   filterPlans,
   kindWord,
+  rowIcons,
   sortPlans,
   statusCounts,
   walletOptions,
@@ -133,6 +134,7 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
   const walletName = row.account.label ?? row.wallet?.label ?? truncateAddress(row.account.caip10.split(':')[2] ?? '')
   const mark = row.wallet ? refFor(row.account.caip10, walletName, row.wallet.walletType) : null
   const what = whatLine(row)
+  const icons = rowIcons(row)
   // A custom plan's amount is the agent's ceiling, and the row must not print a bound as a figure.
   const ceiling = row.kind === 'custom'
 
@@ -151,7 +153,16 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
       >
         <span className="col-span-2 flex min-w-0 items-center gap-3 sm:col-span-1">
           <span aria-hidden className="relative h-[34px] w-[34px] flex-none">
-            <AssetIcon url={row.assetIconUrl} name={symbol ?? kindWord(row.kind)} size={34} className="text-[12px]" />
+            <AssetIcon url={icons.main.url} name={icons.main.name} size={34} className="text-[12px]" />
+            {/* A trade's paid side, smaller, in front of what it buys. */}
+            {icons.paid ? (
+              <AssetIcon
+                url={icons.paid.url}
+                name={icons.paid.name}
+                size={18}
+                className="absolute -bottom-px -left-1 text-[7px] ring-2 ring-[var(--ot-card)]"
+              />
+            ) : null}
             {row.chainIconUrl ? (
               <span className="absolute -right-px -bottom-px h-[15px] w-[15px] overflow-hidden rounded-full border-2 border-[var(--ot-card)] bg-[var(--ot-card)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -189,6 +200,11 @@ function Row({ row, now, opening, disabled, onOpen }: { row: PlanSummary; now: n
 
         <span className="flex flex-wrap items-center gap-1.5">
           <StatusChip status={status} />
+          {row.approvedByRule ? (
+            <Badge tone="plan" className="px-2 py-0.5 text-[11px]" title="Your auto-execute rule approved this, without a review">
+              Auto-approved
+            </Badge>
+          ) : null}
           {status === 'blocked' ? <span className="text-[11.5px] text-[var(--ot-block-text)]">Nothing was signed</span> : null}
           {opening ? <span className="text-[11.5px] text-[var(--ot-plan-text)]">Opening…</span> : null}
         </span>
