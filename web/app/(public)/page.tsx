@@ -137,7 +137,7 @@ export default function Landing() {
                 </p>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
-                  Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>
+                  Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>
                 </h1>
 
                 <p className="m-0 max-w-[46ch] text-[18px] leading-[1.5] text-pretty text-[var(--ot-text-2)] sm:text-[20px]">
@@ -183,12 +183,13 @@ export default function Landing() {
         <footer className="flex flex-col gap-8 px-5 py-14 sm:px-10">
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-6">
             <p className="font-display m-0 text-[26px] font-bold tracking-[-0.02em] sm:text-[34px]">
-              One intent. Every wallet. You still sign.
+              Make Ottopus your agent&rsquo;s stock desk and trade in peace.
             </p>
             <SignInCta variant="secondary">Link your first wallet</SignInCta>
           </div>
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-4 border-t border-[var(--ot-border)] pt-6">
             <Lockup layout="horizontal" size={26} />
+            <p className="m-0 text-[14px] font-medium text-[var(--ot-text-2)]">One intent. Every wallet. You still sign.</p>
           </div>
         </footer>
       </div>

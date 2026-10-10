@@ -14,7 +14,8 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Stop juggling wallets to buy <span className="text-[var(--ot-coral-text)]">one stock.</span>',
+  'Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>',
+  'Make Ottopus your agent&rsquo;s stock desk and trade in peace.',
   'Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the route on BNB Chain, and checks it all before you sign.',
   'Link your first wallet',
   'Nothing moves until you sign.',
