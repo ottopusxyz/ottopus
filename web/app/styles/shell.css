@@ -74,6 +74,23 @@
   overscroll-behavior: contain;
 }
 
+/* --- The water around the app ---------------------------------------------
+   The frame sits in the landing hero's sea, which shows in the gutter around
+   the card from sm up. Inside, main carries a lighter wash of the same water —
+   surface water at the top, a little blue at the floor — so the content keeps a calm,
+   readable ground while still reading as under the surface. */
+.ot-app-sea {
+  background: var(--ot-sea-gradient);
+}
+.ot-app-main {
+  background: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 4%, var(--ot-water-1)) 45%,
+    color-mix(in srgb, var(--ot-plan) 12%, var(--ot-water-3)) 100%
+  );
+}
+
 /* --- The account menu -------------------------------------------------------
    A native popover, so it sits in the top layer: the UA gives it position:fixed
    with inset:0 and margin:auto, which centres it in the viewport. The component
