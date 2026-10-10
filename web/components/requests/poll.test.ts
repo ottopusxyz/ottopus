@@ -9,7 +9,7 @@ function plan(id: string, expiresIn = 60_000, createdAgo = 0): PlanSummary {
     id, version: 1, status: 'awaiting_review', kind: 'transfer', summary: 'Send USDC', reason: 'Has funds',
     account: { caip10: 'eip155:8453:0x1' }, chainId: 'eip155:8453', asset: null, toAsset: null, recipient: null, blockedReason: null,
     createdVia: 'agent', createdAt, statusAt: createdAt, expiresAt: new Date(NOW + expiresIn).toISOString(),
-    assetIconUrl: null, chainIconUrl: null, valueUsd: null, wallet: null,
+    assetIconUrl: null, toAssetIconUrl: null, chainIconUrl: null, valueUsd: null, wallet: null, approvedByRule: false,
   }
 }
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })

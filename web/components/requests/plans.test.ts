@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanSummary } from '@/lib/api'
-import { effectiveStatus, filterPlans, kindWord, sortPlans, statusCounts, walletOptions, whatLine } from './plans'
+import { effectiveStatus, filterPlans, kindWord, rowIcons, sortPlans, statusCounts, walletOptions, whatLine } from './plans'
 
 const row = (over: Partial<PlanSummary>): PlanSummary => ({
   id: 'p',
@@ -20,9 +20,11 @@ const row = (over: Partial<PlanSummary>): PlanSummary => ({
   createdAt: '2026-09-10T12:00:00Z',
   statusAt: '2026-09-10T12:00:00Z',
   assetIconUrl: null,
+  toAssetIconUrl: null,
   chainIconUrl: null,
   valueUsd: null,
   wallet: null,
+  approvedByRule: false,
   ...over,
 })
 
@@ -104,5 +106,19 @@ describe('the second line', () => {
   })
   it('falls back to the summary for a custom plan', () => {
     expect(whatLine(row({ kind: 'custom', summary: 'Add liquidity', asset: usdc }))).toBe('Add liquidity')
+  })
+})
+
+describe('row icons', () => {
+  const usdt = { id: 'eip155:56/erc20:0x55', amount: '50', symbol: 'USDT', decimals: 18 }
+
+  it('leads a trade with what it buys and tucks what it pays in front', () => {
+    const swap = row({ kind: 'swap', asset: usdt, assetIconUrl: 'usdt.png', toAsset: { id: 'eip155:56/erc20:0x0b', symbol: 'NVDAon' }, toAssetIconUrl: 'nvda.png' })
+    expect(rowIcons(swap)).toEqual({ main: { url: 'nvda.png', name: 'NVDAon' }, paid: { url: 'usdt.png', name: 'USDT' } })
+  })
+
+  it('draws one icon for anything that is not a trade, and for an exact-out trade', () => {
+    expect(rowIcons(row({ asset: usdt, assetIconUrl: 'usdt.png' }))).toEqual({ main: { url: 'usdt.png', name: 'USDT' }, paid: null })
+    expect(rowIcons(row({ kind: 'swap', toAsset: { id: 'x', symbol: null } })).paid).toBeNull()
   })
 })

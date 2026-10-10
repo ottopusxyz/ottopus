@@ -115,3 +115,23 @@ export function whatLine(row: PlanSummary): string {
   if (row.toAsset) return `${symbol} → ${row.toAsset.symbol ?? 'a token'}`
   return row.summary
 }
+
+export interface RowIcon {
+  url: string | null
+  name: string
+}
+
+/**
+ * The icons a row draws. A trade leads with what it buys, which is what the
+ * person asked for, and tucks what it pays in front of it, smaller. Anything
+ * else has the one asset it moves.
+ */
+export function rowIcons(row: PlanSummary): { main: RowIcon; paid: RowIcon | null } {
+  const paid: RowIcon = { url: row.assetIconUrl, name: row.asset?.symbol ?? kindWord(row.kind) }
+  if (!row.toAsset) return { main: paid, paid: null }
+  return {
+    main: { url: row.toAssetIconUrl, name: row.toAsset.symbol ?? kindWord(row.kind) },
+    // An exact-out trade leaves the paid amount to the quote, so the row has no paid side to draw.
+    paid: row.asset ? paid : null,
+  }
+}
