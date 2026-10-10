@@ -87,7 +87,7 @@ function Live() {
  */
 function Canvas({ children }: { children?: ReactNode }) {
   return (
-    <div className="ot-review-sea relative flex min-h-dvh flex-col overflow-hidden">
+    <div className="ot-canvas relative flex min-h-dvh flex-col overflow-hidden">
       <BubbleField pattern="canvas" />
 
       <header className="relative px-5 py-4 sm:px-8">
