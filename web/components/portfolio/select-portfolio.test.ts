@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetRow, Portfolio, ProtocolHolding, ProtocolRow } from '@/lib/api'
-import { selectPortfolio } from './select-portfolio'
+import { byBalance, selectPortfolio } from './select-portfolio'
 
 const ASSET = { symbol: 'TOKEN', name: 'Token', decimals: 18, iconUrl: null, verified: true }
 
@@ -147,5 +147,23 @@ describe('portfolio wallet selection', () => {
     expect(slice.assets).toEqual([])
     expect(slice.protocols).toEqual([])
     expect(slice.total).toBe(0)
+  })
+})
+
+describe('wallet order', () => {
+  const wallets = [{ id: 'small' }, { id: 'unread' }, { id: 'big' }, { id: 'missing' }, { id: 'also-small' }]
+  const arms = [
+    { walletId: 'small', status: 'ok' as const, total: 10 },
+    { walletId: 'unread', status: 'unavailable' as const, total: 0 },
+    { walletId: 'big', status: 'ok' as const, total: 900 },
+    { walletId: 'also-small', status: 'ok' as const, total: 10 },
+  ]
+
+  it('puts the biggest balance first and the unreadable last, keeping link order on ties', () => {
+    expect(byBalance(wallets, arms).map((w) => w.id)).toEqual(['big', 'small', 'also-small', 'unread', 'missing'])
+  })
+
+  it('keeps link order while nothing has been read', () => {
+    expect(byBalance(wallets, undefined).map((w) => w.id)).toEqual(wallets.map((w) => w.id))
   })
 })

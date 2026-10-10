@@ -26,7 +26,7 @@ import {
   type PortfolioState,
 } from '@/components/portfolio'
 import { balanceLine, greeting } from '@/components/portfolio/greeting'
-import { selectPortfolio } from '@/components/portfolio/select-portfolio'
+import { byBalance, selectPortfolio } from '@/components/portfolio/select-portfolio'
 import { WalletMarks, walletRefsOf } from '@/components/portfolio/wallet-marks'
 
 /**
@@ -162,9 +162,11 @@ export function Frame({
   // The network's whole, for the figure beside each wallet in the picker.
   const onNetwork = useMemo(() => (portfolio ? selectPortfolio(portfolio, selectedNetwork) : null), [portfolio, selectedNetwork])
   const walletRefs = useMemo(() => walletRefsOf(wallets), [wallets])
+  // Biggest first, on the network in view, whichever wallet is picked.
+  const ordered = useMemo(() => byBalance(wallets, onNetwork?.arms), [wallets, onNetwork])
   const walletChoices = useMemo(
     () =>
-      wallets.map((arm) => {
+      ordered.map((arm) => {
         const ref = walletRefs.get(arm.id)!
         const summary = onNetwork?.arms.find((item) => item.walletId === arm.id)
         return {
@@ -174,7 +176,7 @@ export function Frame({
           detail: summary?.status === 'ok' ? formatMoneyFlat(summary.total, onNetwork?.currency) : undefined,
         }
       }),
-    [wallets, walletRefs, onNetwork],
+    [ordered, walletRefs, onNetwork],
   )
   const missing = unreadArms(portfolio)
   const hasReading = !!portfolio?.arms.some((arm) => arm.status === 'ok')
@@ -282,7 +284,7 @@ export function Frame({
           {tab === 'wallets' ? (
             <Sea>
               <div className="ot-scroll relative flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-contain px-5 py-4.5 sm:px-[26px]">
-                {wallets.map((arm) => {
+                {ordered.map((arm) => {
                   const summary = selected?.arms.find((item) => item.walletId === arm.id)
                   const known = summary?.status === 'ok'
                   return (

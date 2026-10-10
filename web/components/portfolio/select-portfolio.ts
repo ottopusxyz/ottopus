@@ -114,3 +114,13 @@ function sliceGroup(group: PositionGroup, walletId: string): PositionGroup | nul
     unpriced: holdings.filter((h) => h.value === null).length,
   }
 }
+
+/**
+ * Wallets, biggest balance first. A wallet whose balance could not be read
+ * goes last rather than reading as empty, and ties keep the order they were
+ * linked in.
+ */
+export function byBalance<T extends { id: string }>(wallets: readonly T[], arms: readonly Pick<ArmSummary, 'walletId' | 'status' | 'total'>[] | undefined): T[] {
+  const totals = new Map((arms ?? []).filter((arm) => arm.status === 'ok').map((arm) => [arm.walletId, arm.total]))
+  return [...wallets].sort((a, b) => (totals.get(b.id) ?? -Infinity) - (totals.get(a.id) ?? -Infinity) || 0)
+}
