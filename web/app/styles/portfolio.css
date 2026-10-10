@@ -43,14 +43,15 @@
    transparent so the section has no seam against whatever sits above it, then
    picks up the water tokens and deepens them toward --ot-plan on the way down.
    Plain .ot-depth is a flat wash: right behind a small panel, far too faint
-   behind a whole section, and it cuts a hard line at the top. */
+   behind a whole section, and it cuts a hard line at the top. The stops below
+   the fade are the landing hero's, so the portfolio is the same sea. */
 .ot-sea {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    color-mix(in srgb, var(--ot-plan) 4%, var(--ot-water-1)) 26%,
-    color-mix(in srgb, var(--ot-plan) 11%, var(--ot-water-2)) 62%,
-    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-3)) 100%
+    color-mix(in srgb, var(--ot-plan) 8%, var(--ot-water-1)) 26%,
+    color-mix(in srgb, var(--ot-plan) 18%, var(--ot-water-2)) 66%,
+    color-mix(in srgb, var(--ot-plan) 30%, var(--ot-water-3)) 100%
   );
 }
 
