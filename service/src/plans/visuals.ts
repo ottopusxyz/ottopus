@@ -161,14 +161,27 @@ export async function visualsFor(
 /** A list row with what the portfolio and the wallets table know beside it. */
 export interface DecoratedSummary extends PlanSummary {
   assetIconUrl: string | null
+  /** The bought side of a trade, so a row can draw both tokens. */
+  toAssetIconUrl: string | null
   chainIconUrl: string | null
   /** The asset's value in USD at today's price, when the portfolio prices it. */
   valueUsd: number | null
   wallet: { walletType: string; label: string | null } | null
 }
 
-export function decorateSummary(row: PlanSummary, arms: readonly Arm[], portfolio: Portfolio | null): DecoratedSummary {
+/**
+ * `toIcons` are icons the token registry found for bought sides nobody holds
+ * yet, keyed by lowercased asset id. The portfolio wins where it has one.
+ */
+export function decorateSummary(
+  row: PlanSummary,
+  arms: readonly Arm[],
+  portfolio: Portfolio | null,
+  toIcons: ReadonlyMap<string, string | null> = new Map(),
+): DecoratedSummary {
   const held = row.asset ? portfolio?.assets.find((a) => a.assetId.toLowerCase() === row.asset!.id.toLowerCase()) : undefined
+  const toId = row.toAsset?.id.toLowerCase()
+  const bought = toId ? portfolio?.assets.find((a) => a.assetId.toLowerCase() === toId) : undefined
   const chain = portfolio?.chains.find((c) => c.chainId.toLowerCase() === row.chainId.toLowerCase())
   const address = row.account.caip10.split(':')[2]?.toLowerCase()
   const arm = arms.find((a) => a.address.toLowerCase() === address)
@@ -181,6 +194,7 @@ export function decorateSummary(row: PlanSummary, arms: readonly Arm[], portfoli
     ...row,
     asset: row.asset && held ? { ...row.asset, symbol: row.asset.symbol ?? held.asset.symbol, decimals: row.asset.decimals ?? held.asset.decimals } : row.asset,
     assetIconUrl: held?.asset.iconUrl ?? null,
+    toAssetIconUrl: bought?.asset.iconUrl ?? (toId ? toIcons.get(toId) : null) ?? null,
     chainIconUrl: chain?.iconUrl ?? null,
     valueUsd,
     wallet: arm ? { walletType: arm.walletType, label: arm.label } : null,

@@ -16,6 +16,7 @@ export {
   mintReviewToken,
   resolveReviewToken,
   revokeReviewTokens,
+  ruleApprovedVersions,
   summarise,
   transition,
 } from './store.js'

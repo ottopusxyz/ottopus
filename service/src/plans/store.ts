@@ -86,9 +86,11 @@ export interface PlanSummary {
   expiresAt: string
   createdAt: string
   statusAt: string
+  /** The arm's auto-execute rule approved it, not a person. True for good once it was. */
+  approvedByRule: boolean
 }
 
-export function summarise(record: PlanRecord): PlanSummary {
+export function summarise(record: PlanRecord, ruleApproved: ReadonlySet<string> = new Set()): PlanSummary {
   const { plan } = record
   const [namespace, reference] = plan.resolution.account.caip10.split(':')
   const words = (id: string) => plan.humanPlan.assets?.find((a) => a.id.toLowerCase() === id.toLowerCase())
@@ -127,6 +129,7 @@ export function summarise(record: PlanRecord): PlanSummary {
     expiresAt: plan.expiresAt,
     createdAt: record.createdAt,
     statusAt: record.statusAt,
+    approvedByRule: ruleApproved.has(`${plan.id}:${plan.version}`),
   }
 }
 
@@ -242,6 +245,26 @@ export async function executingArm(
 
 /** What the `approved` event of a plan a rule approved carries. */
 export const APPROVED_BY_RULE = { approvedBy: 'rule' } as const
+
+/**
+ * Which of these plans a rule approved, as `id:version`. Read from the
+ * `approved` event itself, because the latest event moves on to submitted
+ * and confirmed and stops saying who approved it.
+ */
+export async function ruleApprovedVersions(db: PlanDb, planIds: readonly string[]): Promise<Set<string>> {
+  if (planIds.length === 0) return new Set()
+  const rows = await db
+    .select({ planId: planEvents.planId, planVersion: planEvents.planVersion })
+    .from(planEvents)
+    .where(
+      and(
+        inArray(planEvents.planId, [...planIds]),
+        eq(planEvents.status, 'approved'),
+        sql`${planEvents.detail}->>'approvedBy' = ${APPROVED_BY_RULE.approvedBy}`,
+      ),
+    )
+  return new Set(rows.map((r) => `${r.planId}:${r.planVersion}`))
+}
 
 export interface CreatePlanInput {
   plan: Plan
