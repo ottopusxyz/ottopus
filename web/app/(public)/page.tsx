@@ -6,6 +6,7 @@ import { HeroCards } from '@/components/landing/hero-cards'
 import { LandingMotion } from '@/components/landing/landing-motion'
 import { Reveal } from '@/components/landing/reveal'
 import { Story } from '@/components/landing/story'
+import { WatchDemo } from '@/components/landing/watch-demo'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
 import { GitHub, REPO_URL } from '@/components/shell'
 
@@ -148,6 +149,7 @@ export default function Landing() {
                 <div className="flex flex-wrap items-center gap-3 pt-1">
                   <SignInCta>Link your first wallet</SignInCta>
                   <AddToAgent />
+                  <WatchDemo />
                 </div>
               </div>
 
