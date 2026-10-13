@@ -6,6 +6,7 @@ import { HeroCards } from '@/components/landing/hero-cards'
 import { LandingMotion } from '@/components/landing/landing-motion'
 import { Reveal } from '@/components/landing/reveal'
 import { Story } from '@/components/landing/story'
+import { WatchDemo } from '@/components/landing/watch-demo'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
 import { GitHub, REPO_URL } from '@/components/shell'
 
@@ -80,6 +81,7 @@ export default function Landing() {
             >
               How it works
             </a>
+            <WatchDemo variant="nav" />
             <a
               href={REPO_URL}
               target="_blank"
@@ -133,7 +135,9 @@ export default function Landing() {
                     <Star className="ot-spark-star -top-2.5 -left-2.5" size={10} />
                     <Star className="ot-spark-star ot-spark-star--b -right-2.5 -bottom-2" size={7} />
                   </span>
-                  <span className="ot-glint">{BUILT_AT}</span>
+                  <WatchDemo variant="inline">
+                    <span className="ot-glint">{BUILT_AT}</span>
+                  </WatchDemo>
                 </p>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
@@ -148,6 +152,7 @@ export default function Landing() {
                 <div className="flex flex-wrap items-center gap-3 pt-1">
                   <SignInCta>Link your first wallet</SignInCta>
                   <AddToAgent />
+                  <WatchDemo />
                 </div>
               </div>
 

@@ -4,15 +4,17 @@
 
 <h1>Ottopus</h1>
 
-<p><strong>Stop juggling wallets to buy one stock.</strong></p>
+<p><strong>Stop juggling wallets to own stocks.</strong></p>
 
 <p>
-Tell your agent what you want. Ottopus picks the wallet, builds the route, decodes and<br />
-simulates it, and hands you a review link. Works with any agent that speaks MCP.
+Your agent's stock desk. Tell your agent what you want. Ottopus picks the wallet, builds<br />
+the route, decodes and simulates it, and hands you a review link. Works with any agent<br />
+that speaks MCP. <em>One intent. Every wallet. You still sign.</em>
 </p>
 
 <p>
 <a href="https://ottopus.xyz">Website</a> ·
+<a href="https://youtu.be/Vd0IQDSakgc">Demo video</a> ·
 <a href="#how-it-works">How it works</a> ·
 <a href="#use-it-with-your-agent">Quick start</a> ·
 <a href="#what-works-today">Features</a> ·
@@ -26,9 +28,9 @@ simulates it, and hands you a review link. Works with any agent that speaks MCP.
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" /></a>
 </p>
 
-<p>Being built for <strong>BNB Hack: Tokenized Stocks Edition</strong>.</p>
+<p>Built at <strong>BNB Hack: Tokenized Stocks Edition</strong>. <a href="https://youtu.be/Vd0IQDSakgc">Watch the demo</a>.</p>
 
-<a href="https://ottopus.xyz"><img src=".github/assets/hero.png" width="860" alt="The Ottopus landing page: an agent is asked to buy 10 USD worth of Tesla, and Otto holds up a plan that is decoded, simulated and ready to sign" /></a>
+<a href="https://youtu.be/Vd0IQDSakgc"><img src=".github/assets/hero.png" width="860" alt="Watch the Ottopus demo on YouTube. The Ottopus landing page: an agent is asked to buy 10 USD worth of Tesla, and Otto holds up a plan that is decoded, simulated and ready to sign" /></a>
 
 </div>
 
@@ -61,16 +63,21 @@ agent. The first call opens a consent page where you choose what the agent may d
 # Claude Code
 claude mcp add --transport http ottopus https://mcp.ottopus.xyz/mcp
 
-# Codex
+# Codex, then: codex mcp login ottopus
 codex mcp add ottopus --url https://mcp.ottopus.xyz/mcp
 
-# Hermes
-hermes mcp add ottopus --url https://mcp.ottopus.xyz/mcp
+# OpenClaw, then: openclaw mcp login ottopus
+openclaw mcp set ottopus '{"url":"https://mcp.ottopus.xyz/mcp","transport":"streamable-http","auth":"oauth"}'
+
+# Hermes, then: hermes mcp login ottopus
+hermes mcp add ottopus --url https://mcp.ottopus.xyz/mcp --auth oauth
 ```
 
 Any other MCP host works the same way: it is a remote server over Streamable HTTP
-with OAuth 2.1, so there is no local process and no key to paste. Web hosts such as
-Claude.ai connect through their connectors settings with the same URL.
+with OAuth 2.1, so there is no local process and no key to paste. Claude.ai and
+Claude Desktop, Cursor and Grok add it from their connector or MCP settings with the
+same URL. The **Add to your agent** panel on [ottopus.xyz](https://ottopus.xyz) walks
+through each one.
 
 The agent gets these tools:
 
@@ -94,6 +101,9 @@ Every `prepare_*` tool returns a plan and a review link. Nothing the agent does 
 funds. The review page shows the decoded calls, the simulation, and anything worth
 reading first, such as an approval, before you connect the wallet and sign. For a
 wallet the agent operates, the same page offers Approve instead of a signature.
+
+Hosts that draw MCP Apps show each plan as a live card under the tool call, following
+it from prepared to confirmed. Other hosts get the same plan as text.
 
 Linking a wallet from the agent is the one permission that is never on by default.
 It is a switch on the consent page, and it stays off unless you turn it on.
@@ -154,8 +164,12 @@ with `-l` lists the skills without installing anything.
   `report_execution` records the hash. In Settings, a per-wallet rule can approve a
   plan on its own once it verifies and the simulation passes; you keep the link and
   can withdraw it until the agent takes the calls.
-- **A plan card in Claude Code** that follows a plan from prepared to confirmed,
-  whether a person signs it or an agent wallet sends it.
+- **A live plan card** in Claude Code (through the plugin) and in any host that draws
+  MCP Apps, following a plan from prepared to confirmed, whether a person signs it or
+  an agent wallet sends it.
+- **A portfolio and request history** across every linked wallet, with tokenized
+  stocks in their own section, both sides of each trade, and a label on anything a
+  rule approved on its own.
 
 Not there yet: the auto-execute rule is a plain switch, with no spend cap or asset
 allow-list, so turn it on only for a wallet you would let act alone. Binance's RFQ
