@@ -81,6 +81,7 @@ export default function Landing() {
             >
               How it works
             </a>
+            <WatchDemo variant="nav" />
             <a
               href={REPO_URL}
               target="_blank"
@@ -134,7 +135,9 @@ export default function Landing() {
                     <Star className="ot-spark-star -top-2.5 -left-2.5" size={10} />
                     <Star className="ot-spark-star ot-spark-star--b -right-2.5 -bottom-2" size={7} />
                   </span>
-                  <span className="ot-glint">{BUILT_AT}</span>
+                  <WatchDemo variant="inline">
+                    <span className="ot-glint">{BUILT_AT}</span>
+                  </WatchDemo>
                 </p>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
