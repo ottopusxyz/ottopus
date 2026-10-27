@@ -24,6 +24,7 @@ export interface AccountMenuProps {
 }
 
 export const REPO_URL = 'https://github.com/ottopusxyz/ottopus'
+export const X_URL = 'https://x.com/ottopusxyz'
 /** The same address the service publishes as `resource_documentation`. */
 export const DOCS_URL = 'https://ottopus.xyz'
 
@@ -258,6 +259,15 @@ function Book() {
   return (
     <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+    </svg>
+  )
+}
+
+/** The X logo, drawn as a filled mark like the GitHub one beside it. */
+export function XMark({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
     </svg>
   )
 }

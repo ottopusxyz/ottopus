@@ -8,7 +8,7 @@ import { Reveal } from '@/components/landing/reveal'
 import { Story } from '@/components/landing/story'
 import { WatchDemo } from '@/components/landing/watch-demo'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
-import { GitHub, REPO_URL } from '@/components/shell'
+import { GitHub, REPO_URL, X_URL, XMark } from '@/components/shell'
 
 /**
  * The landing page. The message is the product's first one — stop juggling
@@ -91,6 +91,15 @@ export default function Landing() {
               <GitHub />
               <span className="hidden sm:inline">GitHub</span>
             </a>
+            <a
+              href={X_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Ottopus on X"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-cream)] transition-colors hover:bg-[rgba(255,240,220,0.1)]"
+            >
+              <XMark />
+            </a>
             <LandingAccount />
           </div>
           <span aria-hidden className="ot-scroll-progress absolute inset-x-0 -bottom-px h-[2px] bg-[var(--ot-coral)]" />
@@ -122,7 +131,7 @@ export default function Landing() {
 
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
-                <p className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
+                <div className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
                   {/* The BNB coin turning in 3D, two stars that twinkle beside
                       it, and now and then a glint across the words. landing.css. */}
                   <span aria-hidden className="ot-spark relative flex h-5 w-5">
@@ -138,7 +147,7 @@ export default function Landing() {
                   <WatchDemo variant="inline">
                     <span className="ot-glint">{BUILT_AT}</span>
                   </WatchDemo>
-                </p>
+                </div>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
                   Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>
@@ -195,6 +204,26 @@ export default function Landing() {
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-4 border-t border-[var(--ot-border)] pt-6">
             <Lockup layout="horizontal" size={26} />
             <p className="m-0 text-[14px] font-medium text-[var(--ot-text-2)]">One intent. Every wallet. You still sign.</p>
+            <nav aria-label="Ottopus elsewhere" className="flex items-center gap-1">
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Ottopus on GitHub"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-text-2)] transition-colors hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]"
+              >
+                <GitHub />
+              </a>
+              <a
+                href={X_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Ottopus on X"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-text-2)] transition-colors hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]"
+              >
+                <XMark />
+              </a>
+            </nav>
           </div>
         </footer>
       </div>
