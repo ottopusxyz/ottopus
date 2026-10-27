@@ -8,7 +8,7 @@ import { Reveal } from '@/components/landing/reveal'
 import { Story } from '@/components/landing/story'
 import { WatchDemo } from '@/components/landing/watch-demo'
 import { BubbleField, SeaLife, type SeaCreature } from '@/components/motion'
-import { GitHub, REPO_URL } from '@/components/shell'
+import { GitHub, REPO_URL, X_URL, XMark } from '@/components/shell'
 
 /**
  * The landing page. The message is the product's first one — stop juggling
@@ -90,6 +90,15 @@ export default function Landing() {
             >
               <GitHub />
               <span className="hidden sm:inline">GitHub</span>
+            </a>
+            <a
+              href={X_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Ottopus on X"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-cream)] transition-colors hover:bg-[rgba(255,240,220,0.1)]"
+            >
+              <XMark />
             </a>
             <LandingAccount />
           </div>
@@ -195,6 +204,26 @@ export default function Landing() {
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-4 border-t border-[var(--ot-border)] pt-6">
             <Lockup layout="horizontal" size={26} />
             <p className="m-0 text-[14px] font-medium text-[var(--ot-text-2)]">One intent. Every wallet. You still sign.</p>
+            <nav aria-label="Ottopus elsewhere" className="flex items-center gap-1">
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Ottopus on GitHub"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-text-2)] transition-colors hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]"
+              >
+                <GitHub />
+              </a>
+              <a
+                href={X_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Ottopus on X"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ot-text-2)] transition-colors hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]"
+              >
+                <XMark />
+              </a>
+            </nav>
           </div>
         </footer>
       </div>
