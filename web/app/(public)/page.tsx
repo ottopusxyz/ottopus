@@ -122,7 +122,7 @@ export default function Landing() {
 
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
-                <p className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
+                <div className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
                   {/* The BNB coin turning in 3D, two stars that twinkle beside
                       it, and now and then a glint across the words. landing.css. */}
                   <span aria-hidden className="ot-spark relative flex h-5 w-5">
@@ -138,7 +138,7 @@ export default function Landing() {
                   <WatchDemo variant="inline">
                     <span className="ot-glint">{BUILT_AT}</span>
                   </WatchDemo>
-                </p>
+                </div>
 
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
                   Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>
