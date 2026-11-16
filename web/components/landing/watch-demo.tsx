@@ -22,7 +22,7 @@ const INLINE_LINK =
  * "Watch the demo", from the landing page: the video plays in a dialog over
  * the page rather than sending the visitor off to YouTube. `hero` is the
  * button beside the calls to action; `nav` is the short link in the brand bar;
- * `inline` turns its children, such as the hero's "Built at" line, into a link.
+ * `inline` turns its children, such as a line of copy, into a link.
  *
  * The player is youtube-nocookie and only mounts while the dialog is open, so
  * a visitor who never clicks loads nothing from YouTube and gets no cookie.

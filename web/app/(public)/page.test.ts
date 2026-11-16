@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 /**
- * The landing copy is settled: stocks lead, the wallet and dapp clutter is
- * what goes away, and you still sign. It is the one thing on this page that
+ * The landing copy is settled: one intent, any asset, the wallet and dapp
+ * clutter is what goes away, and you still sign. It is the one thing on this page that
  * is not a judgement call, and it is exactly the thing a later "small tidy"
  * would rewrite. Reading the source rather than rendering keeps this honest
  * about what it checks: the words, not the layout.
@@ -14,9 +14,9 @@ const SOURCE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 const FLAT = SOURCE.replace(/\s+/g, ' ')
 
 const SETTLED = [
-  'Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>',
-  'Make Ottopus your agent&rsquo;s stock desk and trade in peace.',
-  'Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the route on BNB Chain, and checks it all before you sign.',
+  'Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">get one thing done.</span>',
+  'Let Otto juggle the wallets. You just sign.',
+  'Tell your agent what you want: send, swap, bridge or buy. Otto finds the token, the wallet and the route on any chain, and checks it all before you sign.',
   'Link your first wallet',
   'Nothing moves until you sign.',
   'One intent. Every wallet. You still sign.',
@@ -52,11 +52,14 @@ describe('landing structure', () => {
     expect(FLAT).not.toContain('Transaction review for AI agents')
   })
 
-  /** The one place the event is named: a quiet line above the headline. */
-  it('names where it was built once, above the headline', () => {
-    const hero = FLAT.slice(0, FLAT.indexOf('<h1'))
-    expect(hero).toContain('{BUILT_AT}')
-    expect(FLAT.match(/BNB Hack/g)).toHaveLength(1)
+  /**
+   * Ottopus is not one chain's or one asset's product. The worked example in
+   * the hero and the story may be a stock on BNB Chain; the page's own words
+   * must not be, and the event it was built at is not named on it.
+   */
+  it('keeps the copy neutral: no event, no single chain or asset class', () => {
+    expect(FLAT).not.toMatch(/BNB Hack|Hackathon|Tokenized Stocks Edition|BUILT_AT/i)
+    expect(FLAT).not.toMatch(/stock desk|own stocks|on BNB Chain/i)
   })
 
   /** The second action is adding Ottopus to an agent, the way Settings does. */

@@ -12,8 +12,9 @@ import { GitHub, REPO_URL, X_URL, XMark } from '@/components/shell'
 
 /**
  * The landing page. The message is the product's first one — stop juggling
- * wallets — told through the case that shows it best: buying a stock, which
- * today takes a token hunt, a bridge, a dapp and three wallet pop-ups.
+ * wallets to get one thing done — told through one worked example: a single
+ * trade that today takes a token hunt, a bridge, a dapp and three wallet
+ * pop-ups. The example is an illustration; the copy stays about any intent.
  *
  * Three parts. The hero is under water, the one place the sea is loud, with
  * Otto and the three things he does for you arriving in turn. Then one pinned
@@ -24,9 +25,6 @@ import { GitHub, REPO_URL, X_URL, XMark } from '@/components/shell'
  * Outside the app shell on purpose. The brand bar carries the lockup, the
  * repo, and either a greeting that opens the app or a Sign in button.
  */
-
-/** Where this was built. One line above the headline; remove it here and it is gone. */
-const BUILT_AT = 'Built at BNB Hack: Tokenized Stocks Edition'
 
 /** Six, the design system's ceiling: past that it reads as an aquarium. */
 const HERO_LIFE: readonly SeaCreature[] = [
@@ -131,31 +129,13 @@ export default function Landing() {
 
             <div className="relative mx-auto grid w-full max-w-[1200px] items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)]">
               <div className="flex flex-col gap-6">
-                <div className="m-0 flex items-center gap-2.5 text-[14px] font-semibold text-[var(--ot-text-2)]">
-                  {/* The BNB coin turning in 3D, two stars that twinkle beside
-                      it, and now and then a glint across the words. landing.css. */}
-                  <span aria-hidden className="ot-spark relative flex h-5 w-5">
-                    <span className="ot-coin">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/chains/bnb.svg" alt="" width={20} height={20} className="ot-coin-face" />
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/chains/bnb.svg" alt="" width={20} height={20} className="ot-coin-face ot-coin-face--back" />
-                    </span>
-                    <Star className="ot-spark-star -top-2.5 -left-2.5" size={10} />
-                    <Star className="ot-spark-star ot-spark-star--b -right-2.5 -bottom-2" size={7} />
-                  </span>
-                  <WatchDemo variant="inline">
-                    <span className="ot-glint">{BUILT_AT}</span>
-                  </WatchDemo>
-                </div>
-
                 <h1 className="font-display m-0 text-[44px] leading-[1.02] font-bold tracking-[-0.035em] text-balance sm:text-[64px]">
-                  Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">own stocks.</span>
+                  Stop juggling wallets to <span className="text-[var(--ot-coral-text)]">get one thing done.</span>
                 </h1>
 
                 <p className="m-0 max-w-[46ch] text-[18px] leading-[1.5] text-pretty text-[var(--ot-text-2)] sm:text-[20px]">
-                  Say &ldquo;buy Tesla&rdquo; to your agent. Otto finds the token, the wallet and the
-                  route on BNB Chain, and checks it all before you sign.
+                  Tell your agent what you want: send, swap, bridge or buy. Otto finds the token, the
+                  wallet and the route on any chain, and checks it all before you sign.
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -197,7 +177,7 @@ export default function Landing() {
         <footer className="flex flex-col gap-8 px-5 py-14 sm:px-10">
           <div className="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-between gap-6">
             <p className="font-display m-0 text-[26px] font-bold tracking-[-0.02em] sm:text-[34px]">
-              Make Ottopus your agent&rsquo;s stock desk and trade in peace.
+              Let Otto juggle the wallets. You just sign.
             </p>
             <SignInCta variant="secondary">Link your first wallet</SignInCta>
           </div>
@@ -228,15 +208,6 @@ export default function Landing() {
         </footer>
       </div>
     </LandingMotion>
-  )
-}
-
-/** A four-point sparkle, in the dot's gold. */
-function Star({ className, size }: { className: string; size: number }) {
-  return (
-    <svg viewBox="0 0 10 10" width={size} height={size} className={`absolute ${className}`}>
-      <path d="M5 0 C5.4 3.6 6.4 4.6 10 5 C6.4 5.4 5.4 6.4 5 10 C4.6 6.4 3.6 5.4 0 5 C3.6 4.6 4.6 3.6 5 0 Z" fill="#F3BA2F" />
-    </svg>
   )
 }
 
