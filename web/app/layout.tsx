@@ -24,7 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: 'Ottopus',
-  description: 'Buy the stock, not the token. Tell your agent what you want; Ottopus finds the token, the wallet and the route, and you still sign.',
+  description: 'Stop juggling wallets to get one thing done. Tell your agent what you want; Ottopus finds the token, the wallet and the route, and you still sign.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

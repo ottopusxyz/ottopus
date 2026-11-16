@@ -28,7 +28,7 @@ export const BEATS: readonly Beat[] = [
     from: 0,
     still: 0.03,
     n: '01 · Today',
-    title: 'Buying one stock onchain shouldn’t take six tabs.',
+    title: 'Getting one thing done onchain shouldn’t take six tabs.',
     body: 'Too many wallets. Too many dApps. Which one?',
     pose: 'heads-up',
   },
@@ -56,7 +56,7 @@ export const BEATS: readonly Beat[] = [
     still: 0.45,
     n: '02 · The wallet',
     title: 'Otto picks the wallet, and says why.',
-    body: 'Six wallets checked. The one with the BNB and the gas wins.',
+    body: 'Six wallets checked. The one with the funds and the gas wins.',
     pose: 'planning',
   },
   {

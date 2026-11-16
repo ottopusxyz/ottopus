@@ -73,77 +73,6 @@
   75% { rotate: -3deg; }
 }
 
-/* ── The built-at line: a quiet sparkle ───────────────────────────── */
-
-/* The BNB coin keeps turning about its upright axis, slowly and evenly, like
-   a coin spun on a table. Two faces, back to back, so it never shows a blank
-   side mid-turn. */
-.ot-spark {
-  perspective: 120px;
-}
-.ot-coin {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  transform-style: preserve-3d;
-  animation: ot-coin-spin 3.2s linear infinite;
-  animation-play-state: var(--ot-ambient-play);
-  filter: drop-shadow(0 0 4px rgba(243, 186, 47, 0.45));
-}
-.ot-coin-face {
-  position: absolute;
-  inset: 0;
-  backface-visibility: hidden;
-}
-.ot-coin-face--back {
-  transform: rotateY(180deg);
-}
-@keyframes ot-coin-spin {
-  from { transform: rotateY(0deg); }
-  to { transform: rotateY(360deg); }
-}
-
-/* Two stars beside it, out of step, each mostly resting. */
-.ot-spark-star {
-  opacity: 0;
-  transform: scale(0.3) rotate(0deg);
-  animation: ot-spark-twinkle 3.4s ease-in-out infinite;
-  animation-play-state: var(--ot-ambient-play);
-}
-.ot-spark-star--b { animation-delay: -1.7s; animation-duration: 4.1s; }
-@keyframes ot-spark-twinkle {
-  0%, 55%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
-  70% { opacity: 1; transform: scale(1) rotate(45deg); }
-  85% { opacity: 0; transform: scale(0.4) rotate(90deg); }
-}
-
-/* Every six seconds a band of gold passes over the words, then they rest.
-   The words are the gradient's ends, so outside the glint they read exactly
-   as the text colour they had. */
-.ot-glint {
-  background: linear-gradient(
-    100deg,
-    var(--ot-text-2) 0%,
-    var(--ot-text-2) 45%,
-    #D99A06 49%,
-    #F3BA2F 50%,
-    #D99A06 51%,
-    var(--ot-text-2) 55%,
-    var(--ot-text-2) 100%
-  );
-  background-size: 300% 100%;
-  background-position: 100% 0;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: ot-glint 6s ease-in-out infinite;
-  animation-play-state: var(--ot-ambient-play);
-}
-@keyframes ot-glint {
-  0%, 60% { background-position: 100% 0; }
-  85%, 100% { background-position: 0% 0; }
-}
-
 /* ── Reveal on scroll (the close) ─────────────────────────────────── */
 
 [data-reveal] {
@@ -179,9 +108,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ot-coin, .ot-glint { animation: none; }
   .ot-gesture [data-arm="6"] > path { animation: none; }
-  .ot-spark-star { display: none; }
   .ot-land-rise { display: none; }
   .ot-bob { animation: none; }
   [data-reveal] { transition: none !important; }
