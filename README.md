@@ -4,10 +4,10 @@
 
 <h1>Ottopus</h1>
 
-<p><strong>Stop juggling wallets to own stocks.</strong></p>
+<p><strong>Stop juggling wallets to get one thing done.</strong></p>
 
 <p>
-Your agent's stock desk. Tell your agent what you want. Ottopus picks the wallet, builds<br />
+Tell your agent what you want: send, swap, bridge or buy. Ottopus picks the wallet, builds<br />
 the route, decodes and simulates it, and hands you a review link. Works with any agent<br />
 that speaks MCP. <em>One intent. Every wallet. You still sign.</em>
 </p>
@@ -28,18 +28,16 @@ that speaks MCP. <em>One intent. Every wallet. You still sign.</em>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" /></a>
 </p>
 
-<p>Built at <strong>BNB Hack: Tokenized Stocks Edition</strong>. <a href="https://youtu.be/Vd0IQDSakgc">Watch the demo</a>.</p>
-
-<a href="https://youtu.be/Vd0IQDSakgc"><img src=".github/assets/hero.png" width="860" alt="Watch the Ottopus demo on YouTube. The Ottopus landing page: an agent is asked to buy 10 USD worth of Tesla, and Otto holds up a plan that is decoded, simulated and ready to sign" /></a>
+<a href="https://youtu.be/Vd0IQDSakgc"><img src=".github/assets/hero.png" width="860" alt="Watch the Ottopus demo on YouTube. The Ottopus landing page: an agent is asked for a trade, and Otto holds up a plan that is decoded, simulated and ready to sign" /></a>
 
 </div>
 
 ## Why
 
-Buying one tokenized stock onchain takes a wallet, a chain, a token contract, a route
-and a leap of faith. Ottopus sits between your agent and your wallets and does the
-working out: it plans, explains and simulates, then shows you exactly what will happen
-before anything moves.
+Getting one thing done onchain, whether a payment, a swap, a bridge or a buy, takes the
+right wallet, the right chain, the right token contract, a route and a leap of faith.
+Ottopus sits between your agent and your wallets and does the working out: it plans,
+explains and simulates, then shows you exactly what will happen before anything moves.
 
 It is not a wallet and not an agent with keys. Your wallet stays the final authority.
 
@@ -49,7 +47,8 @@ It is not a wallet and not an agent with keys. Your wallet stays the final autho
    hardware, hot, a Safe, or a wallet your agent operates. Ottopus only ever reads them.
 2. **Point your agent at Ottopus.** One URL, any agent that speaks MCP. Nothing to
    install.
-3. **Say what you want.** *"Buy me 10 USD worth of Tesla."* Ottopus finds the token,
+3. **Say what you want.** *"Send 50 USDC to alice.eth"*, *"Swap half my ETH for USDC"*,
+   *"Buy me 10 USD worth of Tesla."* Ottopus finds the token,
    picks a wallet and says why, builds the route, decodes and simulates it, and hands
    you a review link. You open it, connect that wallet, and sign. If the wallet is one
    your agent operates, you approve instead, and the agent's wallet sends.
@@ -145,12 +144,12 @@ with `-l` lists the skills without installing anything.
 
 ## What works today
 
-- **Transfers, swaps and bridges** across EVM chains, with Binance asked first for
-  swaps on BNB Chain and LI.FI everywhere else.
-- **Tokenized stocks on BNB Chain.** Ask by ticker or company name and get every
-  issuer's token (bStocks, Ondo and others) with its price, its premium over the
-  share, and whether the market is open.
+- **Transfers, swaps and bridges** across EVM chains, routed through LI.FI, with
+  Binance asked first on BNB Chain.
 - **A wallet picked with a stated reason**, from every wallet you have linked.
+- **Tokenized stocks.** Ask by ticker or company name and get every issuer's token
+  (bStocks, Ondo and others) with its price, its premium over the share, and whether
+  the market is open. BNB Chain today.
 - **A review page bound to the plan's hash**: decoded calls, read through minimal-proxy
   clones to their verified implementation, a simulation that is independent of the
   router, and a second, labelled simulation from Binance to compare.
